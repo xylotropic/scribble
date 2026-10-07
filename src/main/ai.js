@@ -19,9 +19,11 @@ async function chat(
   settings,
   messages,
   key,
-  { signal, images = [], timeoutMs } = {},
+  { signal, images = [], documents = [], timeoutMs } = {},
 ) {
   if (settings.aiProvider === "ollama") {
+    if (!Array.isArray(documents) || documents.length)
+      throw Error("Ollama does not support PDF documents");
     if (
       !Array.isArray(images) ||
       images.length > 5 ||
@@ -77,6 +79,7 @@ async function chat(
     apiVersion: settings.aiVersion,
     messages,
     images,
+    documents,
     signal,
     timeoutMs: timeoutMs || 180000,
     // Loopback is useful for an explicitly configured compatible local server.

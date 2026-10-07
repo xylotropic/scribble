@@ -81,4 +81,4 @@ async function summarizeMemory(content, chat, { signal } = {}) {
     providerCalls: calls,
   };
 }
-module.exports = { summarizeMemory, CHUNK_CHARS };
+module.exports = { summarizeMemory, validateReply, CHUNK_CHARS };

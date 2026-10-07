@@ -20,6 +20,7 @@ const SETTINGS = {
   translate: false,
   microphoneId: "default",
   microphonePriority: [],
+  microphoneLabels: [],
   meetingMicrophonePriority: null,
   autoPaste: true,
   autoEnter: false,
@@ -189,7 +190,8 @@ class Store {
       !["automatic", "cpu"].includes(patch.resourceMode)
     )
       throw Error("Invalid resource mode");
-    const { validatePriority } = require("../shared/microphone-preferences");
+    const { validatePriority, validateLabels, mergeLabels } = require("../shared/microphone-preferences");
+    if (Object.hasOwn(patch, "microphoneLabels")) validateLabels(patch.microphoneLabels);
     if (patch.microphonePriority !== undefined) validatePriority(patch.microphonePriority);
     if (Object.hasOwn(patch, "meetingMicrophonePriority")) validatePriority(patch.meetingMicrophonePriority, true, 33);
     if (patch.silenceSensitivity !== undefined &&
@@ -319,7 +321,12 @@ class Store {
           binding.keyCode < 0 || binding.keyCode > 127 || (binding.keyCode >= 54 && binding.keyCode <= 63) ||
           !binding.modifiers.length) throw Error("Utility hotkey requires an existing utility and a modifier plus regular key");
     }
-    return structuredClone(patch);
+    const result = structuredClone(patch);
+    if (["microphoneLabels", "microphonePriority", "microphoneId", "meetingMicrophonePriority"].some(key => Object.hasOwn(patch,key))) {
+      const proposed = {...baseSettings,...result};
+      result.microphoneLabels = mergeLabels({...proposed, microphoneLabels:baseSettings.microphoneLabels ?? []}, result.microphoneLabels ?? []);
+    }
+    return result;
   }
   validateWorkspace(value) {
     if (!value || value.version !== 1)

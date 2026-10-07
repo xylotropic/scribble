@@ -651,7 +651,7 @@ function renderDictionary() {
 }
 function renderSpeechProvider() {
   const settings = state.settings;
-  return `<div class="card"><h2>Choose where speech is transcribed</h2><p class="muted">Local models run on this Mac for free. Choosing a cloud service sends the audio you transcribe to that provider. Its API may charge for usage.</p><form id="speech-provider-form">${select("speechProvider", "Speech provider", [["local", "Local · no usage fees"], ...(state.speechProviders || []).map((p) => [p.id, p.id])], settings.speechProvider)}${field("speechCloudModel", "Cloud model (blank uses provider default)", settings.speechCloudModel)}${field("speechCloudVersion", "Cartesia API version", settings.speechCloudVersion)}${field("speechKey", "Selected provider API key", "", "password", "Leave blank to retain your saved key. Keys stay in macOS secure storage.")}<button type="submit" class="primary">Save speech configuration</button></form><p class="tip">Local transcription does not upload audio. Switching back to Local restores that behavior. Cloud file-size and duration limits depend on the provider.</p></div>`;
+  return `<div class="card"><h2>${esc(interfaceLabel("Choose where speech is transcribed"))}</h2><p class="muted">${esc(interfaceLabel("Local models run on this Mac for free. Choosing a cloud service sends the audio you transcribe to that provider. Its API may charge for usage."))}</p><form id="speech-provider-form">${select("speechProvider", "Speech provider", [["local", "Local · no usage fees"], ...(state.speechProviders || []).map((p) => [p.id, p.id])], settings.speechProvider)}${field("speechCloudModel", "Cloud model (blank uses provider default)", settings.speechCloudModel)}${field("speechCloudVersion", "Cartesia API version", settings.speechCloudVersion)}${field("speechKey", "Selected provider API key", "", "password", "Leave blank to retain your saved key. Keys stay in macOS secure storage.")}<button type="submit" class="primary">${esc(interfaceLabel("Save speech configuration"))}</button></form><p class="tip">${esc(interfaceLabel("Local transcription does not upload audio. Switching back to Local restores that behavior. Cloud file-size and duration limits depend on the provider."))}</p></div>`;
 }
 function renderModels() {
   return `${renderSpeechProvider()}${heading("Speech, on your terms", "A model for every moment.", "Smaller is faster. Larger handles nuance. Models download once and run locally on your Mac.")}<div class="banner">${state.speechStatus.ready ? "Local speech runtime is installed and ready." : "Install the speech runtime using npm run setup:speech."}<span class="badge">${state.platform}</span></div><div class="grid three">${state.models
@@ -665,7 +665,7 @@ function renderModels() {
 }
 function renderAI() {
   const s = state.settings;
-  return `${heading("Your assistant. Your choice.", "A little help with your words.", "Use a free local model through Ollama, or connect a provider with your own key. Cloud providers may charge for usage.")}<div class="grid two"><div class="card"><h2>Configure a language model</h2><form id="ai-form">${select(
+  return `${heading("Your assistant. Your choice.", "A little help with your words.", "Use a free local model through Ollama, or connect a provider with your own key. Cloud providers may charge for usage.")}<div class="grid two"><div class="card"><h2>${esc(interfaceLabel("Configure a language model"))}</h2><form id="ai-form">${select(
     "aiProvider",
     "Provider",
     [
@@ -682,7 +682,7 @@ function renderAI() {
       ["custom", "Custom OpenAI-compatible API"],
     ],
     s.aiProvider,
-  )}${field("aiEndpoint", s.aiProvider === "ollama" ? "Ollama server" : "API base URL", s.aiEndpoint)}${field("aiModel", "Model", s.aiModel)}${field("aiDeployment", "Azure deployment (Azure only)", s.aiDeployment)}${field("aiVersion", "Azure API version (Azure only)", s.aiVersion)}${field("apiKey", "Cloud API key (unused for Ollama)", "", "password", "Leave blank to keep this provider’s saved key.")}${area("aiInstructions", "Dictation instructions", s.aiInstructions)}${check("aiEnhance", "Enhance dictation after transcription", s.aiEnhance)}<div class="row"><button type="submit" class="primary">Save configuration</button>${button("Test connection", "ai-test", "check")}</div></form></div><div class="card"><p class="eyebrow">Local intelligence</p><h2>Keep the whole loop private.</h2><p class="muted">Ollama serves a local language model for cleanup, commands, summaries, and tones. No API key is needed.</p><div class="code">ollama pull ${esc(s.aiModel)}</div><div class="row wrap">${button("Get Ollama", "open-url", "download", "", 'data-url="https://ollama.com/download/mac"')}${button("Download selected model", "ai-download", "model")}</div><div id="ai-status" class="notice"></div><p class="tip">Scribble starts its bundled Ollama runtime when needed. You can use a smaller model on a Mac with limited memory.</p><h3>What gets sent?</h3><p class="muted">Commands can include text, selected files and screen images you attach. Memory indexing sends reference text to the configured provider. Scribble does not send audio to a text model or use telemetry.</p></div></div>${renderAIUtilities()}`;
+  )}${field("aiEndpoint", s.aiProvider === "ollama" ? "Ollama server" : "API base URL", s.aiEndpoint)}${field("aiModel", "Model", s.aiModel)}${field("aiDeployment", "Azure deployment (Azure only)", s.aiDeployment)}${field("aiVersion", "Azure API version (Azure only)", s.aiVersion)}${field("apiKey", "Cloud API key (unused for Ollama)", "", "password", "Leave blank to keep this provider’s saved key.")}${area("aiInstructions", "Dictation instructions", s.aiInstructions)}${check("aiEnhance", "Enhance dictation after transcription", s.aiEnhance)}<div class="row"><button type="submit" class="primary">${esc(interfaceLabel("Save configuration"))}</button>${button("Test connection", "ai-test", "check")}</div></form></div><div class="card"><p class="eyebrow">Local intelligence</p><h2>Keep the whole loop private.</h2><p class="muted">${esc(interfaceLabel("Ollama serves a local language model for cleanup, commands, summaries, and tones. No API key is needed."))}</p><div class="code">ollama pull ${esc(s.aiModel)}</div><div class="row wrap">${button("Get Ollama", "open-url", "download", "", 'data-url="https://ollama.com/download/mac"')}${button("Download selected model", "ai-download", "model")}</div><div id="ai-status" class="notice"></div><p class="tip">${esc(interfaceLabel("Scribble starts its bundled Ollama runtime when needed. You can use a smaller model on a Mac with limited memory."))}</p><h3>${esc(interfaceLabel("What gets sent?"))}</h3><p class="muted">${esc(interfaceLabel("Commands can include text, selected files and screen images you attach. Memory indexing sends reference text or supported PDF files to the configured provider. Scribble does not send audio to a text model or use telemetry."))}</p></div></div>${renderAIUtilities()}`;
 }
 const utilityPresets = [["grammar", "Fix grammar"], ["professional", "Professional"], ["polish", "Polish"], ["summary", "Summary"], ["bullets", "Bullet points"], ["email", "Email"]];
 function utilityBinding(id) { return (state.settings.hotkeys || []).find(h => h.mode === "utility" && h.utilityId === id); }
@@ -754,7 +754,10 @@ let microphonesKnown = false;
 const microphoneNames = new Map();
 let micPicker = null, micPreview = null, micPreviewGeneration = 0;
 function microphoneConnected(id) { return id === 'default' || microphoneDevices.some(device => device.deviceId === id); }
-function microphoneName(id) { return id === 'default' ? interfaceLabel('System default') : microphoneNames.get(id) || id; }
+function microphoneName(id) { return id === 'default' ? interfaceLabel('System default') : microphoneNames.get(id) || state.settings.microphoneLabels?.find(entry => entry.id === id)?.name || id; }
+function observedMicrophoneLabels(ids) {
+  return [...new Set(ids)].filter(id => id !== 'default' && microphoneNames.has(id)).map(id => ({id,name:microphoneNames.get(id)}));
+}
 function microphoneOrder(scope) {
   const base = scope === 'meeting' ? state.settings.meetingMicrophonePriority : state.settings.microphonePriority;
   const chain = Array.isArray(base) ? base : ScribbleMicrophonePreferences.captureCandidates(state.settings);
@@ -766,9 +769,10 @@ function microphoneDraft(scope) {
 }
 function microphonePreferencePayload(scope, order) {
   if (!Array.isArray(order) || order.length > 33) throw Error('This microphone order exceeds 33 entries. Remove a disconnected microphone before adding another.');
-  if (scope === 'meeting') return {meetingMicrophonePriority: order.slice()};
-  if (order.length === 33) return {microphonePriority: order.slice(0,32), microphoneId: order[32]};
-  return {microphonePriority: order.slice()};
+  const microphoneLabels = observedMicrophoneLabels(order);
+  if (scope === 'meeting') return {meetingMicrophonePriority: order.slice(),microphoneLabels};
+  if (order.length === 33) return {microphonePriority: order.slice(0,32), microphoneId: order[32],microphoneLabels};
+  return {microphonePriority: order.slice(),microphoneLabels};
 }
 function effectiveMicrophone(scope) {
   if (!microphonesKnown) return interfaceLabel('Refresh microphones');
@@ -786,7 +790,21 @@ function renderMeetingMicrophones() {
 async function scanMicrophones(ask = false) {
   if (ask) { const acquired = await navigator.mediaDevices.getUserMedia({audio:true}); acquired.getTracks().forEach(track => track.stop()); }
   const devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput');
-  if (devices.length) { microphonesKnown = true; microphoneDevices = devices.filter(device => device.deviceId !== 'default'); for (const device of devices) if (device.label) { microphoneNames.set(device.deviceId, String(device.label).slice(0,200)); if(microphoneNames.size>128)microphoneNames.delete(microphoneNames.keys().next().value); } }
+  if (devices.length) {
+    microphonesKnown = true; microphoneDevices = devices.filter(device => device.deviceId !== 'default');
+    for (const device of devices) {
+      const name = String(device.label || '').trim().slice(0,200);
+      if (!name || /[\x00-\x1f\x7f]/.test(name) || !device.deviceId || device.deviceId.length > 512 || /[\x00-\x1f\x7f]/.test(device.deviceId)) continue;
+      microphoneNames.set(device.deviceId,name);
+      if(microphoneNames.size>128)microphoneNames.delete(microphoneNames.keys().next().value);
+    }
+    const saved = new Map((state.settings.microphoneLabels || []).map(entry => [entry.id,entry.name]));
+    const updates = observedMicrophoneLabels([...ScribbleMicrophonePreferences.rankedIds(state.settings)]).filter(entry => saved.get(entry.id) !== entry.name);
+    if (updates.length) {
+      try { await request('remember-microphone-labels',{labels:updates}); }
+      catch(error) { toast(error.message || interfaceLabel('Unable to save')); }
+    }
+  }
 }
 function stopMicrophonePreview() {
   micPreviewGeneration++;
@@ -2159,8 +2177,8 @@ document.addEventListener("click", async (e) => {
     if (a === "ai-test") {
       b.disabled = true;
       const result = await request("ai-test");
-      $("#ai-status").textContent = "Connection ready: " + result;
-      toast("Language model is connected.");
+      $("#ai-status").textContent = workflowText("Connection ready: {result}", {result});
+      toast(interfaceLabel("Language model is connected."));
       return;
     }
     if (a === "ai-download") {
@@ -2210,7 +2228,7 @@ document.addEventListener("click", async (e) => {
     if (a === "open-mic-picker") { await openMicrophonePicker("global"); return; }
     if (a === "meeting-mic-customize") {
       if (!microphonesKnown) return;
-      await request("preferences", {meetingMicrophonePriority: microphoneDraft("global")});
+      await request("preferences", microphonePreferencePayload("meeting", microphoneDraft("global")));
       await openMicrophonePicker("meeting", true, true); return;
     }
     if (a === "meeting-mic-edit") { await openMicrophonePicker("meeting", true); return; }

@@ -16,7 +16,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   clone = (x) => JSON.parse(JSON.stringify(x));
 async function fixture(
   t,
-  { notes = [], shortcuts = [], requestFailure, pasteCommandPromise, timerScheduler, browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
+  { settings = {}, notes = [], shortcuts = [], requestFailure, pasteCommandPromise, timerScheduler, browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
 ) {
   const dom = new JSDOM(
     fs.readFileSync(path.join(__dirname, "../src/renderer/index.html"), "utf8"),
@@ -42,7 +42,7 @@ async function fixture(
     ],
     recorders = [];
   const data = {
-    settings: { ...clone(SETTINGS), sounds: false },
+    settings: { ...clone(SETTINGS), sounds: false, ...clone(settings) },
     history: [],
     notes: clone(notes),
     dictionary: [],
@@ -82,8 +82,14 @@ async function fixture(
       if (action === "state") return clone(data);
       if (action === "browser-catalog") return browserPromise ? await browserPromise : clone(browserCatalogue);
       if (action === "permissions") return clone(setupPermissions);
+      if (action === 'remember-microphone-labels') {
+        data.settings.microphoneLabels = require('../src/shared/microphone-preferences').mergeLabels(data.settings,clone(args.labels));
+        emit('state',data); return clone(data.settings.microphoneLabels);
+      }
       if (action === "preferences") {
-        Object.assign(data.settings, args);
+        const proposed = {...data.settings,...args};
+        const microphoneLabels = require('../src/shared/microphone-preferences').mergeLabels({...proposed,microphoneLabels:data.settings.microphoneLabels},clone(args.microphoneLabels || []));
+        Object.assign(data.settings, args, {microphoneLabels});
         emit("state", data);
         return clone(data);
       }
@@ -1350,4 +1356,35 @@ test('promotion beyond 33 refuses explicitly and retains every saved rank and le
   const before=h.calls.filter(call=>call.action==='preferences').length; await h.click('[data-action="mic-select"][data-device="new-device"]');
   assert.equal(h.calls.filter(call=>call.action==='preferences').length,before); assert.deepEqual(clone(h.data.settings.microphonePriority),original); assert.equal(h.data.settings.microphoneId,'legacy'); assert.match(h.w.document.querySelector('#toast').textContent,/exceeds 33/);
   await h.click('#modal [data-action="close-modal"]');
+});
+
+test('Japanese and German provider cards localize disclosures/actions/status while preserving exact user data', options, async t => {
+  for (const [locale, speechHeading, saveSpeech, aiHeading, saveAI, status, connected] of [
+    ['ja','音声を文字起こしする場所を選択','音声設定を保存','言語モデルを設定','設定を保存','接続準備完了:','言語モデルに接続しました。'],
+    ['de','Ort der Spracherkennung wählen','Sprachkonfiguration speichern','Sprachmodell konfigurieren','Konfiguration speichern','Verbindung bereit:','Das Sprachmodell ist verbunden.']
+  ]) {
+    const h=await fixture(t); h.data.settings.locale=locale; h.data.settings.speechProvider='openai'; h.data.speechProviders=[{id:'openai'}]; h.data.settings.speechCloudModel='private-model <img src=x>'; h.data.settings.aiProvider='custom'; h.data.settings.aiModel='private-model <img src=x>'; h.data.settings.aiEndpoint='https://example.test/v1?user=Floyd'; h.data.settings.aiInstructions='Save configuration'; h.emit('state',h.data);
+    await h.click('[data-page="models"]'); assert.equal(h.w.document.querySelector('#speech-provider-form').parentElement.querySelector('h2').textContent,speechHeading); assert.equal(h.w.document.querySelector('#speech-provider-form button[type="submit"]').textContent,saveSpeech);
+    assert.equal(h.w.document.querySelector('[name="speechProvider"]').value,'openai'); assert.equal(h.w.document.querySelector('[name="speechCloudModel"]').value,'private-model <img src=x>'); assert.equal(h.w.document.querySelector('#speech-provider-form img'),null);
+    const card=h.w.document.querySelector('#speech-provider-form').parentElement;
+    assert.doesNotMatch(card.textContent,/Local models run on this Mac for free|Its API may charge for usage|Local transcription does not upload audio/);
+    assert.match(card.textContent,locale==='ja'?/料金/:/Nutzungskosten/);
+    await h.click('[data-page="ai"]'); assert.equal(h.w.document.querySelector('#ai-form').parentElement.querySelector('h2').textContent,aiHeading); assert.equal(h.w.document.querySelector('#ai-form button[type="submit"]').textContent,saveAI);
+    assert.equal(h.w.document.querySelector('[name="aiProvider"]').value,'custom'); assert.equal(h.w.document.querySelector('[name="aiModel"]').value,'private-model <img src=x>'); assert.equal(h.w.document.querySelector('[name="aiEndpoint"]').value,'https://example.test/v1?user=Floyd'); assert.equal(h.w.document.querySelector('[name="aiInstructions"]').value,'Save configuration');
+    assert.doesNotMatch(h.w.document.querySelector('#content').textContent,/Ollama serves a local language model|Scribble starts its bundled|Commands can include text, selected files|What gets sent\?/);
+    assert.match(h.w.document.querySelector('#content').textContent,locale==='ja'?/対応するPDFファイル/:/unterstützte PDF-Dateien/);
+    const original=h.w.scribble.request; h.w.scribble.request=(action,args)=>action==='ai-test'?Promise.resolve('<script>provider reply</script>'):original(action,args);
+    await h.click('[data-action="ai-test"]'); assert.equal(h.w.document.querySelector('#ai-status').textContent,status+' <script>provider reply</script>'); assert.equal(h.w.document.querySelector('#ai-status script'),null); assert.equal(h.w.document.querySelector('#toast').textContent,connected);
+  }
+});
+
+test('a new renderer shows saved disconnected friendly labels safely without treating them as connected', options, async t=>{
+ const h=await fixture(t,{settings:{microphonePriority:['offline','default'],microphoneLabels:[{id:'offline',name:'<img src=x onerror=alert(1)> Studio mic'}]}});
+ h.w.navigator.mediaDevices.enumerateDevices=async()=>[{kind:'audioinput',deviceId:'live',label:'Built-in'}];await h.click('[data-page="settings"]');await h.click('[data-tab="audio"]');await h.click('[data-action="refresh-mics"]');await h.click('[data-action="open-mic-picker"]');assert.equal(h.w.document.querySelector('[data-action="mic-select"][data-device="offline"]'),null);await h.click('[data-action="mic-reorder"]');assert.match(h.w.document.querySelector('#modal').textContent,/Studio mic/);assert.equal(h.w.document.querySelector('#modal img'),null);assert.ok(h.w.document.querySelector('[data-action="mic-remove"][data-device="offline"]'));assert.deepEqual(clone(h.data.settings.microphoneLabels),[{id:'offline',name:'<img src=x onerror=alert(1)> Studio mic'}]);
+});
+test('scans remember changed ranked names, preserve redacted and empty scans, and ranking saves new-device labels', options, async t=>{
+ const h=await fixture(t,{settings:{microphonePriority:['ranked','default'],microphoneLabels:[{id:'ranked',name:'Old mic'}]}});let devices=[{kind:'audioinput',deviceId:'ranked',label:'Renamed mic'},{kind:'audioinput',deviceId:'new',label:'New USB'}];h.w.navigator.mediaDevices.enumerateDevices=async()=>devices;
+ await h.click('[data-page="settings"]');await h.click('[data-tab="audio"]');await h.click('[data-action="refresh-mics"]');assert.deepEqual(clone(h.calls.find(c=>c.action==='remember-microphone-labels').args.labels),[{id:'ranked',name:'Renamed mic'}]);const writes=h.calls.filter(c=>c.action==='remember-microphone-labels').length;
+ devices=[{kind:'audioinput',deviceId:'ranked',label:''},{kind:'audioinput',deviceId:'new',label:''}];await h.click('[data-action="refresh-mics"]');devices=[];await h.click('[data-action="refresh-mics"]');assert.equal(h.calls.filter(c=>c.action==='remember-microphone-labels').length,writes);assert.equal(h.data.settings.microphoneLabels[0].name,'Renamed mic');assert.match(h.w.document.querySelector('#content').textContent,/Renamed mic/);
+ await h.click('[data-action="open-mic-picker"]');await h.click('[data-action="mic-select"][data-device="new"]');const patch=h.calls.findLast(c=>c.action==='preferences').args;assert.equal(patch.microphonePriority[0],'new');assert.ok(patch.microphoneLabels.some(entry=>entry.id==='new'&&entry.name==='New USB'));assert.ok(h.data.settings.microphoneLabels.some(entry=>entry.id==='new'&&entry.name==='New USB'));
 });

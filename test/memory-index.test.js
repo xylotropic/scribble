@@ -117,3 +117,7 @@ test("CJK substrings retrieve memory without whitespace word boundaries", async 
   await index.index({ id: "zh", content: "我们测试本地语音识别项目。" });
   assert.equal(index.search("语音识别")[0].id, "zh");
 });
+test('XML and HTML reference formats retain original text without executing or fetching markup',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'scribble-memory-markup-'));
+ try{for(const extension of ['xml','html','htm']){const file=path.join(directory,'reference.'+extension),content='<reference><script>untrusted()</script><fact>Cedar ID ABC-123</fact></reference>';await fs.writeFile(file,content);const indexed=await new MemoryIndex().index({id:extension,filePath:file});assert.equal(indexed.status,'indexed');assert.equal(indexed.content,content);}}finally{await fs.rm(directory,{recursive:true,force:true});}
+});

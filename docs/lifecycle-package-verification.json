@@ -1,0 +1,39 @@
+{
+  "verifiedAt": "2026-10-07T12:00:29.312Z",
+  "publicCommit": "87e394619cedbbf3e4b87dfa8befdc8dd580ee5b",
+  "tree": "686821cf5b5fa603d63bf63bf20008d6be577aba",
+  "app": "/tmp/scribble-lifecycle-package-20261007/mac-arm64/Scribble.app",
+  "architecture": "arm64",
+  "guard": {
+    "architectures": [
+      "arm64"
+    ],
+    "checkedExecutables": 6
+  },
+  "shippedAsarFilesByteIdentical": 50,
+  "runtimePackageMetadataMatched": [
+    "name",
+    "version",
+    "main",
+    "dependencies"
+  ],
+  "nativeModules": [
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.5.node",
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.7.dylib",
+    "Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node"
+  ],
+  "signature": {
+    "deepStrict": true,
+    "adHoc": true,
+    "hardenedRuntime": true,
+    "notarized": false
+  },
+  "runtimeSourceFilesAndLinksUnchanged": 83,
+  "packagedOllamaRelativeLinksChecked": 10,
+  "bridgeAndShareRebuilt": true,
+  "limitations": [
+    "No GUI launch, microphone, screen-capture permission or live recording/inference checks.",
+    "Existing pinned speech/media/Parakeet/Ollama runtimes reused; no setup/download command or external Ollama service changes.",
+    "Mach-O metadata does not prove live macOS14 execution; separate dependent compatibility audit applies."
+  ]
+}

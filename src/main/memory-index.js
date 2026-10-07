@@ -11,6 +11,10 @@ const SUPPORTED_EXTENSIONS = [
   ".yaml",
   ".yml",
   ".toml",
+  ".xml",
+  ".html",
+  ".htm",
+  ".docx",
 ];
 SUPPORTED_EXTENSIONS.push(".pdf");
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -65,6 +69,32 @@ async function pdfText(buffer) {
     clearTimeout(timeout);
     await task.destroy();
   }
+}
+async function readMemoryDocument(filePath, { signal, maxPages = 100 } = {}) {
+  if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 1000) throw Error("Invalid Memory PDF page limit");
+  if (typeof filePath !== "string" || !path.isAbsolute(filePath) || path.extname(filePath).toLowerCase() !== ".pdf") throw Error("Memory document must be an absolute PDF file");
+  const check = () => { if (signal?.aborted) throw signal.reason || new DOMException("Memory indexing canceled", "AbortError"); };
+  check();
+  const handle = await fs.open(filePath, require("node:fs").constants.O_RDONLY | require("node:fs").constants.O_NOFOLLOW);
+  let bytes;
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > MAX_BYTES) throw Error("Memory PDF must be regular and at most 8 MiB");
+    const buffer = Buffer.alloc(MAX_BYTES + 1); let offset = 0;
+    while (offset < buffer.length) {
+      check(); const read = await handle.read(buffer, offset, buffer.length-offset, null);
+      if (!read.bytesRead) break; offset += read.bytesRead;
+    }
+    if (offset > MAX_BYTES) throw Error("Memory PDF exceeds 8 MiB");
+    bytes = buffer.subarray(0,offset);
+  } finally { await handle.close(); }
+  check();
+  const { PDFDocument } = require("pdf-lib");
+  const document = await PDFDocument.load(bytes, { updateMetadata:false });
+  if (document.isEncrypted) throw Error("Encrypted Memory PDF is unsupported");
+  if (document.getPageCount() < 1 || document.getPageCount() > maxPages) throw Error(`Provider Memory PDF must contain 1–${maxPages} pages`);
+  check();
+  return { mimeType:"application/pdf", data:bytes.toString("base64"), sha256:crypto.createHash("sha256").update(bytes).digest("hex"), pageCount:document.getPageCount() };
 }
 function chunks(text) {
   const result = [];
@@ -184,6 +214,8 @@ class MemoryIndex {
           content =
             path.extname(input.filePath).toLowerCase() === ".pdf"
               ? await pdfText(buffer.subarray(0, offset))
+              : path.extname(input.filePath).toLowerCase() === ".docx"
+                ? require("./memory-docx").docxText(buffer.subarray(0, offset))
               : new TextDecoder("utf-8", { fatal: true }).decode(
                   buffer.subarray(0, offset),
                 );
@@ -213,6 +245,13 @@ class MemoryIndex {
         return { id, status: "superseded" };
       return this.publish({ ...item, status: "error", error: error.message });
     }
+  }
+  hydrate(input) {
+    if (!input || typeof input.id !== "string" || !input.id) throw Error("Memory ID is required");
+    this.revisions.set(input.id, (this.revisions.get(input.id) || 0) + 1);
+    const content = typeof input.content === "string" && input.content.length <= MAX_CHARS && !input.content.includes("\0") ? normalizeText(input.content) : "";
+    return this.publish({ ...input, content, chunks: content ? chunks(content) : [],
+      status: ["pending", "indexing"].includes(input.status) ? "needs-index" : input.status || "needs-index", enabled: input.enabled !== false });
   }
   reindex(id) {
     const item = this.items.get(id);
@@ -289,6 +328,7 @@ class MemoryIndex {
 }
 module.exports = {
   MemoryIndex,
+  readMemoryDocument,
   SUPPORTED_EXTENSIONS,
   MAX_BYTES,
   MAX_CHARS,

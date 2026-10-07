@@ -38,3 +38,9 @@ test('a full global rank list plus legacy fallback copies and reorders all33 mee
  assert.throws(()=>captureCandidates({...settings,microphonePriority:chain}),/priority/);
  assert.throws(()=>captureCandidates({...settings,meetingMicrophonePriority:[...chain,'extra']},'meeting'),/priority/);
 });
+
+test('display labels merge only ranked names without changing capture identity or redacted scans',()=>{
+ const {mergeLabels,validateLabels}=require('../src/shared/microphone-preferences');
+ const settings={microphonePriority:['usb','default'],microphoneId:'legacy',meetingMicrophonePriority:['headset'],microphoneLabels:[{id:'usb',name:'Studio mic'}]};const before=JSON.stringify(settings);
+ assert.deepEqual(mergeLabels(settings,[]),[{id:'usb',name:'Studio mic'}]);assert.deepEqual(mergeLabels(settings,[{id:'usb',name:'Renamed'},{id:'headset',name:'AirPods'},{id:'default',name:'Dynamic'},{id:'unranked',name:'Ignored'}]),[{id:'usb',name:'Renamed'},{id:'headset',name:'AirPods'}]);assert.equal(JSON.stringify(settings),before);assert.deepEqual(captureCandidates(settings),['usb','default']);assert.throws(()=>validateLabels([Object.create({id:'usb',name:'forged'})]),/labels/);
+});

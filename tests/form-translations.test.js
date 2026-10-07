@@ -1,8 +1,8 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const forms=require('../src/shared/form-translations.js');
-test('every original form catalogue covers all 325 labels with matching parameters and plain text',()=>{
-  assert.equal(forms.labels.length,325);assert.equal(new Set(forms.labels).size,325);assert.deepEqual(forms.locales.slice().sort(),['en','bg','cs','de','es','fr','it','ja','ko','pl','pt','ru','sv','tr','uk','vi','zh','zh-TW'].sort());
+test('every original form catalogue covers all 340 labels with matching parameters and plain text',()=>{
+  assert.equal(forms.labels.length,340);assert.equal(new Set(forms.labels).size,340);assert.deepEqual(forms.locales.slice().sort(),['en','bg','cs','de','es','fr','it','ja','ko','pl','pt','ru','sv','tr','uk','vi','zh','zh-TW'].sort());
   const parameters=text=>[...text.matchAll(/\{[^}]+\}/g)].map(x=>x[0]).sort();
   for(const locale of forms.locales){assert.deepEqual(Object.keys(forms.catalogues[locale]),forms.labels);for(const label of forms.labels){const text=forms.translate(locale,label);assert.ok(text.trim(),`${locale}: ${label}`);assert.doesNotMatch(text,/<[^>]*>/);assert.deepEqual(parameters(text),parameters(label));if(label.endsWith('%'))assert.ok(text.endsWith('%'));if(locale==='en')assert.equal(text,label);}}
 });
@@ -28,7 +28,7 @@ test('settings descriptions and hints preserve technical facts and template vari
 });
 test('new prose is present rather than relying on fallback for every locale',()=>{
   const prose=forms.labels.filter(label=>label.length>100);
-  assert.equal(prose.length,16);
+  assert.equal(prose.length,21);
   for(const locale of forms.locales){for(const label of prose){assert.ok(Object.hasOwn(forms.catalogues[locale],label));if(locale!=='en')assert.notEqual(forms.catalogues[locale][label],label);}}
   assert.equal(forms.translate('es','Leave empty to use the selected text or clipboard.'),'Déjalo vacío para usar el texto seleccionado o el portapapeles.');
   assert.equal(forms.translate('ja','Keep a small ready indicator visible.'),'小さな待機インジケーターを表示しておきます。');
@@ -64,3 +64,10 @@ test('experimental silence controls have original eighteen-locale labels and exp
   const keys=['Experimental','Enhanced cloud silence detection','Compare recorded audio with a measured noise baseline before cloud upload. Skip audio classified as silence.','Silence sensitivity','Higher values can skip quiet speech. This applies only to cloud speech; local transcription is unchanged.'];
   for(const locale of forms.locales) for(const key of keys) { assert.ok(Object.hasOwn(forms.catalogues[locale],key)); if(locale!=='en' && !(['es','pt'].includes(locale) && key==='Experimental')) assert.notEqual(forms.translate(locale,key),key); }
 });
+
+test('provider disclosures preserve technical names, parameter shape and local/cloud boundaries in all locales',()=>{
+  const keys=['Choose where speech is transcribed','Local models run on this Mac for free. Choosing a cloud service sends the audio you transcribe to that provider. Its API may charge for usage.','Save speech configuration','Local transcription does not upload audio. Switching back to Local restores that behavior. Cloud file-size and duration limits depend on the provider.','Configure a language model','Save configuration','Test connection','Get Ollama','Download selected model','Ollama serves a local language model for cleanup, commands, summaries, and tones. No API key is needed.','Scribble starts its bundled Ollama runtime when needed. You can use a smaller model on a Mac with limited memory.','What gets sent?','Commands can include text, selected files and screen images you attach. Memory indexing sends reference text or supported PDF files to the configured provider. Scribble does not send audio to a text model or use telemetry.','Connection ready: {result}','Language model is connected.'];
+  assert.equal(keys.length,15); for(const locale of forms.locales)for(const key of keys){assert.ok(Object.hasOwn(forms.catalogues[locale],key)); if(locale!=='en')assert.notEqual(forms.translate(locale,key),key); for(const token of key.match(/Ollama|Scribble|Mac|API|\{result\}/g)||[])assert.ok(forms.translate(locale,key).includes(token));}
+});
+
+test('every provider privacy disclosure explicitly includes PDF uploads',()=>{const key='Commands can include text, selected files and screen images you attach. Memory indexing sends reference text or supported PDF files to the configured provider. Scribble does not send audio to a text model or use telemetry.';for(const locale of forms.locales)assert.match(forms.translate(locale,key),/PDF/);});

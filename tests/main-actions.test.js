@@ -461,6 +461,40 @@ function utilityHarness(t,options={}){
  const h=harness(t,options);h.initializeUtilityWindow({isDestroyed:()=>false,show(){},focus(){},webContents:{send(_channel,payload){h.events.push(payload);}}});
  h.store.updateSettings({aiUtilities:[{id:'grammar',name:'Fix grammar',preset:'grammar',source:'selection',enabled:true},{id:'summary',name:'Summarize clipboard',preset:'summary',source:'clipboard',enabled:true}]});return h;
 }
+test('Commands include every indexed summary, without raw or unfinished Memory content', async t => {
+ const seen=[]; let beginIndex, finishIndex;
+ const indexing = new Promise(resolve => beginIndex=resolve);
+ const h=harness(t,{chat:async(_s,m)=> {
+   if(m[0].content.startsWith('Summarize this memory')) { beginIndex(); return new Promise(resolve=>finishIndex=resolve); }
+   seen.push(m); return 'Command result';
+ }});
+ h.store.data.memory=[
+  {id:'a',name:'Project',status:'indexed',summary:'Cedar owner is Ana.',content:'RAW-SECRET-A'},
+  {id:'b',name:'Unrelated',status:'indexed',summary:'Birch deadline is Friday.',content:'RAW-SECRET-B'},
+  {id:'c',name:'Failed',status:'error',summary:'FAILED-SUMMARY'},
+  {id:'d',name:'Disabled',status:'indexed',enabled:false,summary:'DISABLED-SUMMARY'}
+ ];
+ const pending=h.actions['save-item']({kind:'memory',item:{name:'Pending',content:'Cedar RAW-UNFINISHED',enabled:true}});
+ await indexing;
+ await h.runCommand('Rewrite clearly','Cedar proposal');
+ const system=seen[0][0].content;
+ assert.match(system,/Cedar owner is Ana/); assert.match(system,/Birch deadline is Friday/);
+ for(const forbidden of ['RAW-SECRET','RAW-UNFINISHED','FAILED-SUMMARY','DISABLED-SUMMARY']) assert.equal(system.includes(forbidden),false);
+ h.store.updateSettings({memoryEnabled:false}); await h.runCommand('Rewrite clearly','Cedar proposal');
+ assert.equal(seen[1][0].content.includes('Cedar owner is Ana'),false);
+ h.actions['delete-item']({kind:'memory',id:pending.id}); finishIndex('Cancelled summary');
+ await new Promise(resolve=>setImmediate(resolve));
+});
+test('Utility Memory uses summaries except for the polish enhancer; oversized context refuses a provider call',async t=>{
+ const seen=[]; const h=utilityHarness(t,{chat:async(_s,m)=>{seen.push(m);return 'Result';}});
+ h.store.data.memory=[{id:'a',name:'Reference',status:'indexed',summary:'Project number 731.',content:'RAW-REFERENCE'}];
+ await h.actions['run-ai-utility']({id:'grammar'});
+ assert.match(seen[0][0].content,/Project number 731/); assert.equal(seen[0][0].content.includes('RAW-REFERENCE'),false);
+ h.store.updateSettings({aiUtilities:[{id:'polish',name:'Polish',preset:'polish',source:'selection',enabled:true}]});
+ await h.actions['run-ai-utility']({id:'polish'}); assert.equal(seen[1][0].content.includes('Project number 731'),false);
+ h.store.data.memory[0].summary='x'.repeat(100001);
+ await assert.rejects(h.runCommand('Rewrite clearly','Text'),/context limit/); assert.equal(seen.length,2);
+});
 test('AI utility keeps selected input distinct and inserts only cached reviewed result into captured target',async t=>{
  const seen=[];const h=utilityHarness(t,{chat:async(_s,m)=>{seen.push(m);return 'Revised text.';},nativeRequest:async(command,args)=>command==='captureInsertionTarget'?{token:'target-token',bundleId:'com.apple.TextEdit',pid:123}:command==='selection'?{text:'Original text.'}:command==='paste'?{inserted:true,verified:true}:{}});
  const result=await h.actions['run-ai-utility']({id:'grammar'});assert.equal(result.canInsert,true);assert.equal(seen[0][1].content,'Original text.');assert.equal(h.nativeCalls.filter(c=>c.command==='paste').length,0);
@@ -624,4 +658,10 @@ test("quit immediately tells renderer to release microphone even when helper exi
   assert.ok(messages.some(message => message.event === "recording-control" && message.data.action === "shutdown"));
   await waitUntil(() => messages.some(message => message.event === "notice"));
   assert.deepEqual(h.exits, []);
+});
+
+test('microphone label IPC remembers only ranked display labels without requesting permission or native access',async t=>{
+ const h=harness(t);h.store.updateSettings({microphonePriority:['usb']});const before=h.nativeCalls.length;
+ assert.deepEqual(h.actions['remember-microphone-labels']({labels:[{id:'usb',name:'Studio mic'},{id:'unranked',name:'Other'}]}),[{id:'usb',name:'Studio mic'}]);h.actions['remember-microphone-labels']({labels:[]});assert.equal(h.store.data.settings.microphoneLabels[0].name,'Studio mic');assert.equal(h.nativeCalls.length,before);
+ const saved=fs.readFileSync(h.store.file,'utf8');assert.throws(()=>h.actions['remember-microphone-labels']({labels:[{id:'usb',name:'secret',capabilities:{}}]}),/microphone labels/);assert.equal(fs.readFileSync(h.store.file,'utf8'),saved);
 });

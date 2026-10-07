@@ -378,3 +378,17 @@ test('meeting priority persists all33 copied global-plus-legacy candidates while
  assert.throws(()=>store.updateSettings({microphonePriority:chain}),/priority/);assert.throws(()=>store.updateSettings({meetingMicrophonePriority:[...chain,'extra']}),/priority/);
  assert.deepEqual(store.data.settings.meetingMicrophonePriority,chain);
 });
+
+test('ranked microphone labels survive relaunch and legacy stores migrate without inventing names',t=>{
+ const store=workspace(t);store.updateSettings({microphonePriority:['usb'],meetingMicrophonePriority:['headset'],microphoneLabels:[{id:'usb',name:'Studio microphone'},{id:'headset',name:'AirPods'},{id:'default',name:'Old automatic name'},{id:'unranked',name:'Discard'}]});
+ assert.deepEqual(new Store(store.dir).data.settings.microphoneLabels,[{id:'usb',name:'Studio microphone'},{id:'headset',name:'AirPods'}]);
+ const legacy=JSON.parse(fs.readFileSync(store.file,'utf8'));delete legacy.settings.microphoneLabels;fs.writeFileSync(store.file,JSON.stringify(legacy));assert.deepEqual(new Store(store.dir).data.settings.microphoneLabels,[]);
+});
+test('microphone labels validate atomically and remain only while referenced by either ranking',t=>{
+ const store=workspace(t);store.updateSettings({microphonePriority:['usb'],meetingMicrophonePriority:['usb'],microphoneLabels:[{id:'usb',name:' USB <Mic> '}]});assert.equal(store.data.settings.microphoneLabels[0].name,'USB <Mic>');
+ for(const labels of [null,{},[{id:'usb',name:''}],[{id:'usb',name:'a\nb'}],[{id:'usb',name:'a'.repeat(201)}],[{id:'x'.repeat(513),name:'Mic'}],[{id:'usb',name:'a'},{id:'usb',name:'b'}],[{id:'usb',name:'a',groupId:'private'}],Array.from({length:129},(_,i)=>({id:String(i),name:'Mic'}))]) {
+ const before=fs.readFileSync(store.file,'utf8');assert.throws(()=>store.updateSettings({microphoneLabels:labels}),/microphone labels/);assert.equal(fs.readFileSync(store.file,'utf8'),before);
+ const backup=structuredClone(store.data);backup.settings.microphoneLabels=labels;assert.throws(()=>store.restore(backup),/microphone labels/);assert.equal(fs.readFileSync(store.file,'utf8'),before);
+ }
+ store.updateSettings({microphonePriority:[]});assert.equal(store.data.settings.microphoneLabels.length,1);store.updateSettings({meetingMicrophonePriority:null});assert.deepEqual(store.data.settings.microphoneLabels,[]);
+});

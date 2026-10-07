@@ -1,0 +1,11 @@
+{
+  "provider": "existing local Ollama",
+  "model": "qwen2.5:7b",
+  "fixtureOnly": true,
+  "providerCalls": 1,
+  "summary": "Cedar project owner: Ana\nProject identifier: CED-731\nDeadline: Friday\nBirch project owner: Ben",
+  "answer": "Owner: Ana\nIdentifier: CED-731",
+  "rawReferenceExcluded": true,
+  "identifierPreserved": true,
+  "ownerPreserved": true
+}
