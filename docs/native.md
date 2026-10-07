@@ -47,3 +47,12 @@ Hotkey bindings optionally carry `toneId`, which accompanies their start/stop/ca
 Microphone priority order can be built by refreshing devices, selecting an input and choosing Prefer selected input. Each preferred choice moves to the top. Unavailable devices fall through in order, then to the configured single input and system default. Permission/security errors stop the attempt rather than trying other inputs. Cancelling during a pending request prevents fallback acquisition. Hardware disconnect/reconnect behavior still requires desktop verification.
 
 Physical shortcut capture uses hotkeyCaptureStart/Stop and hotkey-captured events. Settings → Shortcuts → Capture binding accepts a key, modifier-only chord or auxiliary mouse button; Escape cancels, and30 seconds without completion ends capture. Normal shortcuts and expansions pause during capture. Accessibility is required; no permission request is made implicitly. Physical runtime capture remains unverified.
+
+
+### Architecture verification
+
+Native build scripts accept `SCRIBBLE_NATIVE_ARCH=arm64` or `x64` (`x86_64` is an alias), reject other values and verify their output with `lipo`. Source paths are anchored to the repository. `SCRIBBLE_NATIVE_OUTPUT` and `SCRIBBLE_SHARE_OUTPUT` select separate output locations; the latter must end in `.appex`. `SCRIBBLE_BUILD_DRY_RUN=1` prints the compiler plan without producing a binary. These overrides affect helpers, not the speech/media runtime or Electron package target.
+
+The packaging `afterPack` hook verifies the Electron executable, bridge, Whisper, FFmpeg, Ollama and Share extension against the requested architecture and refuses a mismatched package. This is a bounded architecture check, not a complete dynamic-library dependency audit or runtime acceptance test. Optional Parakeet helpers remain Apple Silicon only.
+
+Both helper architectures compiled into isolated temporary outputs on October 7, 2026; both Share extensions passed strict signature verification. The existing ARM app passed the six-entry-point architecture check. Runtime preparation currently builds Whisper and FFmpeg for the host architecture; a complete Intel build requires matching Intel preparation and desktop verification. An Intel Electron target alone, or cross-compiling just the helpers, does not establish Intel product support.

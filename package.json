@@ -142,7 +142,8 @@
         "from": "release/native/ScribbleShare.appex",
         "to": "PlugIns/ScribbleShare.appex"
       }
-    ]
+    ],
+    "afterPack": "scripts/verify-package-architecture.cjs"
   },
   "bin": {
     "scribble": "scripts/scribble.cjs"

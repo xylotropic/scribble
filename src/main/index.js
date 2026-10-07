@@ -1048,6 +1048,16 @@ const actions = {
           checked: t.id === selected,
           click: () => actions["select-tone"]({ id: t.id }),
         })),
+      { type: "separator" },
+      {
+        label: interfaceText("nav.tones"),
+        click: async () => {
+          show();
+          if (window.webContents.isLoading?.())
+            await new Promise((resolve) => window.webContents.once("did-finish-load", resolve));
+          emit("navigate", { page: "tones" });
+        },
+      },
     ]).popup({ window: overlay });
     return true;
   },

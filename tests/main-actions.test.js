@@ -16,7 +16,7 @@ function harness(t, { chat, transcribe, summaryCLI, shell, chromeLauncher, spawn
     events = [],
     nativeCalls = [], menus = [], trayState = {}, appEvents = {}, exits = [];
   const electron = {
-    Menu: { buildFromTemplate(template) { return template; }, setApplicationMenu(menu) { menus.push(menu); } },
+    Menu: { buildFromTemplate(template) { template.popup = () => menus.push(template); return template; }, setApplicationMenu(menu) { menus.push(menu); } },
     app: {
       setName() {},
       requestSingleInstanceLock: () => true,
@@ -486,3 +486,5 @@ test('refused utility insertion retains review text and removes the consumed ins
  const h=utilityHarness(t,{nativeRequest:async command=>command==='captureInsertionTarget'?{token:'single-use',bundleId:'com.apple.TextEdit'}:command==='selection'?{text:'Original.'}:command==='paste'?{inserted:false,dispatched:false,reason:'The original field changed'}:{}});
  const result=await h.actions['run-ai-utility']({id:'grammar'});await assert.rejects(h.actions['paste-ai-utility']({id:result.id}),/field changed/);const review=h.events.findLast(e=>e.event==='utility-result').data;assert.equal(review.text,result.text);assert.equal(review.canInsert,false);await assert.rejects(h.actions['paste-ai-utility']({id:result.id}),/copy/);assert.equal(h.nativeCalls.filter(c=>c.command==='paste').length,1);
 });
+
+ test('overlay tone menu opens localized tone management and preserves enabled choices',async t=>{const h=harness(t),sent=[];let shown=0,focused=0;h.store.data.settings.locale='ja';h.store.data.tones=[{id:'on',name:'Enabled',enabled:true},{id:'off',name:'Disabled',enabled:false}];h.initializeUtilityWindow({isDestroyed:()=>false,show(){shown++;},focus(){focused++;},webContents:{isLoading:()=>false,send(_channel,payload){sent.push(payload);}}});assert.equal(h.actions['show-tone-menu'](),true);const menu=h.menus.at(-1);assert.equal(menu.some(item=>item.label==='Disabled'),false);assert.equal(menu[1].label,'Enabled');const manage=menu.at(-1);assert.equal(manage.label,localRequire('../shared/i18n').t('ja','nav.tones'));await manage.click();assert.equal(shown,1);assert.equal(focused,1);assert.equal(sent.at(-1).event,'navigate');assert.equal(sent.at(-1).data.page,'tones');assert.equal(h.store.data.settings.pinnedToneId,'');});

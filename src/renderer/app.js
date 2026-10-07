@@ -653,7 +653,7 @@ function renderAI() {
 const utilityPresets = [["grammar", "Fix grammar"], ["professional", "Professional"], ["polish", "Polish"], ["summary", "Summary"], ["bullets", "Bullet points"], ["email", "Email"]];
 function utilityBinding(id) { return (state.settings.hotkeys || []).find(h => h.mode === "utility" && h.utilityId === id); }
 function renderAIUtilities() {
-  return `<div class="card"><div class="row between"><h2>AI utilities</h2>${button("Add utility", "add-ai-utility", "plus")}</div><p class="muted">Transform selected text or clipboard text with your configured language model. Cloud providers receive this text and may charge for usage. Results stay available for review before insertion. An empty selection is never replaced with clipboard text.</p>${(state.settings.aiUtilities || []).map(u => `<div class="list-row"><div class="body"><strong>${esc(u.name)}</strong><p>${esc(utilityPresets.find(p => p[0] === u.preset)?.[1] || u.preset)} · ${u.source === "clipboard" ? "Clipboard" : "Selected text"}${utilityBinding(u.id) ? " · " + esc(utilityBinding(u.id).modifiers.join(" + ")) + " + " + esc(utilityBinding(u.id).keyCode) : " · No shortcut"}</p></div>${button(u.enabled !== false ? "Disable" : "Enable", "toggle-ai-utility", "", "small", `data-id="${esc(u.id)}"`)}${utilityBusy.has(u.id) ? button("Cancel", "cancel-ai-utility", "close", "small", `data-id="${esc(u.id)}"`) : button("Run", "run-ai-utility", "play", "small", `data-id="${esc(u.id)}" ${u.enabled === false ? "disabled" : ""}`)}${button("Edit", "edit-ai-utility", "edit", "small", `data-id="${esc(u.id)}"`)}${button("Delete", "delete-ai-utility", "trash", "small danger", `data-id="${esc(u.id)}"`)}</div>`).join("") || '<p class="muted">Add a utility to turn a keyboard shortcut into a text transformation.</p>'}${utilityResult ? `<div class="command-panel"><h3>${esc(utilityResult.name)}</h3><div class="command-result" id="utility-result" tabindex="0">${esc(utilityResult.text)}</div><div class="row">${button("Copy", "copy-ai-utility", "copy")}${utilityResult.canInsert ? button("Insert", "paste-ai-utility", "arrow", "primary") : ""}${button("Dismiss", "dismiss-ai-utility", "close")}</div><p class="smallprint">${utilityResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."}</p></div>` : ""}</div>`;
+  return `<div class="card"><div class="row between"><h2>${esc(interfaceLabel("AI utilities"))}</h2>${button("Add utility", "add-ai-utility", "plus")}</div><p class="muted">${esc(interfaceLabel("Transform selected text or clipboard text with your configured language model. Cloud providers receive this text and may charge for usage. Results stay available for review before insertion. An empty selection is never replaced with clipboard text."))}</p>${(state.settings.aiUtilities || []).map(u => `<div class="list-row"><div class="body"><strong>${esc(u.name)}</strong><p>${esc(interfaceLabel(utilityPresets.find(p => p[0] === u.preset)?.[1] || u.preset))} · ${esc(interfaceLabel(u.source === "clipboard" ? "Clipboard" : "Selected text"))}${utilityBinding(u.id) ? " · " + esc(utilityBinding(u.id).modifiers.join(" + ")) + " + " + esc(utilityBinding(u.id).keyCode) : " · " + esc(interfaceLabel("No shortcut"))}</p></div>${button(u.enabled !== false ? "Disable" : "Enable", "toggle-ai-utility", "", "small", `data-id="${esc(u.id)}"`)}${utilityBusy.has(u.id) ? button("Cancel", "cancel-ai-utility", "close", "small", `data-id="${esc(u.id)}"`) : button("Run", "run-ai-utility", "play", "small", `data-id="${esc(u.id)}" ${u.enabled === false ? "disabled" : ""}`)}${button("Edit", "edit-ai-utility", "edit", "small", `data-id="${esc(u.id)}"`)}${button("Delete", "delete-ai-utility", "trash", "small danger", `data-id="${esc(u.id)}"`)}</div>`).join("") || `<p class="muted">${esc(interfaceLabel("Add a utility to turn a keyboard shortcut into a text transformation."))}</p>`}${utilityResult ? `<div class="command-panel"><h3>${esc(utilityResult.name)}</h3><div class="command-result" id="utility-result" tabindex="0">${esc(utilityResult.text)}</div><div class="row">${button("Copy", "copy-ai-utility", "copy")}${utilityResult.canInsert ? button("Insert", "paste-ai-utility", "arrow", "primary") : ""}${button("Dismiss", "dismiss-ai-utility", "close")}</div><p class="smallprint">${esc(interfaceLabel(utilityResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."))}</p></div>` : ""}</div>`;
 }
 async function insertAIUtility() {
   const result = utilityResult;
@@ -662,20 +662,23 @@ async function insertAIUtility() {
   // A later result may arrive while insertion is pending. Keep that new review.
   if (utilityResult === result) { utilityResult = null; render(); }
 }
+function workflowText(text, params = {}) {
+  return interfaceLabel(text).replace(/\{([a-zA-Z]+)\}/g, (token, key) => Object.prototype.hasOwnProperty.call(params, key) ? String(params[key]) : token);
+}
 function editAIUtility(id) {
   const item = (state.settings.aiUtilities || []).find(u => u.id === id) || {id: crypto.randomUUID(), name: "", preset: "grammar", source: "selection", enabled: true};
   const binding = utilityBinding(item.id);
   const title = id ? "Edit AI utility" : "Add AI utility";
   const presetLabel = "Transformation", sourceLabel = "Text source";
-  showModal(title, field("name", "Name", item.name) + select("preset", presetLabel, utilityPresets, item.preset) + select("source", sourceLabel, [["selection", "Selected text"], ["clipboard", "Clipboard"]], item.source) + `<label class="field"><input type="checkbox" name="enabled" ${item.enabled !== false ? "checked" : ""}> Enabled</label>` + `<label class="field">Keyboard shortcut (optional)<input type="checkbox" name="bindShortcut" ${binding ? "checked" : ""}> Enable this binding</label><div class="row">${button("Capture binding", "capture-hotkey", "keyboard")}<span id="capture-hotkey-status" role="status">Use a regular key with at least one modifier.</span></div><label class="field">Modifiers (comma-separated)<input name="modifiers" value="${esc(binding?.modifiers.join(", ") || "option, command")}"></label><label class="field">macOS key code<input type="number" name="keyCode" min="0" max="127" value="${binding?.keyCode ?? 5}"></label><p class="tip">G=5, L=37, N=45. Modifier-only and mouse bindings are unavailable for AI utilities.</p>`, async v => {
+  showModal(title, field("name", "Name", item.name) + select("preset", presetLabel, utilityPresets.map(([id,label]) => [id,interfaceLabel(label)]), item.preset) + select("source", sourceLabel, [["selection", interfaceLabel("Selected text")], ["clipboard", interfaceLabel("Clipboard")]], item.source) + `<label class="field"><input type="checkbox" name="enabled" ${item.enabled !== false ? "checked" : ""}> ${esc(interfaceLabel("Enabled"))}</label>` + `<label class="field">${esc(interfaceLabel("Keyboard shortcut (optional)"))}<input type="checkbox" name="bindShortcut" ${binding ? "checked" : ""}> ${esc(interfaceLabel("Enable this binding"))}</label><div class="row">${button("Capture binding", "capture-hotkey", "keyboard")}<span id="capture-hotkey-status" role="status">${esc(interfaceLabel("Use a regular key with at least one modifier."))}</span></div><label class="field">${esc(interfaceLabel("Modifiers (comma-separated)"))}<input name="modifiers" value="${esc(binding?.modifiers.join(", ") || "option, command")}"></label><label class="field">${esc(interfaceLabel("macOS key code"))}<input type="number" name="keyCode" min="0" max="127" value="${binding?.keyCode ?? 5}"></label><p class="tip">${esc(interfaceLabel("G=5, L=37, N=45. Modifier-only and mouse bindings are unavailable for AI utilities."))}</p>`, async v => {
     const name = v.name.trim();
-    if (!name || name.length > 200) throw new Error("Enter a utility name of at most 200 characters.");
+    if (!name || name.length > 200) throw new Error(interfaceLabel("Enter a utility name of at most 200 characters."));
     const hotkeys = (state.settings.hotkeys || []).filter(h => !(h.mode === "utility" && h.utilityId === item.id));
     if (v.bindShortcut) {
       const modifiers = v.modifiers.split(",").map(x => x.trim()).filter(Boolean), keyCode = Number(v.keyCode);
       const allowed = ["option", "command", "control", "shift", "fn", "left-option", "right-option", "left-command", "right-command", "left-control", "right-control", "left-shift", "right-shift"];
-      if (!modifiers.length || modifiers.some(m => !allowed.includes(m)) || !Number.isInteger(keyCode) || keyCode < 0 || keyCode > 127 || [54,55,56,57,58,59,60,61,62,63].includes(keyCode)) throw new Error("Choose a regular keyboard key and at least one valid modifier.");
-      if (hotkeys.some(h => h.keyCode === keyCode && [...h.modifiers].sort().join(",") === [...modifiers].sort().join(","))) throw new Error("This shortcut is already assigned. Choose another binding.");
+      if (!modifiers.length || modifiers.some(m => !allowed.includes(m)) || !Number.isInteger(keyCode) || keyCode < 0 || keyCode > 127 || [54,55,56,57,58,59,60,61,62,63].includes(keyCode)) throw new Error(interfaceLabel("Choose a regular keyboard key and at least one valid modifier."));
+      if (hotkeys.some(h => h.keyCode === keyCode && [...h.modifiers].sort().join(",") === [...modifiers].sort().join(","))) throw new Error(interfaceLabel("This shortcut is already assigned. Choose another binding."));
       hotkeys.push({mode: "utility", utilityId: item.id, keyCode, modifiers, toggle: true});
     }
     const aiUtilities = [...(state.settings.aiUtilities || [])];
@@ -891,14 +894,14 @@ function shortcutDrafts(item) {
   return actions.map(action => ({type:action.type, urlsText:(action.urls || []).join("\n"), browser:action.browser || "chrome", profile:action.profile || "", name:action.name || "", folder:action.folder || "", pathsText:(action.paths || []).join("\n")}));
 }
 function shortcutBrowserOptions(selected = "chrome") {
-  const options = [["default","System default browser"],...shortcutBrowserCatalogue.map(browser=>[browser.id,browser.name])];
-  if (!options.some(([id])=>id === selected)) options.push([selected,(selected === "chrome" ? "Google Chrome" : selected) + (shortcutBrowserLoading ? " (loading…)" : " (unavailable)")]);
+  const options = [["default",interfaceLabel("System default browser")],...shortcutBrowserCatalogue.map(browser=>[browser.id,browser.name])];
+  if (!options.some(([id])=>id === selected)) options.push([selected,(selected === "chrome" ? "Google Chrome" : selected) + " (" + interfaceLabel(shortcutBrowserLoading ? "loading…" : "unavailable") + ")"]);
   return options;
 }
 function shortcutProfileOptions(browser,selected = "") {
   const profiles = shortcutBrowserCatalogue.find(entry=>entry.id === browser)?.profiles || [];
-  const options = [["","Browser default profile"],...profiles.map(profile=>[profile.id,profile.name])];
-  if (selected && !options.some(([id])=>id === selected)) options.push([selected,selected + (shortcutBrowserLoading ? " (loading…)" : " (unavailable)")]);
+  const options = [["",interfaceLabel("Browser default profile")],...profiles.map(profile=>[profile.id,profile.name])];
+  if (selected && !options.some(([id])=>id === selected)) options.push([selected,selected + " (" + interfaceLabel(shortcutBrowserLoading ? "loading…" : "unavailable") + ")"]);
   return options;
 }
 function shortcutOptionsHTML(options,selected) {
@@ -906,7 +909,7 @@ function shortcutOptionsHTML(options,selected) {
 }
 function shortcutBrowserControls(action) {
   const browser = action.browser || "chrome", profile = action.profile || "", profiles = shortcutProfileOptions(browser,profile);
-  return `<label class="field">Browser<select data-shortcut-field="browser">${shortcutOptionsHTML(shortcutBrowserOptions(browser),browser)}</select></label><label class="field">Browser profile<select data-shortcut-field="profile" ${profiles.length === 1 ? "disabled" : ""}>${shortcutOptionsHTML(profiles,profile)}</select></label>`;
+  return `<label class="field">${esc(interfaceLabel("Browser"))}<select data-shortcut-field="browser">${shortcutOptionsHTML(shortcutBrowserOptions(browser),browser)}</select></label><label class="field">${esc(interfaceLabel("Browser profile"))}<select data-shortcut-field="profile" ${profiles.length === 1 ? "disabled" : ""}>${shortcutOptionsHTML(profiles,profile)}</select></label>`;
 }
 function refreshShortcutBrowserMenus() {
   for (const block of $$('#shortcut-actions [data-shortcut-type="websites"]')) {
@@ -920,25 +923,25 @@ function refreshShortcutBrowserMenus() {
 async function discoverShortcutBrowsers() {
   const container = $("#shortcut-actions"), generation = ++shortcutBrowserGeneration;
   shortcutBrowserLoading = true; refreshShortcutBrowserMenus();
-  const status = $("#shortcut-browser-status"); status.textContent = "Finding installed browsers and profiles…";
+  const status = $("#shortcut-browser-status"); status.textContent = interfaceLabel("Finding installed browsers and profiles…");
   const current = () => generation === shortcutBrowserGeneration && $("#modal").open && $("#shortcut-actions") === container;
   try {
     const catalogue = await api.request("browser-catalog");
     if (!current()) return;
-    if (!Array.isArray(catalogue)) throw Error("Browser discovery did not return a list.");
+    if (!Array.isArray(catalogue)) throw Error(interfaceLabel("Browser discovery did not return a list."));
     shortcutBrowserCatalogue = catalogue.filter(browser=>browser && typeof browser.id === "string" && browser.id !== "default" && typeof browser.name === "string").map(browser=>({id:browser.id,name:browser.name,family:browser.family,profiles:Array.isArray(browser.profiles)?browser.profiles.filter(profile=>profile && typeof profile.id === "string" && typeof profile.name === "string"):[]}));
     shortcutBrowserLoading = false; refreshShortcutBrowserMenus();
-    status.textContent = shortcutBrowserCatalogue.length ? "Choose an installed browser and, when available, a profile." : "No supported browsers found. Saved unavailable choices are retained.";
+    status.textContent = shortcutBrowserCatalogue.length ? interfaceLabel("Choose an installed browser and, when available, a profile.") : interfaceLabel("No supported browsers found. Saved unavailable choices are retained.");
   } catch(error) {
     if (!current()) return;
     shortcutBrowserLoading = false; refreshShortcutBrowserMenus();
-    status.textContent = "Browser discovery unavailable: " + (error.message || "Unknown error");
+    status.textContent = workflowText("Browser discovery unavailable: {error}", {error:error.message || interfaceLabel("Unknown error")});
   }
 }
 function shortcutActionHTML(actions) {
   const titles = {websites:"Open websites", application:"Open an application", folders:"Open folders"};
-  const input = (key,label,value,hint="",multiline=false) => `<label class="field">${esc(interfaceLabel(label))}${multiline ? `<textarea data-shortcut-field="${key}">${esc(value)}</textarea>` : `<input data-shortcut-field="${key}" value="${esc(value)}">`}${hint ? `<small>${esc(hint)}</small>` : ""}</label>`;
-  return actions.map((action,index) => `<section class="card" data-shortcut-action="${index}" data-shortcut-type="${esc(action.type)}" aria-label="Action ${index + 1}"><div class="row between"><h3>${index + 1}. ${esc(interfaceLabel(titles[action.type] || "Unsupported action"))}</h3><div class="row">${button("↑","shortcut-action-up","","small",`data-index="${index}" aria-label="Move action ${index + 1} up" ${index === 0 ? "disabled" : ""}`)}${button("↓","shortcut-action-down","","small",`data-index="${index}" aria-label="Move action ${index + 1} down" ${index === actions.length - 1 ? "disabled" : ""}`)}${button("Remove","shortcut-action-remove","close","small",`data-index="${index}" aria-label="Remove action ${index + 1}"`)}</div></div>${action.type === "websites" ? input("urlsText","Websites, one per line",action.urlsText,"Up to 16 websites. Use {{text}} to insert the spoken query.",true) + shortcutBrowserControls(action) : action.type === "application" ? input("name","Application name",action.name) + input("folder","Open a folder with this application (optional)",action.folder,"Use an absolute folder path or ~/ for your home folder.") : action.type === "folders" ? input("pathsText","Folders, one per line",action.pathsText,"Up to 16 absolute folder paths or ~/ paths.",true) : '<p>Remove this unsupported action before saving.</p>'}</section>`).join("");
+  const input = (key,label,value,hint="",multiline=false) => `<label class="field">${esc(interfaceLabel(label))}${multiline ? `<textarea data-shortcut-field="${key}">${esc(value)}</textarea>` : `<input data-shortcut-field="${key}" value="${esc(value)}">`}${hint ? `<small>${esc(interfaceLabel(hint))}</small>` : ""}</label>`;
+  return actions.map((action,index) => `<section class="card" data-shortcut-action="${index}" data-shortcut-type="${esc(action.type)}" aria-label="${esc(workflowText("Action {number}",{number:index+1}))}"><div class="row between"><h3>${index + 1}. ${esc(interfaceLabel(titles[action.type] || "Unsupported action"))}</h3><div class="row">${button("↑","shortcut-action-up","","small",`data-index="${index}" aria-label="${esc(workflowText("Move action {number} up",{number:index+1}))}" ${index === 0 ? "disabled" : ""}`)}${button("↓","shortcut-action-down","","small",`data-index="${index}" aria-label="${esc(workflowText("Move action {number} down",{number:index+1}))}" ${index === actions.length - 1 ? "disabled" : ""}`)}${button("Remove","shortcut-action-remove","close","small",`data-index="${index}" aria-label="${esc(workflowText("Remove action {number}",{number:index+1}))}"`)}</div></div>${action.type === "websites" ? input("urlsText","Websites, one per line",action.urlsText,"Up to 16 websites. Use {{text}} to insert the spoken query.",true) + shortcutBrowserControls(action) : action.type === "application" ? input("name","Application name",action.name) + input("folder","Open a folder with this application (optional)",action.folder,"Use an absolute folder path or ~/ for your home folder.") : action.type === "folders" ? input("pathsText","Folders, one per line",action.pathsText,"Up to 16 absolute folder paths or ~/ paths.",true) : `<p>${esc(interfaceLabel("Remove unsupported actions before saving."))}</p>`}</section>`).join("");
 }
 function readShortcutDrafts() {
   return $$("#shortcut-actions [data-shortcut-action]").map(block => {
@@ -949,7 +952,7 @@ function readShortcutDrafts() {
 }
 function updateShortcutActionControls(actions) {
   $("#shortcut-actions").innerHTML = shortcutActionHTML(actions);
-  $("#shortcut-action-count").textContent = `${actions.length} / 32 actions`;
+  $("#shortcut-action-count").textContent = workflowText("{count} / 32 actions",{count:actions.length});
   $$('#modal [data-action="shortcut-action-add"]').forEach(button => { button.disabled = actions.length >= 32; });
 }
 function editShortcutAction(button,action) {
@@ -957,7 +960,7 @@ function editShortcutAction(button,action) {
   const drafts = readShortcutDrafts();
   let focusIndex = Number(button.dataset.index);
   if (action === "shortcut-action-add") {
-    if (drafts.length >= 32) throw Error("A shortcut can contain up to 32 actions.");
+    if (drafts.length >= 32) throw Error(interfaceLabel("Add between 1 and 32 actions to this shortcut."));
     if (!["websites","application","folders"].includes(button.dataset.actionType)) return;
     drafts.push({type:button.dataset.actionType,urlsText:"",browser:"chrome",profile:"",name:"",folder:"",pathsText:""});
     focusIndex = drafts.length - 1;
@@ -977,27 +980,27 @@ function editShortcutAction(button,action) {
 }
 function shortcutActionsForSave() {
   const drafts = readShortcutDrafts();
-  if (!drafts.length || drafts.length > 32) throw Error("Add between 1 and 32 actions to this shortcut.");
+  if (!drafts.length || drafts.length > 32) throw Error(interfaceLabel("Add between 1 and 32 actions to this shortcut."));
   const list = (value,label) => {
     const entries = (value || "").split(/\r?\n/).map(value=>value.trim()).filter(Boolean);
-    if (!entries.length || entries.length > 16) throw Error(`${label} must contain between 1 and 16 entries.`);
+    if (!entries.length || entries.length > 16) throw Error(workflowText("{label} must contain between 1 and 16 entries.",{label:interfaceLabel(label === "Websites" ? "Websites, one per line" : "Folders, one per line")}));
     return entries;
   };
   return drafts.map(draft => {
     if (draft.type === "websites") {
       const profile = draft.profile.trim();
       const browser = draft.browser || "chrome";
-      if (!/^[a-zA-Z0-9._-]{1,100}$/.test(browser) || profile && (!/^[a-zA-Z0-9._ -]{1,200}$/.test(profile) || [".",".."].includes(profile))) throw Error("Choose a valid browser and browser profile.");
+      if (!/^[a-zA-Z0-9._-]{1,100}$/.test(browser) || profile && (!/^[a-zA-Z0-9._ -]{1,200}$/.test(profile) || [".",".."].includes(profile))) throw Error(interfaceLabel("Choose a valid browser and browser profile."));
       return {type:"websites",urls:list(draft.urlsText,"Websites"),browser,profile};
     }
     if (draft.type === "folders") return {type:"folders",paths:list(draft.pathsText,"Folders")};
     if (draft.type === "application") {
       const name = draft.name.trim(), folder = draft.folder.trim();
-      if (!name) throw Error("Enter an application name.");
-      if (folder && !folder.startsWith("/") && !folder.startsWith("~/") && folder !== "~") throw Error("Use an absolute folder path or ~/ for the application folder.");
+      if (!name) throw Error(interfaceLabel("Enter an application name."));
+      if (folder && !folder.startsWith("/") && !folder.startsWith("~/") && folder !== "~") throw Error(interfaceLabel("Use an absolute folder path or ~/ for your home folder."));
       return {type:"application",name,folder};
     }
-    throw Error("Remove unsupported actions before saving.");
+    throw Error(interfaceLabel("Remove unsupported actions before saving."));
   });
 }
 function shortcutDescription(shortcut) {
@@ -1056,7 +1059,7 @@ function editItem(kind, id) {
           "",
         )}</div><div id="rich-editor" class="editor" contenteditable="true" role="textbox" aria-label="Replacement text"></div><small>Formatting is included when inserting through the clipboard. AI cleanup returns plain text. Variables: {date}, {time}, {clipboard}, {selection}.</small></label>`;
   if (kind === "shortcuts")
-    html = field("name", "Name", item.name) + field("trigger", "Trigger phrase", item.trigger) + `<label class="field">Aliases (comma-separated)<input name="aliases" value="${esc(Array.isArray(item.aliases) ? item.aliases.join(", ") : item.aliases || "")}"></label><h3>Actions</h3><p class="tip">Actions run in the numbered order. Choose where each website action opens.</p><div class="row wrap">${button("Add websites","shortcut-action-add","plus","small",'data-action-type="websites"')}${button("Add application","shortcut-action-add","plus","small",'data-action-type="application"')}${button("Add folders","shortcut-action-add","plus","small",'data-action-type="folders"')}</div><p id="shortcut-action-count" class="smallprint" role="status"></p><p id="shortcut-browser-status" class="smallprint" role="status"></p><div id="shortcut-actions" class="stack"></div>`;
+    html = field("name", "Name", item.name) + field("trigger", "Trigger phrase", item.trigger) + `<label class="field">${esc(interfaceLabel("Aliases (comma-separated)"))}<input name="aliases" value="${esc(Array.isArray(item.aliases) ? item.aliases.join(", ") : item.aliases || "")}"></label><h3>${esc(interfaceLabel("Actions"))}</h3><p class="tip">${esc(interfaceLabel("Actions run in the numbered order. Choose where each website action opens."))}</p><div class="row wrap">${button("Add websites","shortcut-action-add","plus","small",'data-action-type="websites"')}${button("Add application","shortcut-action-add","plus","small",'data-action-type="application"')}${button("Add folders","shortcut-action-add","plus","small",'data-action-type="folders"')}</div><p id="shortcut-action-count" class="smallprint" role="status"></p><p id="shortcut-browser-status" class="smallprint" role="status"></p><div id="shortcut-actions" class="stack"></div>`;
   if (kind === "tones")
     html =
       field("name", "Tone name", item.name) +
@@ -1100,7 +1103,7 @@ function editItem(kind, id) {
           )) +
       check("enabled", "Include in commands", item.enabled !== false);
   showModal(
-    (id ? "Edit " : "Add ") +
+    kind === "shortcuts" ? (id ? "Edit shortcut" : "Add shortcut") : (id ? "Edit " : "Add ") +
       {
         dictionary: "word",
         threads: "thread",
@@ -1185,7 +1188,7 @@ function editHotkey(index) {
         ],
         h.toggle ? "toggle" : "hold",
       ) +
-      `<div class="row">${button("Capture binding", "capture-hotkey", "keyboard")}<span id="capture-hotkey-status" role="status">Press a key, modifier chord or auxiliary mouse button.</span></div>` +
+      `<div class="row">${button("Capture binding", "capture-hotkey", "keyboard")}<span id="capture-hotkey-status" role="status">${esc(interfaceLabel("Press a key, modifier chord or auxiliary mouse button."))}</span></div>` +
       field(
         "modifiers",
         "Modifiers (comma-separated)",
@@ -1579,7 +1582,7 @@ document.addEventListener("click", async (e) => {
     if (a === "capture-hotkey") {
       await stopHotkeyCapture();
       hotkeyCaptureActive = true;
-      try { await request("capture-hotkey-start"); if (hotkeyCaptureActive && $("#capture-hotkey-status")) $("#capture-hotkey-status").textContent = "Listening for a binding… Escape cancels. Capture expires after 30 seconds."; } catch (error) { hotkeyCaptureActive = false; throw error; }
+      try { await request("capture-hotkey-start"); if (hotkeyCaptureActive && $("#capture-hotkey-status")) $("#capture-hotkey-status").textContent = interfaceLabel("Listening for a binding… Escape cancels. Capture expires after 30 seconds."); } catch (error) { hotkeyCaptureActive = false; throw error; }
       return;
     }
     if (a === "close-modal") {
@@ -2364,7 +2367,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (page === "ai" && utilityResult && !$("#modal").open) {
     if (e.key === "Escape") { request("dismiss-ai-utility", {id: utilityResult.id}).catch(() => {}); utilityResult = null; render(); e.preventDefault(); return; }
-    if (utilityResult.canInsert && e.key === "Tab" && !e.shiftKey && e.target.id === "utility-result") { e.preventDefault(); insertAIUtility().catch(error => toast(error.message || "Unable to insert result")); return; }
+    if (utilityResult.canInsert && e.key === "Tab" && !e.shiftKey && e.target.id === "utility-result") { e.preventDefault(); insertAIUtility().catch(error => toast(error.message || interfaceLabel("Unable to insert result"))); return; }
   }
   if (page === "command" && commandResult && e.key === "Escape") {
     commandResult = null;
@@ -2396,12 +2399,12 @@ api.on(({ event, data }) => {
       form.elements.modifiers.value = (data.modifiers || []).join(", ");
       if (form.elements.mouseButton) form.elements.mouseButton.value = data.keyCode >= 130 ? String(data.keyCode) : "";
       if (form.elements.bindShortcut) form.elements.bindShortcut.checked = true;
-      $("#capture-hotkey-status").textContent = "Captured: " + (data.modifiers || []).join(" + ") + (data.keyCode < 0 ? "" : " + " + (data.label || data.keyCode));
+      $("#capture-hotkey-status").textContent = workflowText("Captured: {binding}", {binding:(data.modifiers || []).join(" + ") + (data.keyCode < 0 ? "" : " + " + (data.label || data.keyCode))});
     }
   }
   if (["hotkey-capture-cancelled", "hotkey-capture-ended"].includes(event) && hotkeyCaptureActive) {
     hotkeyCaptureActive = false;
-    const label = $("#capture-hotkey-status"); if (label) label.textContent = data.reason === "timeout" ? "Capture expired. Try again." : "Capture cancelled.";
+    const label = $("#capture-hotkey-status"); if (label) label.textContent = data.reason === "timeout" ? interfaceLabel("Capture expired. Try again.") : interfaceLabel("Capture cancelled.");
   }
   if (event === "open-files") {
     page = "transcribe";
