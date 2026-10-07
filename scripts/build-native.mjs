@@ -19,3 +19,10 @@ const result = spawnSync('xcrun', args, { stdio: 'inherit' });
 if (result.status !== 0) process.exit(result.status ?? 1);
 const inspection = spawnSync('/usr/bin/lipo', ['-archs', output], { encoding: 'utf8' });
 if (inspection.status !== 0 || inspection.stdout.trim() !== targetArch) throw new Error(`Built bridge architecture mismatch: expected ${targetArch}, received ${inspection.stdout?.trim() || 'unreadable Mach-O'}`);
+
+const codecOutput = resolve(process.env.SCRIBBLE_IMAGE_CODEC_OUTPUT || resolve(dirname(output), 'scribble-image-codec'));
+mkdirSync(dirname(codecOutput), { recursive: true });
+const codec = spawnSync('xcrun', ['swiftc', '-O', '-sdk', sdk, '-target', `${targetArch}-apple-macos13.0`, resolve(root, 'native/ImageCodec.swift'), '-o', codecOutput, '-framework', 'ImageIO', '-framework', 'CoreGraphics'], { stdio: 'inherit' });
+if (codec.status !== 0) process.exit(codec.status ?? 1);
+const codecArch = spawnSync('/usr/bin/lipo', ['-archs', codecOutput], { encoding: 'utf8' });
+if (codecArch.status !== 0 || codecArch.stdout.trim() !== targetArch) throw new Error('Image codec architecture mismatch');

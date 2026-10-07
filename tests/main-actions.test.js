@@ -677,7 +677,7 @@ test('microphone label IPC remembers only ranked display labels without requesti
  });
  test('changed Finder inputs refuse processing instead of silently choosing other files',async t=>{
   let h, processed=0;
-  h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'one.txt')]}:{},dialog:{showSaveDialog:async()=>{fs.writeFileSync(path.join(h.directory,'one.txt'),'changed bytes');return{filePath:path.join(h.directory,'out.md')};}},utilities:{performUtility:async()=>{processed++;}}});
+  h=harness(t,{nativeRequest:async command=>{if(command==='captureCommandContext')return {available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'one.txt')]};if(command==='captureInsertionTarget')fs.writeFileSync(path.join(h.directory,'one.txt'),'changed bytes');return {};},dialog:{showSaveDialog:async()=>{throw Error('unexpected destination picker');}},utilities:{performUtility:async()=>{processed++;}}});
   fs.writeFileSync(path.join(h.directory,'one.txt'),'original');
   await assert.rejects(h.actions.command({text:'convert this text to markdown'}),/changed after command activation/);assert.equal(processed,0);
  });
@@ -850,4 +850,19 @@ test('unavailable active app stays unknown and incompatible speech language is n
  let prompt;const h=harness(t,{models:[{id:'base.en',englishOnly:true}],chat:async(_s,m)=>{prompt=m[0].content;return 'result';},nativeRequest:async()=>({})});
  h.store.data.settings.language='ja';await h.actions.command({text:'draft a response'});
  assert.match(prompt,/"activeApp":null/);assert.match(prompt,/"transcriptionLanguage":"auto"/);assert.equal(h.store.data.settings.language,'ja');
+});
+test('selected file transformations process all inputs in Finder order beside originals without pickers',async(t)=>{
+ let h;const observed=[];h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'second.txt'),path.join(h.directory,'first.txt')]}:{},dialog:{showOpenDialog:async()=>{throw Error('unexpected picker');},showSaveDialog:async()=>{throw Error('unexpected output picker');}},utilities:{performUtility:async value=>{observed.push(value);fs.writeFileSync(value.output,'# Converted');return {output:value.output,details:{format:'md'}};}}});
+ for(const name of ['first.txt','second.txt'])fs.writeFileSync(path.join(h.directory,name),'Text');const result=await h.actions.command({text:'convert these text files to markdown'});
+ assert.equal(result.kind,'file');assert.deepEqual(Array.from(result.outputs),[path.join(h.directory,'second.md'),path.join(h.directory,'first.md')]);assert.deepEqual(observed.map(item=>item.files[0]),[path.join(h.directory,'second.txt'),path.join(h.directory,'first.txt')]);assert.ok(result.outputs.every(output=>result.text.includes(output)));
+});
+test('manual multiple transforms use adjacent outputs and selected collisions stop all work',async(t)=>{
+ let h,calls=0,saves=0;h=harness(t,{dialog:{showOpenDialog:async()=>({filePaths:[path.join(h.directory,'a.txt'),path.join(h.directory,'b.txt')]}),showSaveDialog:async()=>{saves++;throw Error('unexpected combined output picker');}},utilities:{performUtility:async value=>{calls++;fs.writeFileSync(value.output,'done');return{output:value.output};}}});
+ for(const name of ['a.txt','b.txt'])fs.writeFileSync(path.join(h.directory,name),'Text');const result=await h.actions.utility({operation:'text-markdown'});assert.equal(result.outputs.length,2);assert.equal(saves,0);assert.equal(calls,2);
+ await assert.rejects(h.actions.utility({operation:'text-markdown'}),/already exists/);assert.equal(calls,2);
+});
+test('batch cancellation returns completed outputs while stopping future transforms instead of hiding saved files',async(t)=>{
+ let h,calls=0;h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'a.txt'),path.join(h.directory,'b.txt')]}:{},utilities:{performUtility:async value=>{calls++;fs.writeFileSync(value.output,'done');await h.actions['cancel-recording']();return{output:value.output};}}});
+ for(const name of ['a.txt','b.txt'])fs.writeFileSync(path.join(h.directory,name),'Text');const result=await h.actions.command({text:'convert these text files to markdown'});
+ assert.equal(calls,1);assert.equal(result.kind,'file');assert.equal(result.details.cancelled,true);assert.equal(result.outputs.length,1);assert.match(result.text,/1 of 2/);assert.equal(h.store.data.history[0].commandResult.outputs.length,1);
 });

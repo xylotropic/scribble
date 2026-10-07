@@ -12,25 +12,26 @@ function parseFileCommand(text) {
     jpeg: "image-convert",
     png: "image-convert",
     webp: "image-convert",
+    avif: "image-convert", gif: "image-convert", tiff: "image-convert", heic: "image-convert", heif: "image-convert", jfif: "image-convert",
     wav: "audio-convert",
     mp3: "audio-convert",
     m4a: "audio-convert",
-    opus: "audio-convert",
+    opus: "audio-convert", aac: "audio-convert", flac: "audio-convert", ogg: "audio-convert", wma: "audio-convert",
     mp4: "video-convert",
-    webm: "video-convert",
+    webm: "video-convert", avi: "video-convert", mov: "video-convert", mkv: "video-convert", flv: "video-convert", wmv: "video-convert",
     json: "config-convert",
     yaml: "config-convert",
     yml: "config-convert",
-    toml: "config-convert",
+    toml: "config-convert", xml: "config-convert",
   };
   const conversion =
     command.match(
-      /^(?:convert|make|change|turn) (?:this|these|the selected) ?(?:image|images|audio|video|file|files|config|configuration)?(?: into| to| as)? (?:a |an )?(jpg|jpeg|png|webp|wav|mp3|m4a|opus|mp4|webm|json|yaml|yml|toml)(?: file| files| image)?$/,
+      /^(?:convert|make|change|turn) (?:this|these|the selected) ?(?:image|images|audio|video|file|files|config|configuration)?(?: into| to| as)? (?:a |an )?(jpg|jpeg|png|webp|avif|gif|tiff|heic|heif|jfif|wav|mp3|m4a|opus|aac|flac|ogg|wma|mp4|webm|avi|mov|mkv|flv|wmv|json|yaml|yml|toml|xml)(?: file| files| image)?$/,
     ) ||
     command.match(
-      /^convert (?:image|audio|video|config|configuration|file|files) to (jpg|jpeg|png|webp|wav|mp3|m4a|opus|mp4|webm|json|yaml|yml|toml)$/,
+      /^convert (?:image|audio|video|config|configuration|file|files) to (jpg|jpeg|png|webp|avif|gif|tiff|heic|heif|jfif|wav|mp3|m4a|opus|aac|flac|ogg|wma|mp4|webm|avi|mov|mkv|flv|wmv|json|yaml|yml|toml|xml)$/,
     );
-  const explicitConversion = command.match(/^(?:convert|change|turn) (?:this |these |the selected )?(?:image|images|audio|video|file|files|config|configuration) from (jpg|jpeg|png|webp|wav|mp3|m4a|opus|mp4|webm|json|yaml|yml|toml) (?:to|into) (jpg|jpeg|png|webp|wav|mp3|m4a|opus|mp4|webm|json|yaml|yml|toml)$/);
+  const explicitConversion = command.match(/^(?:convert|change|turn) (?:this |these |the selected )?(?:image|images|audio|video|file|files|config|configuration) from (jpg|jpeg|png|webp|avif|gif|tiff|heic|heif|jfif|wav|mp3|m4a|opus|aac|flac|ogg|wma|mp4|webm|avi|mov|mkv|flv|wmv|json|yaml|yml|toml|xml) (?:to|into) (jpg|jpeg|png|webp|avif|gif|tiff|heic|heif|jfif|wav|mp3|m4a|opus|aac|flac|ogg|wma|mp4|webm|avi|mov|mkv|flv|wmv|json|yaml|yml|toml|xml)$/);
   if (explicitConversion) {
     const [,from,to] = explicitConversion;
     if (formats[from] !== formats[to]) return null;
@@ -43,9 +44,11 @@ function parseFileCommand(text) {
   }
   const textMarkdown = command.match(/^(?:convert|make|turn) (?:this |these |the selected )?(?:text|text file|text files)(?: to| into| as) markdown(?:,? (without (?:a |the )?(?:first[- ]line )?heading|(?:don't|do not) (?:make|turn) (?:the )?first line (?:into )?(?:a )?heading))?$/);
   if (textMarkdown) return { operation: "text-markdown", options: textMarkdown[1] ? { firstLineHeading: false } : {} };
+  const compression = command.match(/^(?:compress|optimize) (?:this |these |the selected )?(?:image|images|photo|photos)(?: to| at) (\d{1,3})(?: percent|%| quality)$/);
+  if (compression) return Number(compression[1]) >= 1 && Number(compression[1]) <= 100 ? {operation:"image-compress",options:{quality:Number(compression[1])}} : null;
   const commands = [
     [
-      /^(?:compress|optimize) (?:this |the selected )?(?:image|photo)$/,
+      /^(?:compress|optimize) (?:this |these |the selected )?(?:image|images|photo|photos)$/,
       "image-compress",
     ],
     [
@@ -57,7 +60,7 @@ function parseFileCommand(text) {
       "archive-create",
     ],
     [
-      /^(?:unzip|extract) (?:this |the selected )?(?:zip|archive|zip file)$/,
+      /^(?:unzip|extract) (?:this |these |the selected )?(?:zip|zips|archive|archives|zip file|zip files)$/,
       "archive-extract",
     ],
     [

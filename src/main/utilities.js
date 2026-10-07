@@ -129,45 +129,50 @@ function trimArgs(options) {
     }
   return args;
 }
+const IMAGE_FORMATS = ['jpg','png','webp','avif','gif','tiff','heic','heif','jfif'];
+function imageFormat(value) { return String(value).toLowerCase().replace(/^jpeg$/, 'jpg').replace(/^tif$/, 'tiff'); }
+function imageCodec() {
+  return process.env.SCRIBBLE_IMAGE_CODEC || path.join(process.resourcesPath || path.resolve(__dirname, '../../release'), 'native/scribble-image-codec');
+}
 async function convertImage(input, temp, options, output) {
-  const sharp = require("sharp");
-  const format = (options.format || path.extname(output).slice(1))
-    .toLowerCase()
-    .replace("jpeg", "jpg");
-  if (!["jpg", "png", "webp"].includes(format))
-    throw new Error("Image format must be jpg, png, or webp");
-  const width = integer(options.width, undefined, 1, 10000, "Width"),
-    height = integer(options.height, undefined, 1, 10000, "Height"),
-    quality = integer(options.quality, 85, 1, 100, "Quality");
-  let image = sharp(input, { limitInputPixels: LIMITS.imagePixels }).rotate();
-  if (width || height)
-    image = image.resize({
-      width,
-      height,
-      fit: "inside",
-      withoutEnlargement: !options.enlarge,
-    });
-  if (format === "jpg")
-    image = image
-      .flatten({ background: options.background || "#ffffff" })
-      .jpeg({ quality, mozjpeg: true });
-  if (format === "png")
-    image = image.png({
-      compressionLevel: 9,
-      palette: !!options.palette,
-      quality,
-    });
-  if (format === "webp")
-    image = image.webp({ quality, lossless: !!options.lossless });
-  const result = await image.toFile(temp);
-  return {
-    format,
-    width: result.width,
-    height: result.height,
-    bytes: result.size,
-  };
+  const sharp = require('sharp');
+  const format = imageFormat(options.format || path.extname(output).slice(1));
+  if (!IMAGE_FORMATS.includes(format)) throw new Error('Unsupported image output format');
+  if ((await fsp.stat(input)).size > 128*1024*1024) throw new Error('Image exceeds128MiB input limit');
+  const width=integer(options.width,undefined,1,10000,'Width'), height=integer(options.height,undefined,1,10000,'Height'), quality=integer(options.quality,80,1,100,'Quality');
+  const decoded = temp + '.decoded.png', intermediate = temp + '.encoded.png';
+  let source = input;
+  try {
+    if (['heic','heif'].includes(imageFormat(path.extname(input).slice(1)))) { await run(imageCodec(), [input,decoded,'png','100']); source=decoded; }
+    let image = sharp(source,{limitInputPixels:LIMITS.imagePixels,animated:true}).rotate();
+    const metadata = await image.metadata();
+    if (options.preserveFormat && source === input && imageFormat(metadata.format === 'heif' ? 'avif' : metadata.format) !== (format === 'jfif' ? 'jpg' : format)) throw new Error('Compression input content does not match its extension');
+    if ((metadata.pages || 1)>1 && !['gif','webp'].includes(format)) throw new Error('This output format cannot preserve animated input; choose GIF or WebP');
+    if (width || height) image=image.resize({width,height,fit:'inside',withoutEnlargement:!options.enlarge});
+    if (['jpg','jfif'].includes(format)) image=image.flatten({background:options.background || '#ffffff'}).jpeg({quality,mozjpeg:true});
+    if (format==='png') image=image.png({compressionLevel:9,palette:!!options.palette,quality});
+    if (format==='webp') image=image.webp({quality,lossless:!!options.lossless});
+    if (format==='avif') image=image.avif({quality});
+    if (format==='gif') image=image.gif({effort:7});
+    if (format==='tiff') image=image.tiff({quality,compression:'jpeg'});
+    let result;
+    if (['heic','heif'].includes(format)) {
+      await image.png().toFile(intermediate);
+      await run(imageCodec(),[intermediate,temp,'heic',String(quality)]);
+      await run(imageCodec(),[temp,decoded+'.verify','png','100']);
+      const meta=await sharp(decoded+'.verify').metadata();result={width:meta.width,height:meta.height,size:(await fsp.stat(temp)).size};
+    } else result=await image.toFile(temp);
+    if (format==='jfif') { const data=await fsp.readFile(temp);if(!(data.length>=20 && data[2]===0xff && data[3]===0xe0 && data.readUInt16BE(4)>=16 && data.subarray(6,11).equals(Buffer.from('JFIF\0')))) await fsp.writeFile(temp,Buffer.concat([data.subarray(0,2),Buffer.from('ffe000104a46494600010100000100010000','hex'),data.subarray(2)]));result.size=(await fsp.stat(temp)).size; }
+    return {format,width:result.width,height:result.height,bytes:result.size,quality,pages:metadata.pages || 1};
+  } finally { for(const file of [decoded,intermediate,decoded+'.verify']) await fsp.rm(file,{force:true}); }
 }
 async function imagePalette(input, temp, options) {
+  if (!['heic','heif'].includes(imageFormat(path.extname(input).slice(1)))) return imagePaletteDecoded(input,temp,options);
+  const decoded=temp+'.palette.png';
+  try { await run(imageCodec(),[input,decoded,'png','100']);return await imagePaletteDecoded(decoded,temp,options); }
+  finally { await fsp.rm(decoded,{force:true}); }
+}
+async function imagePaletteDecoded(input, temp, options) {
   const count = integer(options.colors, 6, 1, 16, "Palette colors");
   const { data, info } = await require("sharp")(input, {
     limitInputPixels: LIMITS.imagePixels,
@@ -227,61 +232,28 @@ async function convertMedia(input, temp, options, output, video) {
   ).toLowerCase();
   const args = ["-nostdin", "-y", ...trimArgs(options), "-i", input];
   if (video) {
-    if (!["mp4", "webm"].includes(format))
-      throw new Error("Video format must be mp4 or webm");
-    const crf = integer(
-      options.crf,
-      format === "mp4" ? 23 : 32,
-      0,
-      51,
-      "Video quality CRF",
-    );
-    args.push(
-      "-c:v",
-      format === "mp4" ? "libx264" : "libvpx-vp9",
-      "-crf",
-      String(crf),
-    );
-    if (format === "webm") args.push("-b:v", "0");
-    if (options.width !== undefined) {
-      const width = integer(options.width, undefined, 2, 10000, "Video width");
-      args.push("-vf", `scale=${width - (width % 2)}:-2`);
-    }
-    if (options.removeAudio) args.push("-an");
-    else
-      args.push(
-        "-c:a",
-        format === "mp4" ? "aac" : "libopus",
-        "-b:a",
-        bitrate(options.bitrate, "128k"),
-      );
-    if (format === "mp4")
-      args.push("-pix_fmt", "yuv420p", "-movflags", "+faststart");
-    args.push("-f", format === "mp4" ? "mp4" : "webm");
+    const codecs={mp4:['libx264','aac','mp4'],avi:['mpeg4','libmp3lame','avi'],mov:['libx264','aac','mov'],mkv:['libx264','aac','matroska'],webm:['libvpx-vp9','libopus','webm'],flv:['flv','libmp3lame','flv'],wmv:['wmv2','wmav2','asf']};
+    if (!codecs[format]) throw new Error('Unsupported video output format');
+    const [v,a,mux]=codecs[format];
+    args.push('-map','0:v:0','-map','0:a:0?','-c:v',v,'-pix_fmt','yuv420p');
+    if (['libx264','libvpx-vp9'].includes(v)) args.push('-crf',String(integer(options.crf,v==='libx264'?23:32,0,51,'Video quality CRF')));
+    else args.push('-q:v',String(integer(options.qscale,4,1,31,'Video quality')));
+    if(v==='libvpx-vp9') args.push('-b:v','0');
+    if(options.width!==undefined){const width=integer(options.width,undefined,2,10000,'Video width');args.push('-vf',`scale=${width-(width%2)}:-2`);}
+    if(options.removeAudio)args.push('-an');else args.push('-c:a',a,'-b:a',bitrate(options.bitrate,'128k'));
+    if(['mp4','mov'].includes(format))args.push('-movflags','+faststart');
+    args.push('-f',mux);
   } else {
-    if (!["wav", "mp3", "m4a", "opus"].includes(format))
-      throw new Error("Audio format must be wav, mp3, m4a, or opus");
-    args.push(
-      "-vn",
-      "-c:a",
-      { wav: "pcm_s16le", mp3: "libmp3lame", m4a: "aac", opus: "libopus" }[
-        format
-      ],
-    );
-    if (format !== "wav") args.push("-b:a", bitrate(options.bitrate, "192k"));
-    if (options.sampleRate !== undefined)
-      args.push(
-        "-ar",
-        String(
-          integer(options.sampleRate, undefined, 8000, 192000, "Sample rate"),
-        ),
-      );
-    if (options.mono) args.push("-ac", "1");
-    if (options.normalize) args.push("-af", "loudnorm=I=-16:TP=-1.5:LRA=11");
-    args.push(
-      "-f",
-      { wav: "wav", mp3: "mp3", m4a: "ipod", opus: "opus" }[format],
-    );
+    const codecs={wav:['pcm_s16le','wav'],mp3:['libmp3lame','mp3'],aac:['aac','adts'],flac:['flac','flac'],ogg:['vorbis','ogg'],m4a:['aac','ipod'],wma:['wmav2','asf'],opus:['libopus','opus']};
+    if(!codecs[format])throw new Error('Unsupported audio output format');
+    const [codec,mux]=codecs[format];args.push('-vn','-map','0:a:0','-c:a',codec);
+    if(format==='ogg')args.push('-strict','-2','-ac','2');
+    if(!['wav','flac'].includes(format))args.push('-b:a',bitrate(options.bitrate,'192k'));
+    if(options.sampleRate!==undefined)args.push('-ar',String(integer(options.sampleRate,undefined,8000,192000,'Sample rate')));
+    if(options.mono && format==='ogg') throw new Error('This bundled Vorbis encoder requires stereo; choose another format for mono output');
+    if(options.mono)args.push('-ac','1');
+    if(options.normalize)args.push('-af','loudnorm=I=-16:TP=-1.5:LRA=11');
+    args.push('-f',mux);
   }
   args.push(temp);
   await run(ffmpeg(), args);
@@ -410,13 +382,15 @@ async function createArchive(inputs, temp) {
 }
 function configFormat(file, override) {
   const ext = (override || path.extname(file).slice(1)).toLowerCase();
-  if (!["json", "yaml", "yml", "toml"].includes(ext))
-    throw new Error("Configuration format must be JSON, YAML, or TOML");
+  if (!["json", "yaml", "yml", "toml", "xml"].includes(ext))
+    throw new Error("Configuration format must be JSON, YAML, TOML, or XML");
   return ext === "yml" ? "yaml" : ext;
 }
 async function convertConfig(input, temp, options, output) {
   const YAML = require("yaml"),
-    TOML = require("@iarna/toml");
+    TOML = require("@iarna/toml"),
+    XML = require("./config-xml");
+  if (options.xmlTyped !== undefined && typeof options.xmlTyped !== "boolean") throw new Error("XML typed representation must be true or false");
   if ((await fsp.stat(input)).size > LIMITS.configBytes)
     throw new Error("Configuration file exceeds 16 MB");
   const from = configFormat(input, options.from),
@@ -427,13 +401,13 @@ async function convertConfig(input, temp, options, output) {
       ? JSON.parse(text)
       : from === "yaml"
         ? YAML.parse(text, { maxAliasCount: 100 })
-        : TOML.parse(text);
+        : from === "xml" ? XML.parseXML(text) : TOML.parse(text);
   let result =
     to === "json"
       ? JSON.stringify(value, null, 2) + "\n"
       : to === "yaml"
         ? YAML.stringify(value)
-        : TOML.stringify(value);
+        : to === "xml" ? XML.stringifyXML(value,{typed:options.xmlTyped === true}) : TOML.stringify(value);
   if (typeof result !== "string")
     throw new Error(
       "Configuration cannot be represented in destination format",
@@ -619,10 +593,11 @@ async function performUtility({ operation, files, output, options = {} } = {}) {
         details = await imagePalette(inputs[0].file, temp, options);
         break;
       case "image-compress":
+        if (imageFormat(path.extname(destination).slice(1)) !== imageFormat(path.extname(inputs[0].file).slice(1)) || (options.format && imageFormat(options.format) !== imageFormat(path.extname(inputs[0].file).slice(1)))) throw new Error('Compression preserves the input format; choose a matching output extension');
         details = await convertImage(
           inputs[0].file,
           temp,
-          { quality: 75, ...options },
+          { ...options, quality: options.quality ?? 80, format: imageFormat(path.extname(inputs[0].file).slice(1)), preserveFormat: true },
           destination,
         );
         details = {

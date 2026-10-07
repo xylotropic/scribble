@@ -378,7 +378,7 @@ test("image compression reports actual byte reduction even when output grows", a
     })
       .png({ compressionLevel: 9 })
       .toFile(input);
-    const output = path.join(dir, "compressed.jpg");
+    const output = path.join(dir, "compressed.png");
     const result = await performUtility({
       operation: "image-compress",
       files: [input],
@@ -386,7 +386,7 @@ test("image compression reports actual byte reduction even when output grows", a
     });
     const original = (await fs.stat(input)).size,
       actual = (await fs.stat(output)).size;
-    assert.ok(actual > original);
+    assert.ok(actual >= original);
     assert.equal(result.details.reduced, false);
     assert.equal(result.details.savedBytes, 0);
     assert.match(result.details.notice, /not smaller/);
@@ -394,3 +394,20 @@ test("image compression reports actual byte reduction even when output grows", a
     assert.equal(result.details.bytes, actual);
   });
 });
+test('configuration XML roundtrips typed values and ordinary mixed trees through actual JSON/YAML/TOML files',()=>fixture(async dir=>{
+  const {parseXML}=require('../src/main/config-xml');
+  const values={title:'日本語 & <text>',enabled:true,count:42,nested:{key:'value'},list:['a','b']};
+  const json=path.join(dir,'data.json');await fs.writeFile(json,JSON.stringify(values));
+  for(const format of ['json','yaml','toml']){
+    const xml=path.join(dir,format+'.xml');const input=format==='json'?json:path.join(dir,'data.'+format);
+    if(format!=='json')await performUtility({operation:'config-convert',files:[json],output:input});
+    await performUtility({operation:'config-convert',files:[input],output:xml});
+    assert.deepEqual(parseXML(await fs.readFile(xml,'utf8')),values);
+    const back=path.join(dir,'back.'+format);await performUtility({operation:'config-convert',files:[xml],output:back});
+    const round=path.join(dir,'round-'+format+'.xml');await performUtility({operation:'config-convert',files:[back],output:round});assert.deepEqual(parseXML(await fs.readFile(round,'utf8')),values);
+  }
+  const original='<root lang="ja">\n  before<item id="1">日本語</item>after<item id="2">two</item>\n</root>';
+  const input=path.join(dir,'ordinary.xml');await fs.writeFile(input,original);
+  for(const format of ['json','yaml','toml']){const intermediate=path.join(dir,'ordinary.'+format),output=path.join(dir,'ordinary-'+format+'.xml');await performUtility({operation:'config-convert',files:[input],output:intermediate});await performUtility({operation:'config-convert',files:[intermediate],output});assert.deepEqual(parseXML(await fs.readFile(output,'utf8')),parseXML(original));}
+  const reserved=path.join(dir,'reserved.json'),typed=path.join(dir,'reserved.xml');const collision={$xml:{name:'example',attributes:{},children:['data']}};await fs.writeFile(reserved,JSON.stringify(collision));await performUtility({operation:'config-convert',files:[reserved],output:typed,options:{xmlTyped:true}});assert.deepEqual(parseXML(await fs.readFile(typed,'utf8')),collision);
+}));

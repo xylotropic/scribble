@@ -20,6 +20,7 @@ function verifyMacPackage(appPath, arch, inspect = file => {
   const files = [
     `MacOS/${name}`,
     'Resources/native/scribble-bridge',
+    'Resources/native/scribble-image-codec',
     'Resources/native/speech/whisper-cli',
     'Resources/native/ffmpeg',
     'Resources/runtime/ollama/ollama',

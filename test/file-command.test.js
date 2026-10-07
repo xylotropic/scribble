@@ -1,6 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { parseFileCommand } = require("../src/main/file-command");
+test("compression quality and plural extraction route to actual batch utilities", () => {
+  assert.deepEqual(parseFileCommand("Compress these images to 70 percent"), {operation:"image-compress",options:{quality:70}});
+  assert.deepEqual(parseFileCommand("optimize this photo at 100%"), {operation:"image-compress",options:{quality:100}});
+  assert.equal(parseFileCommand("compress this image to 101 percent"), null);
+  assert.equal(parseFileCommand("compress this image to 70 percent and upload it"), null);
+  assert.deepEqual(parseFileCommand("Unzip these archives"), {operation:"archive-extract",options:{}});
+});
 test("text to Markdown supports plural selection and explicit heading opt-out", () => {
   assert.deepEqual(parseFileCommand("Convert these text files to Markdown"), {operation:"text-markdown",options:{}});
   for (const command of ["convert this text to markdown without a heading", "turn these text files into markdown, do not make the first line a heading", "make text as markdown without a first-line heading"])

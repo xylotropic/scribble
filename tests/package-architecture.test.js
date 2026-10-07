@@ -7,8 +7,8 @@ test('matching thin and universal package entry points pass architecture verific
   for (const arch of [Arch.arm64, Arch.x64, Arch.universal]) {
     const expected = requiredArchitectures(arch), files = [];
     const result = verifyMacPackage('/nonexistent/Scribble.app', arch, file => { files.push(file); return expected; });
-    assert.equal(result.checkedExecutables, 6);
-    assert.equal(files.length, 6);
+    assert.equal(result.checkedExecutables, 7);
+    assert.equal(files.length, 7);
     assert.ok(files.some(file => file.endsWith('ScribbleShare')));
     assert.deepEqual(result.architectures, expected);
   }

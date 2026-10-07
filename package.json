@@ -82,6 +82,10 @@
       {
         "from": "release/runtime/licenses/ffmpeg",
         "to": "native/ffmpeg-notices"
+      },
+      {
+        "from": "release/native/scribble-image-codec",
+        "to": "native/scribble-image-codec"
       }
     ],
     "asarUnpack": [

@@ -702,9 +702,10 @@ async function pasteAIUtility(id) {
   }
 }
 async function runFileUtility({ operation, options = {} }, captured = null) {
+    const batch = require("./file-batch");
     const extensions = {
       "image-convert": options.format || "webp",
-      "image-compress": options.format || "webp",
+      "image-compress": null,
       "image-palette": "json",
       "audio-convert": options.format || "mp3",
       "video-convert": options.format || "mp4",
@@ -725,8 +726,15 @@ async function runFileUtility({ operation, options = {} }, captured = null) {
           : ["openFile", "multiSelections"],
     });
     if (chosen.canceled) return null;
+    if (batch.isBatch(operation) && (selected || chosen.filePaths.length > 1)) {
+      const plan = await batch.preflight({operation,files:chosen.filePaths,options,expected:selected ? captured.files : null});
+      if (selected) await selectedUtilityInputs(operation,captured);
+      if (activeProcess?.kind === "command") assertCommandEnabled();
+      return batch.execute(plan,{perform:require("./utilities").performUtility,signal:activeProcess?.kind === "command" ? activeProcess.controller.signal : undefined});
+    }
+    const extension = batch.isBatch(operation) ? batch.outputExtension(operation,options,chosen.filePaths[0]) || "folder" : extensions[operation];
     const destination = await dialog.showSaveDialog(window, {
-      defaultPath: "Scribble-output." + extensions[operation],
+      defaultPath: "Scribble-output." + extension,
     });
     if (destination.canceled) return null;
     if(selected) await selectedUtilityInputs(operation, captured);
@@ -756,8 +764,8 @@ async function captureFileCommandContext() {
 async function selectedUtilityInputs(operation, captured) {
   if(!captured?.files?.length) return null;
   const files=captured.files;
-  if(files.length>32 || (operation!=="pdf-merge"&&operation!=="archive-create"&&files.length!==1) || (operation==="pdf-merge"&&files.length<2)) throw Error("Selected file count is invalid for this operation");
-  const formats={"image-convert":["png","jpg","jpeg","webp","avif","gif","tif","tiff","heic","heif","jfif"],"image-compress":["png","jpg","jpeg","webp","avif","gif","tif","tiff","heic","heif","jfif"],"image-palette":["png","jpg","jpeg","webp","avif","gif","tif","tiff","heic","heif","jfif"],"audio-convert":["mp3","wav","aac","flac","ogg","m4a","wma","opus","mp4","avi","mov","mkv","webm","flv","wmv"],"video-convert":["mp4","avi","mov","mkv","webm","flv","wmv"],"pdf-merge":["pdf"],"archive-extract":["zip"],"config-convert":["json","yaml","yml","toml","xml"],"markdown-pdf":["md","markdown"],"text-markdown":["txt","md","markdown"]};
+  if(files.length>32 || (operation==="pdf-merge"&&files.length<2)) throw Error("Selected file count is invalid for this operation");
+  const formats=require("./file-batch").INPUT_FORMATS;
   for(const file of files) {
     const stat=await fsp.lstat(file.path).catch(()=>null);
     if(!stat || stat.isSymbolicLink() || stat.dev!==file.dev || stat.ino!==file.ino || stat.size!==file.size || stat.mtimeMs!==file.mtimeMs || stat.ctimeMs!==file.ctimeMs || stat.isDirectory()!==file.directory) throw Error("Selected file changed after command activation");
@@ -902,6 +910,7 @@ async function runCommand(text, context = "", attachments = {}, captured = null,
     const result = await (captured?.files?.length ? runFileUtility(fileCommand, captured) : actions.utility(fileCommand));
     if (!result)
       return { kind: "cancelled", text: "File operation cancelled." };
+    if (result.kind === "file") return result;
     return {
       kind: "action",
       text: `Saved ${result.output || result.path || "file output"}.${result.details?.notice ? " " + result.details.notice : ""}`,
@@ -1168,7 +1177,7 @@ async function transcribeAndProcess(
   };
   if (kind === "command") {
     const output = await runCommand(text, "", attachments, recordTarget?.commandContext, front?.commandAutomatic);
-    assertCommandEnabled();
+    if (output.kind !== "file") assertCommandEnabled();
     const command = attachCommandReview(output, recordTarget?.commandTarget, recordTarget?.commandContext, attachments.images || [], front?.commandAutomatic);
     entry.text = command.text;
     entry.command = text;
@@ -1222,7 +1231,7 @@ async function transcribeAndProcess(
     entry.noteId = note.id;
     emit("navigate", { page: "notes", id: note.id });
   }
-  assertProcessing();
+  if (entry.commandResult?.kind !== "file") assertProcessing();
   store.recordActivity(result.text, result.duration);
   let saved = entry;
   if (settings.saveHistory || kind === "file" || kind === "note")
@@ -1920,7 +1929,7 @@ const actions = {
     assertCommandEnabled();
     attachments = {...attachments,images:mergeImages(capturedImages,attachments.images || [])};
     const command = await runCommand(text, String(context || ""), attachments, captured, automatic);
-    assertCommandEnabled();
+    if (command.kind !== "file") assertCommandEnabled();
     const result = attachCommandReview(command, target, captured, attachments.images, automatic);
     if (reviewId) commandReviews.delete(reviewId);
     if (!store.data.settings.saveHistory) return result;
