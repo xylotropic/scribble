@@ -16,7 +16,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   clone = (x) => JSON.parse(JSON.stringify(x));
 async function fixture(
   t,
-  { notes = [], shortcuts = [], browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
+  { notes = [], shortcuts = [], requestFailure, browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
 ) {
   const dom = new JSDOM(
     fs.readFileSync(path.join(__dirname, "../src/renderer/index.html"), "utf8"),
@@ -77,6 +77,7 @@ async function fixture(
     filePath: (f) => f.path,
     async request(action, args = {}) {
       calls.push({ action, args });
+      if (requestFailure?.action === action) throw new Error(requestFailure.message);
       if (action === "state") return clone(data);
       if (action === "browser-catalog") return browserPromise ? await browserPromise : clone(browserCatalogue);
       if (action === "permissions") return clone(setupPermissions);
@@ -1025,4 +1026,41 @@ test('browser discovery finishing after close never changes a later modal or per
 });
 test('browser discovery failure is explicit and retains unavailable existing choices',options,async t=>{
   let reject;const promise=new Promise((resolve,fail)=>{reject=fail;});const action={type:'websites',urls:['https://example.org'],browser:'chrome',profile:'Profile 7'};const h=await fixture(t,{browserPromise:promise,shortcuts:[{id:'failure',trigger:'failure',actions:[action]}]});await h.click('[data-page="shortcuts"]');await h.click('[data-action="edit-item"][data-id="failure"]');reject(Error('Discovery unavailable'));await flush();assert.match(h.w.document.querySelector('#shortcut-browser-status').textContent,/Discovery unavailable/);assert.equal(h.w.document.querySelector('[data-shortcut-field="profile"]').value,'Profile 7');assert.match(h.w.document.querySelector('[data-shortcut-field="profile"]').selectedOptions[0].textContent,/unavailable/);await h.submit();assert.deepEqual(clone(h.calls.find(x=>x.action==='save-item').args.item.actions),[action]);
+});
+
+test('AI utility saves its preset and captured keyboard binding atomically, then edits and removes it', {skip:!JSDOM}, async t => {
+  const h=await fixture(t); await h.click('[data-page="ai"]'); await h.click('[data-action="add-ai-utility"]');
+  h.input('#modal [name="name"]','Polish selection'); h.input('#modal [name="preset"]','polish');
+  await h.click('[data-action="capture-hotkey"]'); h.emit('hotkey-captured',{keyCode:5,modifiers:['command','option'],label:'G'}); await flush();
+  await h.submit(); const saved=h.calls.filter(x=>x.action==='preferences').at(-1).args;
+  assert.equal(saved.aiUtilities.at(-1).name,'Polish selection'); const id=saved.aiUtilities.at(-1).id;
+  assert.deepEqual(clone(saved.hotkeys.at(-1)),{mode:'utility',utilityId:id,keyCode:5,modifiers:['command','option'],toggle:true});
+  await h.click(`[data-action="edit-ai-utility"][data-id="${id}"]`); assert.equal(h.w.document.querySelector('[name="preset"]').value,'polish'); h.input('[name="source"]','clipboard'); await h.submit();
+  assert.equal(h.data.settings.aiUtilities.find(u=>u.id===id).source,'clipboard');
+  await h.click(`[data-action="delete-ai-utility"][data-id="${id}"]`); assert.equal(h.data.settings.aiUtilities.some(u=>u.id===id),false); assert.equal(h.data.settings.hotkeys.some(k=>k.utilityId===id),false);
+});
+test('AI utility conflicts and invalid capture stay reviewable; closing stops capture without saving', {skip:!JSDOM}, async t => {
+ const h=await fixture(t); await h.click('[data-page="ai"]'); await h.click('[data-action="add-ai-utility"]'); h.input('[name="name"]','Test');
+ const existing=h.data.settings.hotkeys[0]; await h.click('[data-action="capture-hotkey"]'); h.emit('hotkey-captured',existing); await h.submit(); assert.match(h.w.document.querySelector('#toast').textContent,/already assigned/); assert.equal(h.w.document.querySelector('#modal').open,true);
+ await h.click('[data-action="capture-hotkey"]'); h.emit('hotkey-captured',{keyCode:130,modifiers:['option']}); await h.submit(); assert.match(h.w.document.querySelector('#toast').textContent,/regular keyboard/);
+ await h.click('[data-action="capture-hotkey"]'); await h.click('#modal [data-action="close-modal"]'); assert.ok(h.calls.some(x=>x.action==='capture-hotkey-stop')); assert.equal(h.calls.filter(x=>x.action==='preferences').length,0);
+});
+test('AI utility results are plain text, require insertion permission and dismiss backend cache; busy supports cancel', {skip:!JSDOM}, async t => {
+ const h=await fixture(t); h.data.settings.aiUtilities=[{id:'u',name:'Review',preset:'grammar',source:'selection',enabled:true}]; h.emit('state',h.data); await h.click('[data-page="ai"]'); await h.click('[data-action="run-ai-utility"]'); assert.deepEqual(clone(h.calls.find(x=>x.action==='run-ai-utility').args),{id:'u'});
+ h.emit('utility-state',{id:'u',busy:true}); await h.click('[data-action="cancel-ai-utility"]'); assert.ok(h.calls.some(x=>x.action==='cancel-ai-utility'));
+ h.emit('utility-result',{id:'u',name:'Review',text:'<img src=x onerror=bad()>',canInsert:false}); assert.equal(h.w.document.querySelector('#utility-result img'),null); assert.equal(h.w.document.querySelector('[data-action="paste-ai-utility"]'),null); await h.click('[data-action="copy-ai-utility"]'); assert.equal(h.calls.at(-1).args.text,'<img src=x onerror=bad()>');
+ h.emit('utility-result',{id:'u',name:'Review',text:'Approved',canInsert:true}); await h.click('[data-action="paste-ai-utility"]'); assert.deepEqual(clone(h.calls.at(-1).args),{id:'u'}); assert.equal(h.w.document.querySelector('#utility-result'),null); h.emit('utility-result',{id:'next',name:'Review',text:'Next',canInsert:false}); await h.click('[data-action="dismiss-ai-utility"]'); assert.equal(h.w.document.querySelector('#utility-result'),null); assert.equal(h.calls.at(-1).action,'dismiss-ai-utility');
+});
+
+test('AI utility provider failures remain visible and Escape/Tab use opaque result identities', {skip:!JSDOM}, async t => {
+ const h=await fixture(t,{requestFailure:{action:'run-ai-utility',message:'No selected text'}}); h.data.settings.aiUtilities=[{id:'configured',name:'Fix',preset:'grammar',source:'selection',enabled:true}]; h.emit('state',h.data); await h.click('[data-page="ai"]'); await h.click('[data-action="run-ai-utility"]'); assert.match(h.w.document.querySelector('#toast').textContent,/No selected text/); assert.equal(h.w.document.querySelector('[data-action="run-ai-utility"]').disabled,false); assert.equal(h.calls.filter(x=>x.action==='paste-ai-utility').length,0);
+ h.emit('utility-result',{id:'opaque-result',utilityId:'configured',name:'Fix',text:'Text',canInsert:true}); const result=h.w.document.querySelector('#utility-result'); result.dispatchEvent(new h.w.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})); await flush(); assert.deepEqual(clone(h.calls.at(-1).args),{id:'opaque-result'});
+ assert.equal(h.w.document.querySelector('#utility-result'),null); h.emit('utility-result',{id:'opaque-result',name:'Fix',text:'Text',canInsert:false}); h.w.document.querySelector('#utility-result').dispatchEvent(new h.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})); await flush(); assert.equal(h.calls.at(-1).action,'dismiss-ai-utility'); assert.deepEqual(clone(h.calls.at(-1).args),{id:'opaque-result'}); assert.equal(h.w.document.querySelector('#utility-result'),null);
+});
+
+test('AI utility changed-target insertion errors retain review and report failure for click and Tab', {skip:!JSDOM}, async t => {
+ const h=await fixture(t,{requestFailure:{action:'paste-ai-utility',message:'The selected application changed'}});
+ h.emit('utility-result',{id:'result',utilityId:'u',name:'Fix',text:'Keep for copying',canInsert:true}); await h.click('[data-action="paste-ai-utility"]'); assert.match(h.w.document.querySelector('#toast').textContent,/application changed/); assert.equal(h.w.document.querySelector('#utility-result').textContent,'Keep for copying');
+ h.w.document.querySelector('#utility-result').dispatchEvent(new h.w.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})); await flush(); assert.match(h.w.document.querySelector('#toast').textContent,/application changed/); assert.equal(h.w.document.querySelector('#utility-result').textContent,'Keep for copying');
+ h.emit('utility-result',{id:'copy',name:'Fix',text:'Copy only',canInsert:false}); const panel=h.w.document.querySelector('#utility-result').parentElement; assert.match(panel.textContent,/Copy the result or dismiss/); assert.doesNotMatch(panel.textContent,/Tab to insert/);
 });

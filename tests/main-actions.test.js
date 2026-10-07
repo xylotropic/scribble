@@ -8,7 +8,7 @@ const test = require("node:test"),
 const { createRequire } = require("node:module");
 const mainPath = path.resolve(__dirname, "../src/main/index.js"),
   localRequire = createRequire(mainPath);
-function harness(t, { chat, transcribe, summaryCLI, shell, chromeLauncher, spawn, models = [] } = {}) {
+function harness(t, { chat, transcribe, summaryCLI, shell, chromeLauncher, spawn, nativeRequest, clipboardText = "clipboard", models = [] } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scribble-actions-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { Store } = localRequire("./store"),
@@ -27,7 +27,7 @@ function harness(t, { chat, transcribe, summaryCLI, shell, chromeLauncher, spawn
     },
     protocol: { registerSchemesAsPrivileged() {} },
     Notification: { isSupported: () => false },
-    clipboard: { readText: () => "clipboard", writeText() {} },
+    clipboard: { readText: () => clipboardText, writeText() {} },
     shell: shell || { openPath: async () => "", openExternal: async () => {} },
     safeStorage: { isEncryptionAvailable: () => false },
   };
@@ -44,6 +44,7 @@ function harness(t, { chat, transcribe, summaryCLI, shell, chromeLauncher, spawn
     close() { nativeCalls.push({ command:"close" }); },
     request: async (command, args) => {
       nativeCalls.push({ command, args });
+      if (nativeRequest) return nativeRequest(command, args);
       return command === "selection"
         ? { text: "selected text" }
         : { inserted: true };
@@ -81,7 +82,7 @@ function harness(t, { chat, transcribe, summaryCLI, shell, chromeLauncher, spawn
   vm.createContext(context);
   vm.runInContext(
     fs.readFileSync(mainPath, "utf8") +
-      "\nglobalThis.exposed={actions,processFile,runShortcut,runCommand,snapshot,initializeTray(t){tray=t;},initialize(s,sp,n,d){store=s;speech=sp;native=n;dataDir=d;memoryIndex=new (require('./memory-index').MemoryIndex)();}};",
+      "\nglobalThis.exposed={actions,processFile,runShortcut,runCommand,snapshot,initializeTray(t){tray=t;},initializeUtilityWindow(w){window=w;},initialize(s,sp,n,d){store=s;speech=sp;native=n;dataDir=d;memoryIndex=new (require('./memory-index').MemoryIndex)();}};",
     context,
   );
   context.exposed.initialize(store, speech, native, directory);
@@ -450,4 +451,38 @@ test('saved multi-action shortcut executes the new action list instead of stale 
  h.store.upsert('shortcuts',{trigger:'standup',name:'Standup',type:'app',target:'Old app',actions:[{type:'websites',urls:['example.com?q={{text}}','example.org'],profile:'Profile 2'},{type:'application',name:'TextEdit',folder:'/tmp/project'},{type:'folders',paths:['/Applications']}]});
  const result=await h.runCommand('standup notes & agenda');assert.equal(result.kind,'shortcut');
  assert.deepEqual(seen,[['websites','https://example.com/?q=notes%20%26%20agenda','https://example.org/','Profile 2'],['application','/usr/bin/open','-a','TextEdit','/tmp/project'],['folder','/Applications']]);
+});
+
+
+function utilityHarness(t,options={}){
+ const h=harness(t,options);h.initializeUtilityWindow({isDestroyed:()=>false,show(){},focus(){},webContents:{send(_channel,payload){h.events.push(payload);}}});
+ h.store.updateSettings({aiUtilities:[{id:'grammar',name:'Fix grammar',preset:'grammar',source:'selection',enabled:true},{id:'summary',name:'Summarize clipboard',preset:'summary',source:'clipboard',enabled:true}]});return h;
+}
+test('AI utility keeps selected input distinct and inserts only cached reviewed result into captured target',async t=>{
+ const seen=[];const h=utilityHarness(t,{chat:async(_s,m)=>{seen.push(m);return 'Revised text.';},nativeRequest:async(command,args)=>command==='captureInsertionTarget'?{token:'target-token',bundleId:'com.apple.TextEdit',pid:123}:command==='selection'?{text:'Original text.'}:command==='paste'?{inserted:true,verified:true}:{}});
+ const result=await h.actions['run-ai-utility']({id:'grammar'});assert.equal(result.canInsert,true);assert.equal(seen[0][1].content,'Original text.');assert.equal(h.nativeCalls.filter(c=>c.command==='paste').length,0);
+ await h.actions['paste-ai-utility']({id:result.id,text:'untrusted replacement'});const paste=h.nativeCalls.find(c=>c.command==='paste');assert.equal(paste.args.text,'Revised text.');assert.equal(paste.args.targetToken,'target-token');assert.equal(paste.args.activateTarget,true);
+ await assert.rejects(h.actions['paste-ai-utility']({id:result.id}),/expired/);
+});
+test('empty selected text never falls back to clipboard or sends a provider request',async t=>{
+ let calls=0;const h=utilityHarness(t,{clipboardText:'Private clipboard',chat:async()=>{calls++;return 'result';},nativeRequest:async()=>({})});
+ await assert.rejects(h.actions['run-ai-utility']({id:'grammar'}),/Select some text/);assert.equal(calls,0);
+ const result=await h.actions['run-ai-utility']({id:'summary'});assert.equal(calls,1);assert.equal(result.canInsert,false);await assert.rejects(h.actions['paste-ai-utility']({id:result.id}),/copy/);
+});
+test('utility cancellation suppresses a late provider result and clears busy state',async t=>{
+ let resolve,started;const ready=new Promise(r=>started=r);const h=utilityHarness(t,{chat:async()=>{started();return new Promise(r=>resolve=r);}});
+ const work=h.actions['run-ai-utility']({id:'grammar'});await ready;assert.equal(h.snapshot().speechStatus.busy,true);await h.actions['cancel-ai-utility']({id:'grammar'});resolve('Late text');await assert.rejects(work,/canceled/);assert.equal(h.snapshot().speechStatus.busy,false);assert.equal(h.events.filter(e=>e.event==='utility-result').length,0);assert.equal(h.nativeCalls.filter(c=>c.command==='paste').length,0);
+});
+
+
+test('disabled AI utility bindings are omitted from native interception and restored on enable',async t=>{
+ const h=harness(t);const utility={id:'utility-one',name:'Polish',preset:'polish',source:'selection',enabled:false};const binding={keyCode:5,modifiers:['option','command'],mode:'utility',utilityId:utility.id,toggle:true};
+ await h.actions.preferences({aiUtilities:[utility],hotkeys:[...h.store.data.settings.hotkeys,binding]});assert.equal(h.nativeCalls.findLast(c=>c.command==='setHotkeys').args.hotkeys.some(b=>b.mode==='utility'),false);
+ await h.actions.preferences({aiUtilities:[{...utility,enabled:true}]});assert.equal(h.nativeCalls.findLast(c=>c.command==='setHotkeys').args.hotkeys.find(b=>b.mode==='utility').utilityId,utility.id);
+});
+
+
+test('refused utility insertion retains review text and removes the consumed insertion option',async t=>{
+ const h=utilityHarness(t,{nativeRequest:async command=>command==='captureInsertionTarget'?{token:'single-use',bundleId:'com.apple.TextEdit'}:command==='selection'?{text:'Original.'}:command==='paste'?{inserted:false,dispatched:false,reason:'The original field changed'}:{}});
+ const result=await h.actions['run-ai-utility']({id:'grammar'});await assert.rejects(h.actions['paste-ai-utility']({id:result.id}),/field changed/);const review=h.events.findLast(e=>e.event==='utility-result').data;assert.equal(review.text,result.text);assert.equal(review.canInsert,false);await assert.rejects(h.actions['paste-ai-utility']({id:result.id}),/copy/);assert.equal(h.nativeCalls.filter(c=>c.command==='paste').length,1);
 });

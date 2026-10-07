@@ -103,6 +103,8 @@ let state = null,
   downloadProgress = {},
   permissions = {},
   commandResult = null,
+  utilityResult = null,
+  utilityBusy = new Set(),
   commandAttachments = { text: "", images: [], sources: [] },
   commandDraft = "",
   commandTextContext = "",
@@ -646,7 +648,41 @@ function renderAI() {
       ["custom", "Custom OpenAI-compatible API"],
     ],
     s.aiProvider,
-  )}${field("aiEndpoint", s.aiProvider === "ollama" ? "Ollama server" : "API base URL", s.aiEndpoint)}${field("aiModel", "Model", s.aiModel)}${field("aiDeployment", "Azure deployment (Azure only)", s.aiDeployment)}${field("aiVersion", "Azure API version (Azure only)", s.aiVersion)}${field("apiKey", "Cloud API key (unused for Ollama)", "", "password", "Leave blank to keep this provider’s saved key.")}${area("aiInstructions", "Dictation instructions", s.aiInstructions)}${check("aiEnhance", "Enhance dictation after transcription", s.aiEnhance)}<div class="row"><button type="submit" class="primary">Save configuration</button>${button("Test connection", "ai-test", "check")}</div></form></div><div class="card"><p class="eyebrow">Local intelligence</p><h2>Keep the whole loop private.</h2><p class="muted">Ollama serves a local language model for cleanup, commands, summaries, and tones. No API key is needed.</p><div class="code">ollama pull ${esc(s.aiModel)}</div><div class="row wrap">${button("Get Ollama", "open-url", "download", "", 'data-url="https://ollama.com/download/mac"')}${button("Download selected model", "ai-download", "model")}</div><div id="ai-status" class="notice"></div><p class="tip">Scribble starts its bundled Ollama runtime when needed. You can use a smaller model on a Mac with limited memory.</p><h3>What gets sent?</h3><p class="muted">Commands can include text, selected files and screen images you attach. Memory indexing sends reference text to the configured provider. Scribble does not send audio to a text model or use telemetry.</p></div></div>`;
+  )}${field("aiEndpoint", s.aiProvider === "ollama" ? "Ollama server" : "API base URL", s.aiEndpoint)}${field("aiModel", "Model", s.aiModel)}${field("aiDeployment", "Azure deployment (Azure only)", s.aiDeployment)}${field("aiVersion", "Azure API version (Azure only)", s.aiVersion)}${field("apiKey", "Cloud API key (unused for Ollama)", "", "password", "Leave blank to keep this provider’s saved key.")}${area("aiInstructions", "Dictation instructions", s.aiInstructions)}${check("aiEnhance", "Enhance dictation after transcription", s.aiEnhance)}<div class="row"><button type="submit" class="primary">Save configuration</button>${button("Test connection", "ai-test", "check")}</div></form></div><div class="card"><p class="eyebrow">Local intelligence</p><h2>Keep the whole loop private.</h2><p class="muted">Ollama serves a local language model for cleanup, commands, summaries, and tones. No API key is needed.</p><div class="code">ollama pull ${esc(s.aiModel)}</div><div class="row wrap">${button("Get Ollama", "open-url", "download", "", 'data-url="https://ollama.com/download/mac"')}${button("Download selected model", "ai-download", "model")}</div><div id="ai-status" class="notice"></div><p class="tip">Scribble starts its bundled Ollama runtime when needed. You can use a smaller model on a Mac with limited memory.</p><h3>What gets sent?</h3><p class="muted">Commands can include text, selected files and screen images you attach. Memory indexing sends reference text to the configured provider. Scribble does not send audio to a text model or use telemetry.</p></div></div>${renderAIUtilities()}`;
+}
+const utilityPresets = [["grammar", "Fix grammar"], ["professional", "Professional"], ["polish", "Polish"], ["summary", "Summary"], ["bullets", "Bullet points"], ["email", "Email"]];
+function utilityBinding(id) { return (state.settings.hotkeys || []).find(h => h.mode === "utility" && h.utilityId === id); }
+function renderAIUtilities() {
+  return `<div class="card"><div class="row between"><h2>AI utilities</h2>${button("Add utility", "add-ai-utility", "plus")}</div><p class="muted">Transform selected text or clipboard text with your configured language model. Cloud providers receive this text and may charge for usage. Results stay available for review before insertion. An empty selection is never replaced with clipboard text.</p>${(state.settings.aiUtilities || []).map(u => `<div class="list-row"><div class="body"><strong>${esc(u.name)}</strong><p>${esc(utilityPresets.find(p => p[0] === u.preset)?.[1] || u.preset)} · ${u.source === "clipboard" ? "Clipboard" : "Selected text"}${utilityBinding(u.id) ? " · " + esc(utilityBinding(u.id).modifiers.join(" + ")) + " + " + esc(utilityBinding(u.id).keyCode) : " · No shortcut"}</p></div>${button(u.enabled !== false ? "Disable" : "Enable", "toggle-ai-utility", "", "small", `data-id="${esc(u.id)}"`)}${utilityBusy.has(u.id) ? button("Cancel", "cancel-ai-utility", "close", "small", `data-id="${esc(u.id)}"`) : button("Run", "run-ai-utility", "play", "small", `data-id="${esc(u.id)}" ${u.enabled === false ? "disabled" : ""}`)}${button("Edit", "edit-ai-utility", "edit", "small", `data-id="${esc(u.id)}"`)}${button("Delete", "delete-ai-utility", "trash", "small danger", `data-id="${esc(u.id)}"`)}</div>`).join("") || '<p class="muted">Add a utility to turn a keyboard shortcut into a text transformation.</p>'}${utilityResult ? `<div class="command-panel"><h3>${esc(utilityResult.name)}</h3><div class="command-result" id="utility-result" tabindex="0">${esc(utilityResult.text)}</div><div class="row">${button("Copy", "copy-ai-utility", "copy")}${utilityResult.canInsert ? button("Insert", "paste-ai-utility", "arrow", "primary") : ""}${button("Dismiss", "dismiss-ai-utility", "close")}</div><p class="smallprint">${utilityResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."}</p></div>` : ""}</div>`;
+}
+async function insertAIUtility() {
+  const result = utilityResult;
+  if (!result?.canInsert) return;
+  await request("paste-ai-utility", {id: result.id});
+  // A later result may arrive while insertion is pending. Keep that new review.
+  if (utilityResult === result) { utilityResult = null; render(); }
+}
+function editAIUtility(id) {
+  const item = (state.settings.aiUtilities || []).find(u => u.id === id) || {id: crypto.randomUUID(), name: "", preset: "grammar", source: "selection", enabled: true};
+  const binding = utilityBinding(item.id);
+  const title = id ? "Edit AI utility" : "Add AI utility";
+  const presetLabel = "Transformation", sourceLabel = "Text source";
+  showModal(title, field("name", "Name", item.name) + select("preset", presetLabel, utilityPresets, item.preset) + select("source", sourceLabel, [["selection", "Selected text"], ["clipboard", "Clipboard"]], item.source) + `<label class="field"><input type="checkbox" name="enabled" ${item.enabled !== false ? "checked" : ""}> Enabled</label>` + `<label class="field">Keyboard shortcut (optional)<input type="checkbox" name="bindShortcut" ${binding ? "checked" : ""}> Enable this binding</label><div class="row">${button("Capture binding", "capture-hotkey", "keyboard")}<span id="capture-hotkey-status" role="status">Use a regular key with at least one modifier.</span></div><label class="field">Modifiers (comma-separated)<input name="modifiers" value="${esc(binding?.modifiers.join(", ") || "option, command")}"></label><label class="field">macOS key code<input type="number" name="keyCode" min="0" max="127" value="${binding?.keyCode ?? 5}"></label><p class="tip">G=5, L=37, N=45. Modifier-only and mouse bindings are unavailable for AI utilities.</p>`, async v => {
+    const name = v.name.trim();
+    if (!name || name.length > 200) throw new Error("Enter a utility name of at most 200 characters.");
+    const hotkeys = (state.settings.hotkeys || []).filter(h => !(h.mode === "utility" && h.utilityId === item.id));
+    if (v.bindShortcut) {
+      const modifiers = v.modifiers.split(",").map(x => x.trim()).filter(Boolean), keyCode = Number(v.keyCode);
+      const allowed = ["option", "command", "control", "shift", "fn", "left-option", "right-option", "left-command", "right-command", "left-control", "right-control", "left-shift", "right-shift"];
+      if (!modifiers.length || modifiers.some(m => !allowed.includes(m)) || !Number.isInteger(keyCode) || keyCode < 0 || keyCode > 127 || [54,55,56,57,58,59,60,61,62,63].includes(keyCode)) throw new Error("Choose a regular keyboard key and at least one valid modifier.");
+      if (hotkeys.some(h => h.keyCode === keyCode && [...h.modifiers].sort().join(",") === [...modifiers].sort().join(","))) throw new Error("This shortcut is already assigned. Choose another binding.");
+      hotkeys.push({mode: "utility", utilityId: item.id, keyCode, modifiers, toggle: true});
+    }
+    const aiUtilities = [...(state.settings.aiUtilities || [])];
+    const utility = {...item, name, preset: v.preset, source: v.source, enabled: v.enabled};
+    const index = aiUtilities.findIndex(u => u.id === item.id); if (index < 0) aiUtilities.push(utility); else aiUtilities[index] = utility;
+    await request("preferences", {aiUtilities, hotkeys});
+  });
 }
 function renderTones() {
   return `${heading("Sound like yourself", "The right tone, in the right place.", "Match an application to a style, speech model, and cleanup preference. Add as many profiles as you need.", button("Automatic", "select-tone", "refresh", "", 'data-id=""') + button("Create tone", "add-item", "plus", "primary", 'data-kind="tones"'))}<div class="grid two">${state.tones.length ? state.tones.map((t) => `<div class="card"><div class="row between"><h2>${esc(t.name)}</h2>${icon("tone")}</div><p class="muted">${esc(t.instructions || "Keep the original wording.")}</p><div class="row wrap"><span class="badge">${esc(t.modelId || "Default model")}</span><span class="badge">${t.enhance ? "AI cleanup" : "Original words"}</span></div><p class="tip">${esc(t.apps?.join(", ") || "No application rules")}</p><div class="row">${button(state.settings.pinnedToneId === t.id ? "Pinned" : "Use tone", "select-tone", "check", "small", `data-id="${t.id}"`)}${button("Edit", "edit-item", "edit", "small", `data-kind="tones" data-id="${t.id}"`)}${button("Delete", "delete", "trash", "small danger", `data-kind="tones" data-id="${t.id}"`)}</div></div>`).join("") : empty("tone", "Every app has its own rhythm.", "Set a concise tone for Slack, a polished one for email, or keep your words untouched.")}</div>`;
@@ -745,7 +781,7 @@ function renderSettings() {
       ],
     )}${setting("Idle indicator", "Keep a small ready indicator visible.", "idleIndicator")}${setting("Enhance with AI", "Clean up words using your configured language model.", "aiEnhance")}<div class="setting-row"><div><h3>Recordings folder</h3><p>${esc(s.recordingsDir || state.dataDir + "/recordings")}</p></div>${button("Choose folder", "recordings-folder", "folder")}</div><p class="tip">Changing folders applies to new recordings. Existing audio keeps its original path so playback and retries still work.</p>`;
   if (settingsTab === "hotkeys")
-    body = `<h2>A shortcut for every thought.</h2><p class="muted">Bindings are global when Accessibility access is enabled. Use hold for push-to-talk, or toggle for hands-free recording.</p>${s.hotkeys.map((h, i) => `<div class="list-row"><div class="body"><strong>${esc(h.mode)}</strong><p>${h.toggle ? "Tap to start / tap to stop" : "Hold to speak"}</p></div><kbd>${esc(h.modifiers.join(" + "))} + ${h.keyCode === 49 ? "Space" : h.keyCode === 37 ? "L" : h.keyCode === -1 ? "modifier" : h.keyCode >= 130 ? `M${h.keyCode - 127}` : h.keyCode}</kbd>${button("Edit", "edit-hotkey", "edit", "small", `data-index="${i}"`)}${button("Remove", "remove-hotkey", "trash", "small danger", `data-index="${i}"`)}</div>`).join("")}<div class="row">${button("Add binding", "add-hotkey", "plus")}${button("Restore defaults", "reset-hotkeys", "refresh")}</div><p class="tip">Escape cancels an active recording. Cmd+Shift+L can be configured to paste the last dictation.</p>${area("suppressed-apps", "Pause shortcuts in these applications", s.suppressedApps.join("\n"), "One bundle identifier per line.")} ${button("Save exclusions", "save-suppressed", "check")}`;
+    body = `<h2>A shortcut for every thought.</h2><p class="muted">Bindings are global when Accessibility access is enabled. Use hold for push-to-talk, or toggle for hands-free recording.</p>${s.hotkeys.map((h, i) => `<div class="list-row"><div class="body"><strong>${esc(h.mode === "utility" ? "AI utility · " + ((s.aiUtilities || []).find(u => u.id === h.utilityId)?.name || h.utilityId) : h.mode)}</strong><p>${h.mode === "utility" ? "Tap to transform text" : h.toggle ? "Tap to start / tap to stop" : "Hold to speak"}</p></div><kbd>${esc(h.modifiers.join(" + "))} + ${h.keyCode === 49 ? "Space" : h.keyCode === 37 ? "L" : h.keyCode === -1 ? "modifier" : h.keyCode >= 130 ? `M${h.keyCode - 127}` : h.keyCode}</kbd>${button("Edit", "edit-hotkey", "edit", "small", `data-index="${i}"`)}${button("Remove", "remove-hotkey", "trash", "small danger", `data-index="${i}"`)}</div>`).join("")}<div class="row">${button("Add binding", "add-hotkey", "plus")}${button("Restore defaults", "reset-hotkeys", "refresh")}</div><p class="tip">Escape cancels an active recording. Cmd+Shift+L can be configured to paste the last dictation.</p>${area("suppressed-apps", "Pause shortcuts in these applications", s.suppressedApps.join("\n"), "One bundle identifier per line.")} ${button("Save exclusions", "save-suppressed", "check")}`;
   if (settingsTab === "permissions")
     body = `<h2>Only what’s needed.</h2><p class="muted">Scribble needs microphone access for recording and Accessibility access for shortcuts, insertion, and expansions. Screen recording is optional for meeting audio.</p>${[
       ["microphone", "Microphone", "Record your voice."],
@@ -1118,6 +1154,8 @@ function editItem(kind, id) {
     );
 }
 function editHotkey(index) {
+  const existing = state.settings.hotkeys[index];
+  if (existing?.mode === "utility") { editAIUtility(existing.utilityId); return; }
   const h = state.settings.hotkeys[index] || {
     modifiers: ["option"],
     keyCode: 49,
@@ -1493,6 +1531,18 @@ document.addEventListener("click", async (e) => {
       }
       return;
     }
+    if (a === "add-ai-utility" || a === "edit-ai-utility") { editAIUtility(b.dataset.id); return; }
+    if (["delete-ai-utility", "toggle-ai-utility"].includes(a)) {
+      const id = b.dataset.id;
+      const aiUtilities = (state.settings.aiUtilities || []).filter(u => a !== "delete-ai-utility" || u.id !== id).map(u => u.id === id && a === "toggle-ai-utility" ? {...u, enabled: u.enabled === false} : u);
+      const hotkeys = (state.settings.hotkeys || []).filter(h => a !== "delete-ai-utility" || h.mode !== "utility" || h.utilityId !== id);
+      await request("preferences", {aiUtilities, hotkeys}); return;
+    }
+    if (a === "run-ai-utility") { b.disabled = true; try { await request("run-ai-utility", {id: b.dataset.id}); } finally { b.disabled = false; } return; }
+    if (a === "copy-ai-utility" && utilityResult) { await request("copy", {text: utilityResult.text}); return; }
+    if (a === "paste-ai-utility" && utilityResult?.canInsert) { await insertAIUtility(); return; }
+    if (a === "dismiss-ai-utility") { await request("dismiss-ai-utility", {id: utilityResult.id}); utilityResult = null; render(); return; }
+    if (a === "cancel-ai-utility") { await request("cancel-ai-utility", {id: b.dataset.id}); return; }
     if (a === "navigate") {
       page = b.dataset.page;
       search = "";
@@ -2312,6 +2362,10 @@ document.addEventListener("keydown", (e) => {
     request("cancel-recording").catch(() => {});
     return;
   }
+  if (page === "ai" && utilityResult && !$("#modal").open) {
+    if (e.key === "Escape") { request("dismiss-ai-utility", {id: utilityResult.id}).catch(() => {}); utilityResult = null; render(); e.preventDefault(); return; }
+    if (utilityResult.canInsert && e.key === "Tab" && !e.shiftKey && e.target.id === "utility-result") { e.preventDefault(); insertAIUtility().catch(error => toast(error.message || "Unable to insert result")); return; }
+  }
   if (page === "command" && commandResult && e.key === "Escape") {
     commandResult = null;
     render();
@@ -2340,7 +2394,8 @@ api.on(({ event, data }) => {
     if (form?.elements.keyCode && Number.isInteger(data.keyCode)) {
       form.elements.keyCode.value = data.keyCode;
       form.elements.modifiers.value = (data.modifiers || []).join(", ");
-      form.elements.mouseButton.value = data.keyCode >= 130 ? String(data.keyCode) : "";
+      if (form.elements.mouseButton) form.elements.mouseButton.value = data.keyCode >= 130 ? String(data.keyCode) : "";
+      if (form.elements.bindShortcut) form.elements.bindShortcut.checked = true;
       $("#capture-hotkey-status").textContent = "Captured: " + (data.modifiers || []).join(" + ") + (data.keyCode < 0 ? "" : " + " + (data.label || data.keyCode));
     }
   }
@@ -2382,6 +2437,8 @@ api.on(({ event, data }) => {
       label.textContent =
         Math.round(Math.min(1, data.progress || 0) * 100) + "%";
   }
+  if (event === "utility-state") { if (data.busy) utilityBusy.add(data.id); else utilityBusy.delete(data.id); if (page === "ai") render(); }
+  if (event === "utility-result") { utilityResult = data; page = "ai"; render(); }
   if (event === "command-result") {
     commandResult = data;
     page = "command";

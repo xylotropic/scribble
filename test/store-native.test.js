@@ -264,3 +264,48 @@ test('multi-action shortcut validation persists ordered actions and rejects inva
  assert.throws(()=>store.upsert('shortcuts',{id:saved.id,actions:[{type:'websites',urls:['javascript:alert(1)']}]}),/valid/);assert.deepEqual(store.data,before);
  const invalid=structuredClone(store.data);invalid.shortcuts.find(x=>x.id===saved.id).actions=[{type:'folders',paths:['relative']}];assert.throws(()=>store.restore(invalid),/valid/);assert.deepEqual(store.data,before);
 });
+
+test("AI utility presets and disabled bindings persist without altering global AI", (t) => {
+  const store = workspace(t);
+  const utility = { id: "grammar-test", name: "Fix grammar", preset: "grammar", source: "selection", enabled: false };
+  const binding = { keyCode: 2, modifiers: ["command", "shift"], mode: "utility", utilityId: utility.id };
+  store.updateSettings({ aiUtilities: [utility], hotkeys: [...store.data.settings.hotkeys, binding] });
+  const saved = new Store(store.dir);
+  assert.deepEqual(saved.data.settings.aiUtilities, [utility]);
+  assert.equal(saved.data.settings.hotkeys.at(-1).utilityId, utility.id);
+  assert.equal(saved.data.settings.aiProvider, "ollama");
+  assert.throws(() => store.updateSettings({ aiUtilities: [] }), /existing utility/);
+  store.updateSettings({ aiUtilities: [], hotkeys: store.data.settings.hotkeys.filter(item => item.mode !== "utility") });
+  assert.deepEqual(store.data.settings.aiUtilities, []);
+});
+test("AI utility invalid presets, source, IDs and executable fields fail atomically", (t) => {
+  const store = workspace(t);
+  const utility = { id: "one", name: "Polish", preset: "polish", source: "clipboard", enabled: true };
+  for (const patch of [{ preset: "script" }, { source: "screen" }, { id: "bad id" }, { enabled: 1 }, { name: " " }, { prompt: "arbitrary" }, { script: "execute" }]) {
+    const before = structuredClone(store.data);
+    assert.throws(() => store.updateSettings({ aiUtilities: [{ ...utility, ...patch }] }), /Invalid AI utility/);
+    assert.deepEqual(store.data, before);
+  }
+  assert.throws(() => store.updateSettings({ aiUtilities: [utility, utility] }), /Invalid AI utility/);
+  assert.throws(() => store.updateSettings({ aiUtilities: Array.from({ length: 33 }, (_, i) => ({ ...utility, id: "u" + i })) }), /at most 32/);
+});
+test("utility bindings enforce references, physical chords and global conflicts", (t) => {
+  const store = workspace(t);
+  const utility = { id: "one", name: "Summarize", preset: "summary", source: "selection", enabled: true };
+  store.updateSettings({ aiUtilities: [utility] });
+  const binding = { keyCode: 2, modifiers: ["command"], mode: "utility", utilityId: "one" };
+  for (const patch of [{ utilityId: "missing" }, { keyCode: -1 }, { keyCode: 130 }, { keyCode: 55 }, { modifiers: [] }, { prompt: "run" }])
+    assert.throws(() => store.updateSettings({ hotkeys: [binding, { ...binding, keyCode: 3, ...patch }] }));
+  const existing = store.data.settings.hotkeys[0];
+  assert.throws(() => store.updateSettings({ hotkeys: [...store.data.settings.hotkeys, { ...binding, keyCode: existing.keyCode, modifiers: ["alt"] }] }), /Duplicate hotkey/);
+  const invalidBackup = structuredClone(store.data);
+  invalidBackup.settings.hotkeys = [binding];
+  invalidBackup.settings.aiUtilities = [];
+  const before = structuredClone(store.data);
+  assert.throws(() => store.restore(invalidBackup), /existing utility/);
+  assert.deepEqual(store.data, before);
+  const validBackup = structuredClone(before);
+  validBackup.settings.hotkeys = [binding];
+  store.restore(validBackup);
+  assert.equal(new Store(store.dir).data.settings.hotkeys[0].utilityId, "one");
+});

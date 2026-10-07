@@ -42,6 +42,7 @@ const SETTINGS = {
   aiVersion: "2024-10-21",
   aiInstructions:
     "Clean up grammar and punctuation. Preserve meaning and names. Return only the final text.",
+  aiUtilities: [],
   hotkeys: [
     { keyCode: 49, modifiers: ["option"], mode: "dictation", toggle: false },
     {
@@ -176,7 +177,7 @@ class Store {
       throw error;
     }
   }
-  validateSettings(patch) {
+  validateSettings(patch, baseSettings = this.data.settings) {
     if (!patch || typeof patch !== "object" || Array.isArray(patch))
       throw Error("Invalid preferences");
     if (
@@ -286,6 +287,7 @@ class Store {
               "meeting",
               "note",
               "paste-last",
+              "utility",
             ].includes(item.mode) ||
             (item.toggle !== undefined && typeof item.toggle !== "boolean")
           )
@@ -293,6 +295,29 @@ class Store {
       }
       if (k === "suppressedApps" && v.some((x) => typeof x !== "string"))
         throw Error("Invalid application list");
+    }
+    const utilities = patch.aiUtilities ?? baseSettings.aiUtilities ?? [];
+    const hotkeys = patch.hotkeys ?? baseSettings.hotkeys ?? [];
+    if (!Array.isArray(utilities) || utilities.length > 32) throw Error("AI utilities must be an array of at most 32 items");
+    const ids = new Set();
+    const utilityFields = new Set(["id", "name", "preset", "source", "enabled"]);
+    for (const utility of utilities) {
+      if (!utility || typeof utility !== "object" || Array.isArray(utility) || Object.keys(utility).some(key => !utilityFields.has(key)) ||
+          typeof utility.id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(utility.id) || ids.has(utility.id) ||
+          typeof utility.name !== "string" || !utility.name.trim() || utility.name.length > 120 || /[\x00-\x1f\x7f]/.test(utility.name) ||
+          !["grammar", "professional", "polish", "summary", "bullets", "email"].includes(utility.preset) ||
+          !["selection", "clipboard"].includes(utility.source) || typeof utility.enabled !== "boolean") throw Error("Invalid AI utility");
+      ids.add(utility.id);
+    }
+    const utilityHotkeyFields = new Set(["keyCode", "modifiers", "mode", "toggle", "utilityId"]);
+    for (const binding of hotkeys) {
+      if (binding.mode !== "utility") {
+        if (binding.utilityId !== undefined) throw Error("Utility ID requires utility hotkey mode");
+        continue;
+      }
+      if (Object.keys(binding).some(key => !utilityHotkeyFields.has(key)) || !ids.has(binding.utilityId) ||
+          binding.keyCode < 0 || binding.keyCode > 127 || (binding.keyCode >= 54 && binding.keyCode <= 63) ||
+          !binding.modifiers.length) throw Error("Utility hotkey requires an existing utility and a modifier plus regular key");
     }
     return structuredClone(patch);
   }
@@ -337,7 +362,7 @@ class Store {
     }
     next.settings = {
       ...structuredClone(SETTINGS),
-      ...this.validateSettings(value.settings || {}),
+      ...this.validateSettings(value.settings || {}, SETTINGS),
       // Legacy saved workspaces and backups should not interrupt established users.
       ...(!Object.hasOwn(value.settings || {}, "onboardingCompleted")
         ? { onboardingCompleted: true }

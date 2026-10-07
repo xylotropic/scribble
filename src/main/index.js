@@ -65,6 +65,7 @@ let window,
 const timers = new Map(),
   allowedFiles = new Set(),
   pendingOpenFiles = [];
+const utilityResults = new Map();
 function emit(event, data) {
   for (const w of [window, overlay])
     if (w && !w.isDestroyed())
@@ -349,7 +350,8 @@ function apiKey(provider) {
 function updateNative() {
   if (!native.available) return;
   native
-    .request("setHotkeys", { hotkeys: store.data.settings.hotkeys })
+    .request("setHotkeys", { hotkeys: store.data.settings.hotkeys.filter((binding) =>
+      binding.mode !== "utility" || store.data.settings.aiUtilities.some((utility) => utility.id === binding.utilityId && utility.enabled)) })
     .catch((e) => emit("native-error", e.message));
   native
     .request("setExpansions", {
@@ -513,6 +515,63 @@ Use ${settings.spelling === "uk" ? "British" : "American"} English spelling for 
     apiKey(),
     { signal: activeProcess?.controller.signal },
   );
+}
+async function runAIUtility(id) {
+  const utility = store.data.settings.aiUtilities.find((item) => item.id === id);
+  if (!utility || !utility.enabled) throw Error("AI utility is disabled or unavailable");
+  if (activeProcess || recordTarget || systemRecording || speech.status().busy)
+    throw Error("Finish the current recording or processing first");
+  const job = { controller: new AbortController(), kind: "ai-utility", utilityId: id };
+  activeProcess = job;
+  emit("utility-state", { id, busy: true });
+  try {
+    const target = await native.request("captureInsertionTarget").catch(() => null);
+    const input = utility.source === "selection"
+      ? (await native.request("selection").catch(() => ({}))).text || ""
+      : clipboard.readText();
+    if (job.controller.signal.aborted) throw new DOMException("Utility canceled", "AbortError");
+    const messages = require("./ai-utility").utilityMessages(utility, input, store.data.settings);
+    const text = await chat(store.data.settings, messages, apiKey(), { signal: job.controller.signal });
+    if (job.controller.signal.aborted) throw new DOMException("Utility canceled", "AbortError");
+    if (typeof text !== "string" || !text.trim() || text.length > 100000) throw Error("The utility returned no usable text");
+    const result = { id: crypto.randomUUID(), utilityId: id, name: utility.name, text,
+      canInsert: !!target?.token && target.bundleId !== "org.scribble.voice" };
+    for (const [key, saved] of utilityResults) if (saved.expiresAt < Date.now()) utilityResults.delete(key);
+    if (utilityResults.size >= 32) utilityResults.delete(utilityResults.keys().next().value);
+    job.resultId = result.id;
+    utilityResults.set(result.id, { ...result, targetToken: target?.token, expiresAt: Date.now() + 600000 });
+    if (!window || window.isDestroyed()) {
+      createWindow();
+      await new Promise((resolve) => window.webContents.once("did-finish-load", resolve));
+    }
+    if (job.controller.signal.aborted) throw new DOMException("Utility canceled", "AbortError");
+    show();
+    emit("utility-result", result);
+    return result;
+  } finally {
+    if (job.controller.signal.aborted && job.resultId) utilityResults.delete(job.resultId);
+    if (activeProcess === job) activeProcess = null;
+    emit("utility-state", { id, busy: false });
+    emit("state", snapshot());
+  }
+}
+async function pasteAIUtility(id) {
+  const result = utilityResults.get(id);
+  if (!result || result.expiresAt < Date.now()) throw Error("This utility result expired; run it again");
+  if (!result.canInsert) throw Error("No insertion target was captured; copy this result instead");
+  try {
+    const pasted = await native.request("paste", { text: result.text, targetToken: result.targetToken,
+      activateTarget: true, restoreClipboard: store.data.settings.restoreClipboard, autoEnter: false });
+    if (!pasted.inserted && !pasted.dispatched) throw Error(pasted.reason || "The result could not be inserted");
+    utilityResults.delete(id);
+    return pasted;
+  } catch (error) {
+    // The native token is single-use even on refusal. Retain text for Copy,
+    // but remove Insert instead of offering another attempt with a stale target.
+    result.canInsert = false;
+    emit("utility-result", { id: result.id, utilityId: result.utilityId, name: result.name, text: result.text, canInsert: false });
+    throw error;
+  }
 }
 async function runShortcut(text) {
   const match = domain.matchShortcut(text, store.data.shortcuts);
@@ -943,6 +1002,13 @@ async function transcribeAndProcess(
 }
 const actions = {
   state: () => snapshot(),
+  "run-ai-utility": ({ id }) => runAIUtility(id),
+  "paste-ai-utility": ({ id }) => pasteAIUtility(id),
+  "dismiss-ai-utility": ({ id }) => utilityResults.delete(id),
+  "cancel-ai-utility": ({ id }) => {
+    if (activeProcess?.kind === "ai-utility" && (!id || activeProcess.utilityId === id)) activeProcess.controller.abort();
+    return true;
+  },
   "capture-hotkey-start": async () => {
     if (recordTarget || activeProcess) throw Error("Finish recording before capturing a shortcut");
     const result = await native.request("hotkeyCaptureStart");
@@ -1667,6 +1733,12 @@ app
         await actions["cancel-recording"]({});
         return;
       }
+      if (x.mode === "utility") {
+        if (x.phase === "start") await runAIUtility(x.utilityId).catch((error) => {
+          if (error.name !== "AbortError") notify("AI utility", error.message);
+        });
+        return;
+      }
       if (x.mode === "paste-last" && x.phase === "start") {
         await actions["paste-last"]();
         return;
@@ -1851,6 +1923,8 @@ app.on("before-quit", (event) => {
   if (shutdownInProgress) return;
   shutdownInProgress = true;
   quitting = true;
+  activeProcess?.controller.abort();
+  utilityResults.clear();
   native?.close();
   server?.close();
   for (const timer of timers.values()) clearTimeout(timer);
