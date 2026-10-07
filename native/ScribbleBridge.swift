@@ -62,10 +62,32 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
         var toggle: Bool
         var held = false
         var toneId: String? = nil
+        var sideFlags: UInt64 = 0
     }
     var bindings = [Binding(key: 49, flags: .maskAlternate, mode: "dictation", toggle: false)]
     // Only auxiliary down events consumed by a binding own their corresponding up.
     var consumedMouseButtons = Set<Int64>()
+    // Apple SDK IOKit/hidsystem/IOLLEvent.h NX_DEVICE* masks; Carbon Events.h physical modifier codes.
+    let modifierSides: [(name:String,key:CGKeyCode,bit:UInt64,family:CGEventFlags)] = [
+        ("left-control",59,0x1,.maskControl),("right-control",62,0x2000,.maskControl),
+        ("left-shift",56,0x2,.maskShift),("right-shift",60,0x4,.maskShift),
+        ("left-command",55,0x8,.maskCommand),("right-command",54,0x10,.maskCommand),
+        ("left-option",58,0x20,.maskAlternate),("right-option",61,0x40,.maskAlternate)
+    ]
+    var currentSideFlags: UInt64 = 0
+    var lastModifierFlags: CGEventFlags = []
+    func snapshotModifierSides() { lastModifierFlags = CGEventSource.flagsState(.combinedSessionState).intersection(relevantFlags); currentSideFlags = modifierSides.reduce(0) { $0 | (CGEventSource.keyState(.combinedSessionState,key:$1.key) ? $1.bit : 0) } }
+    func updateModifierSides(_ type:CGEventType,_ event:CGEvent) {
+        let raw=event.flags.rawValue, code=event.getIntegerValueField(.keyboardEventKeycode)
+        for family:CGEventFlags in [.maskControl,.maskShift,.maskCommand,.maskAlternate] {
+            let sides=modifierSides.filter { $0.family == family }, mask=sides.reduce(UInt64(0)) { $0 | $1.bit }
+            if !event.flags.contains(family) { currentSideFlags &= ~mask }
+            else if raw & mask != 0 { currentSideFlags = (currentSideFlags & ~mask) | (raw & mask) }
+            else if type == .flagsChanged, let side=sides.first(where:{Int64($0.key)==code}) { currentSideFlags ^= side.bit }
+        }
+    }
+    func matchesSides(_ binding:Binding) -> Bool { (currentSideFlags & binding.sideFlags) == binding.sideFlags }
+
     let relevantFlags: CGEventFlags = [.maskAlternate, .maskCommand, .maskControl, .maskShift, .maskSecondaryFn]
     var expansions: [[String: String]] = []
     var typed = ""
@@ -80,7 +102,7 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     var recordingPath: String?
     let audioQueue = DispatchQueue(label: "scribble.audio")
     var pasteboardCount = NSPasteboard.general.changeCount
-    func status() -> [String: Any] { ["accessibility": AXIsProcessTrusted(), "screenRecording": CGPreflightScreenCaptureAccess(), "microphone": AVCaptureDevice.authorizationStatus(for: .audio).rawValue, "hotkeys": tap != nil, "hotkeyBindings": bindings.map { ["keyCode":$0.key, "inputKind":$0.key >= 130 ? "mouse" : ($0.key < 0 ? "modifiers" : "keyboard"), "modifierFlags":$0.flags.rawValue, "mode":$0.mode, "toggle":$0.toggle, "active":$0.held, "toneId":$0.toneId ?? ""] as [String:Any] }, "systemRecording": stream != nil, "systemPaused": systemPaused, "permissionIdentity": ["pid": ProcessInfo.processInfo.processIdentifier, "executable": CommandLine.arguments.first ?? "", "bundleId": Bundle.main.bundleIdentifier ?? "", "microphoneSource": "native-helper-AVCaptureDevice"]] }
+    func status() -> [String: Any] { ["accessibility": AXIsProcessTrusted(), "screenRecording": CGPreflightScreenCaptureAccess(), "microphone": AVCaptureDevice.authorizationStatus(for: .audio).rawValue, "hotkeys": tap != nil, "hotkeyBindings": bindings.map { ["keyCode":$0.key, "inputKind":$0.key >= 130 ? "mouse" : ($0.key < 0 ? "modifiers" : "keyboard"), "modifierFlags":$0.flags.rawValue, "sideModifierFlags":$0.sideFlags, "mode":$0.mode, "toggle":$0.toggle, "active":$0.held, "toneId":$0.toneId ?? ""] as [String:Any] }, "systemRecording": stream != nil, "systemPaused": systemPaused, "permissionIdentity": ["pid": ProcessInfo.processInfo.processIdentifier, "executable": CommandLine.arguments.first ?? "", "bundleId": Bundle.main.bundleIdentifier ?? "", "microphoneSource": "native-helper-AVCaptureDevice"]] }
     func focused() -> AXUIElement? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &value) == .success else { return nil }
@@ -193,6 +215,7 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     }
     func startTap() {
         guard eventTapAllowed, tap == nil, AXIsProcessTrusted() else { return }
+        snapshotModifierSides()
         let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.otherMouseDown.rawValue) | (1 << CGEventType.otherMouseUp.rawValue)
         tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: CGEventMask(mask), callback: { _, type, event, ref in
             let bridge = Unmanaged<Bridge>.fromOpaque(ref!).takeUnretainedValue()
@@ -213,10 +236,13 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
             emit(["event":"hotkey", "phase":"cancel", "mode":"dictation"])
             return Unmanaged.passUnretained(event)
         }
+        let previousSides = currentSideFlags, previousFlags = lastModifierFlags
+        updateModifierSides(type,event)
         let currentFlags = event.flags.intersection(relevantFlags)
+        lastModifierFlags = currentFlags
         for i in bindings.indices {
             let binding = bindings[i]
-            let pressed = binding.key < 0 ? (type == .flagsChanged && currentFlags == binding.flags) : ((binding.key >= 130 ? type == .otherMouseDown : type == .keyDown) && code == binding.key && currentFlags == binding.flags)
+            let pressed = binding.key < 0 ? (type == .flagsChanged && currentFlags == binding.flags && matchesSides(binding) && !(previousFlags == binding.flags && (previousSides & binding.sideFlags) == binding.sideFlags)) : ((binding.key >= 130 ? type == .otherMouseDown : type == .keyDown) && code == binding.key && currentFlags == binding.flags && matchesSides(binding))
             if pressed && (mouse || event.getIntegerValueField(.keyboardEventAutorepeat) == 0) {
                 if mouse { consumedMouseButtons.insert(button) }
                 if binding.toggle || binding.mode == "paste-last" {
@@ -227,7 +253,7 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
                 return binding.key < 0 ? Unmanaged.passUnretained(event) : nil
             }
             let released = (binding.key >= 130 ? type == .otherMouseUp : type == .keyUp) && code == binding.key
-            if !binding.toggle, binding.held, (released || type == .flagsChanged && !currentFlags.isSuperset(of: binding.flags)) {
+            if !binding.toggle, binding.held, (released || type == .flagsChanged && (!currentFlags.isSuperset(of: binding.flags) || !matchesSides(binding))) {
                 bindings[i].held = false; emitHotkey("stop",binding)
                 if released { if mouse { consumedMouseButtons.remove(button) }; return nil }
             }
@@ -301,7 +327,7 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
             case "frontmost": result = frontmostContext()
             case "setHotkeys":
                 let configured = request["hotkeys"] as? [[String: Any]] ?? [request]
-                let allowedModifiers = ["option", "alt", "command", "meta", "cmd", "control", "ctrl", "shift", "fn"]
+                let allowedModifiers = ["option", "alt", "command", "meta", "cmd", "control", "ctrl", "shift", "fn"] + modifierSides.map { $0.name }
                 let candidate: [Binding] = try configured.map { item in
                     let modifiers = item["modifiers"] as? [String] ?? ["option"]
                     if let supplied = item["keyCode"] {
@@ -311,13 +337,15 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
                     let mode = item["mode"] as? String ?? "dictation"
                     guard ((-1...127).contains(key) || (130...159).contains(key)), modifiers.allSatisfy({allowedModifiers.contains($0)}), ["dictation", "command", "shortcut", "meeting", "note", "paste-last"].contains(mode), !(key == -1 && modifiers.isEmpty) else { throw NSError(domain:"Scribble", code:12, userInfo:[NSLocalizedDescriptionKey:"Invalid hotkey binding"]) }
                     var flags: CGEventFlags = []
+                    var sideFlags: UInt64 = 0
                     for modifier in modifiers {
+                        if let side=modifierSides.first(where:{$0.name==modifier}) { flags.insert(side.family); sideFlags |= side.bit; continue }
                         switch modifier { case "option", "alt": flags.insert(.maskAlternate); case "command", "meta", "cmd": flags.insert(.maskCommand); case "control", "ctrl": flags.insert(.maskControl); case "shift": flags.insert(.maskShift); case "fn": flags.insert(.maskSecondaryFn); default: break }
                     }
-                    return Binding(key: key, flags: flags, mode: mode, toggle: item["toggle"] as? Bool ?? false, toneId:item["toneId"] as? String)
+                    return Binding(key: key, flags: flags, mode: mode, toggle: item["toggle"] as? Bool ?? false, toneId:item["toneId"] as? String,sideFlags:sideFlags)
                 }
                 var signatures = Set<String>()
-                for binding in candidate { guard signatures.insert("\(binding.key):\(binding.flags.rawValue)").inserted else { throw NSError(domain:"Scribble", code:13, userInfo:[NSLocalizedDescriptionKey:"Duplicate hotkey binding"]) } }
+                for binding in candidate { guard signatures.insert("\(binding.key):\(binding.flags.rawValue):\(binding.sideFlags)").inserted else { throw NSError(domain:"Scribble", code:13, userInfo:[NSLocalizedDescriptionKey:"Duplicate hotkey binding"]) } }
                 for binding in bindings where binding.held { emitHotkey("cancel",binding) }
                 bindings = candidate
                 startTap(); result = status()
@@ -369,6 +397,25 @@ if CommandLine.arguments.contains("--clipboard-self-test") { let passed = clipbo
 let bridge = Bridge()
 if CommandLine.arguments.contains("--status") { emit(bridge.status()); exit(0) }
 if CommandLine.arguments.contains("--hotkey-tone-self-test") { let binding = Bridge.Binding(key:49,flags:.maskAlternate,mode:"dictation",toggle:false,toneId:"tone-fixture"); bridge.emitHotkey("start",binding); bridge.emitHotkey("stop",binding); exit(0) }
+if CommandLine.arguments.contains("--modifier-side-self-test") {
+    func event(_ type:CGEventType,_ key:Int64,_ flags:CGEventFlags,_ sides:UInt64)->CGEvent { let value=CGEvent(source:nil)!;value.type=type;value.flags=CGEventFlags(rawValue:flags.rawValue|sides);value.setIntegerValueField(.keyboardEventKeycode,value:key);value.setIntegerValueField(.mouseEventButtonNumber,value:2);return value }
+    bridge.bindings=[Bridge.Binding(key:49,flags:.maskAlternate,mode:"dictation",toggle:false,sideFlags:0x20),Bridge.Binding(key:49,flags:.maskAlternate,mode:"command",toggle:false,sideFlags:0x40)]
+    _=bridge.handle(.keyDown,event(.keyDown,49,.maskAlternate,0x40));let rightOnly=bridge.bindings[1].held && !bridge.bindings[0].held
+    _=bridge.handle(.flagsChanged,event(.flagsChanged,61,.maskAlternate,0x20));let sideRelease = !bridge.bindings[1].held
+    _=bridge.handle(.keyDown,event(.keyDown,49,.maskAlternate,0x20));_=bridge.handle(.keyUp,event(.keyUp,49,.maskAlternate,0x20));let leftReleased = !bridge.bindings[0].held
+    bridge.bindings=[Bridge.Binding(key:-1,flags:.maskControl,mode:"dictation",toggle:false,sideFlags:0x1)]
+    _=bridge.handle(.flagsChanged,event(.flagsChanged,59,.maskControl,0x1));let modifierHeld=bridge.bindings[0].held
+    _=bridge.handle(.flagsChanged,event(.flagsChanged,59,.maskControl,0x2000));let modifierReleased = !bridge.bindings[0].held
+    bridge.bindings=[Bridge.Binding(key:130,flags:.maskShift,mode:"command",toggle:true,sideFlags:0x4)]
+    for _ in 0..<2 { _=bridge.handle(.otherMouseDown,event(.otherMouseDown,0,.maskShift,0x4));_=bridge.handle(.otherMouseUp,event(.otherMouseUp,0,.maskShift,0x4)) }
+    let mouseToggle = !bridge.bindings[0].held && bridge.consumedMouseButtons.isEmpty
+    bridge.bindings=[Bridge.Binding(key:49,flags:.maskCommand,mode:"dictation",toggle:false)]
+    _=bridge.handle(.keyDown,event(.keyDown,49,.maskCommand,0x10));let genericRight=bridge.bindings[0].held;_=bridge.handle(.keyUp,event(.keyUp,49,.maskCommand,0x10))
+    bridge.bindings=[Bridge.Binding(key:-1,flags:.maskShift,mode:"command",toggle:true,sideFlags:0x2)]
+    _=bridge.handle(.flagsChanged,event(.flagsChanged,56,.maskShift,0x2));_=bridge.handle(.flagsChanged,event(.flagsChanged,56,.maskShift,0x2));let modifierToggleRepeat=bridge.bindings[0].held
+    _=bridge.handle(.flagsChanged,event(.flagsChanged,56,[],0));_=bridge.handle(.flagsChanged,event(.flagsChanged,56,.maskShift,0x2));let modifierToggleStopped = !bridge.bindings[0].held
+    emit(["selfTest":"modifier-sides","rightOnly":rightOnly,"sideRelease":sideRelease,"leftReleased":leftReleased,"modifierHeld":modifierHeld,"modifierReleased":modifierReleased,"mouseToggle":mouseToggle,"genericRight":genericRight,"modifierToggleRepeat":modifierToggleRepeat,"modifierToggleStopped":modifierToggleStopped]);exit(0)
+}
 if CommandLine.arguments.contains("--mouse-hotkey-self-test") {
     func event(_ type: CGEventType, button: Int64 = 2, flags: CGEventFlags = []) -> CGEvent {
         let value = CGEvent(source:nil)!; value.type = type; value.flags = flags

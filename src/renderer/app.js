@@ -1013,7 +1013,7 @@ function editHotkey(index) {
         "Modifiers (comma-separated)",
         h.modifiers.join(", "),
         "text",
-        "option, command, control, shift, fn",
+        "option, command, control, shift, fn; use left-option or right-option (also command, control, shift) for a specific side.",
       ) +
       select(
         "mouseButton",

@@ -243,6 +243,10 @@ class Store {
             item.modifiers.some(
               (x) =>
                 ![
+                  "left-option", "right-option",
+                  "left-command", "right-command",
+                  "left-control", "right-control",
+                  "left-shift", "right-shift",
                   "option",
                   "alt",
                   "command",

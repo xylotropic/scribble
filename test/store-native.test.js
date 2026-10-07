@@ -181,3 +181,10 @@ test("auxiliary bindings persist while primary mouse sentinel codes are rejected
     assert.deepEqual(store.data.settings.hotkeys, [binding]);
   }
 });
+
+test('left and right modifier bindings remain distinct and survive persistence', t => {
+ const store=workspace(t), bindings=['left-option','right-option'].map(modifier=>({keyCode:49,modifiers:[modifier],mode:'dictation'}));
+ store.updateSettings({hotkeys:bindings});
+ assert.deepEqual(new Store(path.dirname(store.file)).data.settings.hotkeys,bindings);
+ assert.throws(()=>store.updateSettings({hotkeys:[{...bindings[0],modifiers:['left-fn']}]}),/hotkey/);
+});
