@@ -912,12 +912,12 @@ const actions = {
     ),
   permissions: async () => {
     const status = await native.request("status").catch(() => ({}));
+    const microphoneStatus =
+      systemPreferences.getMediaAccessStatus("microphone");
     return {
       ...status,
-      microphone:
-        systemPreferences.getMediaAccessStatus("microphone") === "granted"
-          ? 3
-          : 0,
+      microphone: microphoneStatus === "granted" ? 3 : 0,
+      microphoneStatus,
     };
   },
   "request-permissions": async ({ kind }) => {

@@ -574,3 +574,56 @@ test(
     );
   },
 );
+
+test(
+  "Memory can be edited and disabled without losing its reference text",
+  options,
+  async (t) => {
+    const h = await fixture(t);
+    h.data.memory.push({
+      id: "memo1",
+      name: "Project",
+      content: "Old deadline",
+      enabled: true,
+    });
+    h.emit("state", h.data);
+    await h.click('[data-page="memory"]');
+    await h.click('[data-action="edit-item"][data-kind="memory"]');
+    h.input('[name="content"]', "New deadline October 20");
+    h.w.document.querySelector('[name="enabled"]').checked = false;
+    await h.submit();
+    const saved = h.calls.find((c) => c.action === "save-item");
+    assert.equal(saved.args.item.content, "New deadline October 20");
+    assert.equal(saved.args.item.enabled, false);
+    assert.equal(h.data.memory[0].id, "memo1");
+  },
+);
+
+test(
+  "All history exposes entries beyond the first hundred",
+  options,
+  async (t) => {
+    const h = await fixture(t);
+    h.data.history = Array.from({ length: 205 }, (_, index) => ({
+      id: `history-${index}`,
+      text: `Recording number ${index}`,
+      kind: "dictation",
+      createdAt: "2026-10-07T12:00:00Z",
+    }));
+    h.emit("state", h.data);
+    await h.click('[data-action="home-tab"][data-tab="history"]');
+    assert.equal(
+      h.w.document.querySelector(
+        '[data-action="copy-history"][data-id="history-204"]',
+      ),
+      null,
+    );
+    await h.click('[data-action="history-more"]');
+    await h.click('[data-action="history-more"]');
+    assert.match(h.w.document.body.textContent, /Recording number 204/);
+    assert.equal(
+      h.w.document.querySelector('[data-action="history-more"]'),
+      null,
+    );
+  },
+);

@@ -99,3 +99,8 @@ Public Vowen engine coverage exceeds a Whisper-only implementation. NVIDIA's [Pa
 
 - Public commit `7ccd035df3016920b759743fd9407fbcc4e96ba3` was cloned into a new directory. `npm ci`, native bridge compilation and documented FFmpeg source setup succeeded. The resulting clone passed 179 tests with five optional live tests skipped.
 - Command Mode now previews available screen images and attaches only the user-selected preview. A renderer interaction test verifies draft preservation, no premature command dispatch, and the selected image in the eventual command request. Actual screen permission, region cropping and live vision inference remain unverified or incomplete.
+
+### Current packaged UI observation
+
+- The rebuilt app launched from `release/mac-arm64/Scribble.app`; its renderer URL proves it was the new package rather than the older installed copy. Command Mode visibly exposes file context and screen-context controls. Dictionary → Expansions → Add expansion visibly exposes typed shortcut, rich replacement, formatting controls and template variables. This observes UI availability, not system-wide insertion success.
+- Full suite after rich expansion changes: 186 tests, 181 passed, five optional live tests skipped. The rebuilt app passes strict deep signature verification. Accessibility authentication remains at the macOS password sheet.

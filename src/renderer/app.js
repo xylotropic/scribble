@@ -100,6 +100,7 @@ let state = null,
   commandDraft = "",
   commandTextContext = "",
   historyKind = "all",
+  historyLimit = 100,
   originalHistory = new Set(),
   historyRevision = new Map();
 let recordingToken = 0,
@@ -422,7 +423,7 @@ function renderHome() {
           historyKind,
         )}<input class="search" data-focus="search" id="search" value="${esc(search)}" placeholder="Search words, commands, or recordings…">`
       : ""
-  }<div class="card">${historyRows(state.history.filter(historyMatches).slice(0, tab === "history" ? 100 : 5))}</div>`;
+  }<div class="card">${historyRows(state.history.filter(historyMatches).slice(0, tab === "history" ? historyLimit : 5))}</div>${tab === "history" && state.history.filter(historyMatches).length > historyLimit ? button("Load older entries", "history-more", "arrow") : ""}`;
 }
 function historyText(entry) {
   if (originalHistory.has(entry.id)) return entry.original || entry.text || "";
@@ -570,13 +571,13 @@ function renderAI() {
       ["custom", "Custom OpenAI-compatible API"],
     ],
     s.aiProvider,
-  )}${field("aiEndpoint", s.aiProvider === "ollama" ? "Ollama server" : "API base URL", s.aiEndpoint)}${field("aiModel", "Model", s.aiModel)}${field("aiDeployment", "Azure deployment (Azure only)", s.aiDeployment)}${field("aiVersion", "Azure API version (Azure only)", s.aiVersion)}${field("apiKey", "Cloud API key (unused for Ollama)", "", "password", "Leave blank to keep this provider’s saved key.")}${area("aiInstructions", "Dictation instructions", s.aiInstructions)}${check("aiEnhance", "Enhance dictation after transcription", s.aiEnhance)}<div class="row"><button type="submit" class="primary">Save configuration</button>${button("Test connection", "ai-test", "check")}</div></form></div><div class="card"><p class="eyebrow">Local intelligence</p><h2>Keep the whole loop private.</h2><p class="muted">Ollama serves a local language model for cleanup, commands, summaries, and tones. No API key is needed.</p><div class="code">ollama pull ${esc(s.aiModel)}</div><div class="row wrap">${button("Get Ollama", "open-url", "download", "", 'data-url="https://ollama.com/download/mac"')}${button("Download selected model", "ai-download", "model")}</div><div id="ai-status" class="notice"></div><p class="tip">Scribble starts its bundled Ollama runtime when needed. You can use a smaller model on a Mac with limited memory.</p><h3>What gets sent?</h3><p class="muted">Only the text you ask to process. Scribble does not send audio to a language model, and does not use telemetry.</p></div></div>`;
+  )}${field("aiEndpoint", s.aiProvider === "ollama" ? "Ollama server" : "API base URL", s.aiEndpoint)}${field("aiModel", "Model", s.aiModel)}${field("aiDeployment", "Azure deployment (Azure only)", s.aiDeployment)}${field("aiVersion", "Azure API version (Azure only)", s.aiVersion)}${field("apiKey", "Cloud API key (unused for Ollama)", "", "password", "Leave blank to keep this provider’s saved key.")}${area("aiInstructions", "Dictation instructions", s.aiInstructions)}${check("aiEnhance", "Enhance dictation after transcription", s.aiEnhance)}<div class="row"><button type="submit" class="primary">Save configuration</button>${button("Test connection", "ai-test", "check")}</div></form></div><div class="card"><p class="eyebrow">Local intelligence</p><h2>Keep the whole loop private.</h2><p class="muted">Ollama serves a local language model for cleanup, commands, summaries, and tones. No API key is needed.</p><div class="code">ollama pull ${esc(s.aiModel)}</div><div class="row wrap">${button("Get Ollama", "open-url", "download", "", 'data-url="https://ollama.com/download/mac"')}${button("Download selected model", "ai-download", "model")}</div><div id="ai-status" class="notice"></div><p class="tip">Scribble starts its bundled Ollama runtime when needed. You can use a smaller model on a Mac with limited memory.</p><h3>What gets sent?</h3><p class="muted">Commands can include text, selected files and screen images you attach. Memory indexing sends reference text to the configured provider. Scribble does not send audio to a text model or use telemetry.</p></div></div>`;
 }
 function renderTones() {
   return `${heading("Sound like yourself", "The right tone, in the right place.", "Match an application to a style, speech model, and cleanup preference. Add as many profiles as you need.", button("Automatic", "select-tone", "refresh", "", 'data-id=""') + button("Create tone", "add-item", "plus", "primary", 'data-kind="tones"'))}<div class="grid two">${state.tones.length ? state.tones.map((t) => `<div class="card"><div class="row between"><h2>${esc(t.name)}</h2>${icon("tone")}</div><p class="muted">${esc(t.instructions || "Keep the original wording.")}</p><div class="row wrap"><span class="badge">${esc(t.modelId || "Default model")}</span><span class="badge">${t.enhance ? "AI cleanup" : "Original words"}</span></div><p class="tip">${esc(t.apps?.join(", ") || "No application rules")}</p><div class="row">${button(state.settings.pinnedToneId === t.id ? "Pinned" : "Use tone", "select-tone", "check", "small", `data-id="${t.id}"`)}${button("Edit", "edit-item", "edit", "small", `data-kind="tones" data-id="${t.id}"`)}${button("Delete", "delete", "trash", "small danger", `data-kind="tones" data-id="${t.id}"`)}</div></div>`).join("") : empty("tone", "Every app has its own rhythm.", "Set a concise tone for Slack, a polished one for email, or keep your words untouched.")}</div>`;
 }
 function renderMemory() {
-  return `${heading("A little context goes a long way", "Remember what matters.", "Reference notes and files are indexed with your selected language model. Adding or re-indexing sends their text to that provider. Choose Ollama to keep indexing on this Mac.", button("Import file", "import-items", "upload", "", 'data-kind="memory"') + button("Add memory", "add-item", "plus", "primary", 'data-kind="memory"'))}<div class="card">${state.memory.length ? state.memory.map((m) => `<div class="list-row"><span class="list-icon">${icon("memory")}</span><div class="body"><strong>${esc(m.name)}</strong><p>${esc(m.status || "Not indexed")}${m.error ? " · " + esc(m.error) : ""}</p><p class="truncate">${esc((m.summary || m.content)?.slice(0, 180))}</p></div><input type="checkbox" data-toggle-kind="memory" data-id="${m.id}" ${m.enabled !== false ? "checked" : ""} aria-label="Include memory">${button("Re-index", "memory-reindex", "refresh", "small", `data-id="${m.id}"`)}${button("", "delete", "trash", "ghost icon danger", `data-kind="memory" data-id="${m.id}"`)}</div>`).join("") : empty("memory", "Your useful context, on hand.", "Names, project details, preferred writing style, or a reference document.")}</div>`;
+  return `${heading("A little context goes a long way", "Remember what matters.", "Reference notes and files are indexed with your selected language model. Adding or re-indexing sends their text to that provider. Choose Ollama to keep indexing on this Mac.", button("Import file", "import-items", "upload", "", 'data-kind="memory"') + button("Add memory", "add-item", "plus", "primary", 'data-kind="memory"'))}<div class="card">${state.memory.length ? state.memory.map((m) => `<div class="list-row"><span class="list-icon">${icon("memory")}</span><div class="body"><strong>${esc(m.name)}</strong><p>${esc(m.status || "Not indexed")}${m.error ? " · " + esc(m.error) : ""}</p><p class="truncate">${esc((m.summary || m.content)?.slice(0, 180))}</p></div><input type="checkbox" data-toggle-kind="memory" data-id="${m.id}" ${m.enabled !== false ? "checked" : ""} aria-label="Include memory">${button("Edit", "edit-item", "edit", "small", `data-kind="memory" data-id="${m.id}"`)}${button("Re-index", "memory-reindex", "refresh", "small", `data-id="${m.id}"`)}${button("", "delete", "trash", "ghost icon danger", `data-kind="memory" data-id="${m.id}"`)}</div>`).join("") : empty("memory", "Your useful context, on hand.", "Names, project details, preferred writing style, or a reference document.")}</div>`;
 }
 function setting(label, description, key, type = "checkbox", options) {
   const s = state.settings;
@@ -670,7 +671,7 @@ function renderSettings() {
     ]
       .map(
         ([k, l, d]) =>
-          `<div class="setting-row"><div><h3>${l}</h3><p>${d}</p><span class="permission-state">${k === "microphone" ? (permissions.microphone === 3 || permissions.microphone === true ? "Allowed" : "Not verified") : permissions[k === "screen" ? "screenRecording" : k] ? "Allowed" : "Not yet allowed"}</span></div><div class="row">${button("Request", "request-permission", "shield", "small", `data-kind="${k}"`)}${button("Open settings", "permission-settings", "arrow", "small", `data-kind="${k}"`)}</div></div>`,
+          `<div class="setting-row"><div><h3>${l}</h3><p>${d}</p><span class="permission-state">${k === "microphone" ? (permissions.microphone === 3 || permissions.microphone === true ? "Allowed" : { denied: "Denied — enable in System Settings", restricted: "Restricted by macOS", "not-determined": "Not yet requested", unknown: "Status unavailable" }[permissions.microphoneStatus] || "Not verified") : permissions[k === "screen" ? "screenRecording" : k] ? "Allowed" : "Not yet allowed"}</span></div><div class="row">${button("Request", "request-permission", "shield", "small", `data-kind="${k}"`)}${button("Open settings", "permission-settings", "arrow", "small", `data-kind="${k}"`)}</div></div>`,
       )
       .join("")}${button("Refresh status", "check-permissions", "refresh")}`;
   if (settingsTab === "privacy")
@@ -860,7 +861,14 @@ function editItem(kind, id) {
   if (kind === "memory")
     html =
       field("name", "Memory name", item.name) +
-      area("content", "Reference text", item.content) +
+      (item.filePath
+        ? `<p class="muted">Source file: ${esc(item.filePath)}. Saving re-reads this file and rebuilds its summary using your configured AI provider.</p>`
+        : area(
+            "content",
+            "Reference text",
+            item.content,
+            "Saving rebuilds the summary using your configured AI provider.",
+          )) +
       check("enabled", "Include in commands", item.enabled !== false);
   showModal(
     (id ? "Edit " : "Add ") +
@@ -893,7 +901,11 @@ function editItem(kind, id) {
       }
       await request("save-item", {
         kind,
-        item: { ...item, ...values, enabled: item.enabled !== false },
+        item: {
+          ...item,
+          ...values,
+          enabled: values.enabled ?? item.enabled !== false,
+        },
       });
       toast("Saved locally.");
     },
@@ -1354,7 +1366,13 @@ document.addEventListener("click", async (e) => {
       toast("Moment flagged.");
       return;
     }
+    if (a === "history-more") {
+      historyLimit += 100;
+      render();
+      return;
+    }
     if (a === "home-tab") {
+      historyLimit = 100;
       tab = b.dataset.tab;
       search = "";
       render();
@@ -1824,6 +1842,7 @@ document.addEventListener("change", async (e) => {
   try {
     if (input.name === "historyKind") {
       historyKind = input.value;
+      historyLimit = 100;
       render();
       return;
     }
