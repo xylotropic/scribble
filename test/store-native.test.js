@@ -214,3 +214,42 @@ test("summary provider settings persist independently and reject invalid routes 
     /summary model/,
   );
 });
+
+test("fresh onboarding stays incomplete across restarts until explicitly completed", (t) => {
+  const store = workspace(t);
+  assert.equal(store.data.settings.onboardingCompleted, false);
+  assert.equal(new Store(store.dir).data.settings.onboardingCompleted, false);
+  store.updateSettings({ onboardingCompleted: true });
+  assert.equal(new Store(store.dir).data.settings.onboardingCompleted, true);
+  store.updateSettings({ onboardingCompleted: false });
+  assert.equal(new Store(store.dir).data.settings.onboardingCompleted, false);
+});
+test("legacy saved workspace skips onboarding without changing existing preferences", (t) => {
+  const store = workspace(t);
+  store.updateSettings({ name: "Existing user", language: "ja" });
+  const legacy = JSON.parse(fs.readFileSync(store.file, "utf8"));
+  delete legacy.settings.onboardingCompleted;
+  fs.writeFileSync(store.file, JSON.stringify(legacy));
+  const migrated = new Store(store.dir);
+  assert.equal(migrated.data.settings.onboardingCompleted, true);
+  assert.equal(migrated.data.settings.name, "Existing user");
+  assert.equal(migrated.data.settings.language, "ja");
+  assert.equal(JSON.parse(fs.readFileSync(store.file, "utf8")).settings.onboardingCompleted, true);
+});
+test("legacy backup migration preserves explicit completion flags and rejects invalid values atomically", (t) => {
+  const store = workspace(t);
+  const legacy = structuredClone(store.data);
+  delete legacy.settings.onboardingCompleted;
+  store.restore(legacy);
+  assert.equal(store.data.settings.onboardingCompleted, true);
+  legacy.settings.onboardingCompleted = false;
+  store.restore(legacy);
+  assert.equal(store.data.settings.onboardingCompleted, false);
+  for (const value of ["true", 1, null, {}]) {
+    const before = structuredClone(store.data);
+    assert.throws(() => store.updateSettings({ onboardingCompleted: value }), /Invalid preference/);
+    assert.deepEqual(store.data, before);
+    assert.throws(() => store.restore({ ...legacy, settings: { ...legacy.settings, onboardingCompleted: value } }), /Invalid preference/);
+    assert.deepEqual(store.data, before);
+  }
+});

@@ -16,7 +16,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   clone = (x) => JSON.parse(JSON.stringify(x));
 async function fixture(
   t,
-  { notes = [], mediaPromise, commandFiles, screens = [] } = {},
+  { notes = [], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
 ) {
   const dom = new JSDOM(
     fs.readFileSync(path.join(__dirname, "../src/renderer/index.html"), "utf8"),
@@ -78,6 +78,7 @@ async function fixture(
     async request(action, args = {}) {
       calls.push({ action, args });
       if (action === "state") return clone(data);
+      if (action === "permissions") return clone(setupPermissions);
       if (action === "preferences") {
         Object.assign(data.settings, args);
         emit("state", data);
@@ -870,4 +871,79 @@ test('note summary fallback is visible with the provider failure', options, asyn
   const h = await fixture(t, { notes:[{id:'fallback', title:'Fixture', transcript:'Maya owns the demo.', summary:'Maya owns the demo.', summaryProvider:'local-extractive', summaryFallback:true, summaryError:'Claude CLI is not installed'}] });
   await h.click('[data-page="notes"]');
   assert.match(h.w.document.querySelector('#content').textContent, /Local extractive notes used.*Claude CLI is not installed/);
+});
+
+
+test('fresh setup waits for verified model and permissions before explicit completion', options, async (t) => {
+  const permission = {microphone:0, accessibility:false};
+  const h = await fixture(t, {setupPermissions:permission});
+  assert.ok(h.w.document.querySelector('#setup-title'));
+  assert.equal(h.w.document.querySelector('[data-action="complete-setup"]:not([data-skip])').disabled, true);
+  await h.click('[data-action="download-model"]');
+  assert.equal(h.calls.find(c=>c.action==='download-model').args.id, 'base.en');
+  assert.ok(h.w.document.querySelector('[data-action="cancel-download"]'));
+  h.emit('model-download', {id:'base.en', progress:0.6});
+  assert.equal(h.w.document.querySelector('[data-progress-label="base.en"]').textContent, '60%');
+  h.finishDownload(); await flush();
+  assert.equal(h.data.models[0].installed, true);
+  assert.equal(h.w.document.querySelector('[data-action="complete-setup"]:not([data-skip])').disabled, true);
+  Object.assign(permission, {microphone:3, accessibility:true, hotkeys:true});
+  await h.click('[data-action="refresh-setup"]');
+  assert.equal(h.data.settings.onboardingCompleted, false);
+  assert.equal(h.w.document.querySelector('[data-action="complete-setup"]:not([data-skip])').disabled, false);
+  await h.click('[data-action="complete-setup"]:not([data-skip])');
+  assert.equal(h.data.settings.onboardingCompleted, true);
+  assert.equal(h.w.document.querySelector('#setup-title'), null);
+  assert.equal(h.calls.some(c=>c.action==='request-permissions'), false);
+});
+
+test('returning users can replay setup and defer it without permission or download side effects', options, async (t) => {
+  const h = await fixture(t);
+  h.data.settings.onboardingCompleted = true; h.emit('state', h.data);
+  assert.equal(h.w.document.querySelector('#setup-title'), null);
+  await h.click('[data-page="help"]');
+  await h.click('[data-action="restart-setup"]');
+  assert.ok(h.w.document.querySelector('#setup-title'));
+  assert.equal(h.data.settings.onboardingCompleted, false);
+  await h.click('[data-action="complete-setup"][data-skip="true"]');
+  assert.equal(h.data.settings.onboardingCompleted, true);
+  assert.equal(h.calls.some(c=>['request-permissions','download-model'].includes(c.action)), false);
+});
+
+test('denied setup permissions expose recovery and cannot finish setup', options, async (t) => {
+  const h = await fixture(t, {setupPermissions:{microphone:0,microphoneStatus:'denied',accessibility:false}});
+  h.data.models[0].installed = true; h.emit('state', h.data);
+  await h.click('[data-action="request-permission"][data-kind="microphone"]');
+  assert.equal(h.calls.find(c=>c.action==='request-permissions').args.kind, 'microphone');
+  assert.equal(h.w.document.querySelector('[data-action="complete-setup"]:not([data-skip])').disabled, true);
+  await h.click('[data-action="permission-settings"][data-kind="microphone"]');
+  assert.equal(h.calls.find(c=>c.action==='open-permissions').args.kind, 'microphone');
+  assert.equal(h.data.settings.onboardingCompleted, false);
+});
+
+
+test('setup distinguishes Accessibility permission from unavailable native shortcut service', options, async (t) => {
+  const permission = {microphone:3, accessibility:true, hotkeys:false};
+  const h = await fixture(t, {setupPermissions:permission});
+  h.data.models[0].installed = true; h.emit('state', h.data);
+  assert.match(h.w.document.querySelector('#content').textContent, /Restart Scribble to enable global shortcuts/);
+  assert.equal(h.w.document.querySelector('[data-action="complete-setup"]:not([data-skip])').disabled, true);
+  permission.hotkeys = true;
+  await h.click('[data-action="refresh-setup"]');
+  assert.equal(h.w.document.querySelector('[data-action="complete-setup"]:not([data-skip])').disabled, false);
+});
+
+test('setup selects a local model only on explicit choice and does not trigger inference', options, async (t) => {
+  const h = await fixture(t, {setupPermissions:{microphone:3,accessibility:true,hotkeys:true}});
+  h.data.settings.speechProvider = 'deepgram';
+  h.data.models.push({id:'tiny',name:'Tiny',bytes:75000000,installed:true,supported:true});
+  h.emit('state', h.data);
+  assert.equal(h.data.settings.speechProvider, 'deepgram');
+  const select = h.w.document.querySelector('[name="onboardingModel"]');
+  select.value = 'tiny'; select.dispatchEvent(new h.w.Event('change', {bubbles:true}));
+  await flush();
+  assert.equal(h.data.settings.modelId, 'tiny');
+  assert.equal(h.data.settings.speechProvider, 'local');
+  assert.equal(h.w.document.querySelector('[data-action="complete-setup"]:not([data-skip])').disabled, false);
+  assert.equal(h.calls.some(c=>['download-model','start-recording','transcribe-file','ai-test'].includes(c.action)), false);
 });

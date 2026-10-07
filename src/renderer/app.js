@@ -439,6 +439,19 @@ function renderUtilities() {
     )
     .join("")}</div>`;
 }
+function setupReady() {
+  return state.settings.speechProvider === "local" && state.speechStatus.ready &&
+    state.models.some((model) => model.id === state.settings.modelId && model.installed) &&
+    (permissions.microphone === 3 || permissions.microphone === true) && permissions.accessibility && permissions.hotkeys === true;
+}
+function renderSetup() {
+  if (state.settings.onboardingCompleted !== false) return "";
+  const text = (label) => esc(interfaceLabel(label));
+  const model = state.models.find((model) => model.id === state.settings.modelId);
+  const progress = model && (downloadProgress[model.id] || (model.downloading ? {progress:0} : null));
+  const permissionStep = (title, description, kind, allowed) => `<section class="onboard-step"><h3>${text(title)}</h3><p>${text(description)}</p><p role="status">${text(allowed ? "Access allowed" : "Access not yet allowed")}</p>${kind === "accessibility" && allowed && permissions.hotkeys !== true ? `<p class="notice">${text("Restart Scribble to enable global shortcuts.")}</p>` : ""}<div class="row wrap">${!allowed ? button("Request", "request-permission", "shield", "small", `data-kind="${kind}"`) : ""}${button("Open settings", "permission-settings", "arrow", "small", `data-kind="${kind}"`)}</div></section>`;
+  return `<section class="card" aria-labelledby="setup-title"><h2 id="setup-title">${text("Make Scribble ready")}</h2><p class="muted">${text("A local model, your microphone, and one shortcut.")}</p><div class="onboard-grid"><section class="onboard-step"><h3>${text("Download a speech model")}</h3><p>${text("Choose a model to transcribe on this Mac. Downloads use disk space and bandwidth.")}</p>${select("onboardingModel", "Setup speech model", state.models.filter((model) => model.supported !== false).map((model) => [model.id, model.name + " · " + Math.round(model.bytes / 1e6) + " MB"]), state.settings.modelId)}<p role="status">${text(model?.installed ? "Model ready" : "Model not downloaded")}</p>${model && !model.installed ? progress ? `<div class="progress-track"><div class="progress-fill" data-progress="${model.id}"></div></div><p data-progress-label="${model.id}">${Math.round((progress.progress || 0) * 100)}%</p>` + button("Cancel", "cancel-download", "close", "small", `data-id="${model.id}"`) : button("Download", "download-model", "download", "small primary", `data-id="${model.id}"`) : model && state.settings.speechProvider !== "local" ? button("Use model", "use-model", "check", "small", `data-id="${model.id}"`) : ""}</section>${permissionStep("Allow your microphone", "Record your voice for local transcription.", "microphone", permissions.microphone === 3 || permissions.microphone === true)}${permissionStep("Allow Accessibility", "Use global shortcuts and insert words at the cursor.", "accessibility", permissions.accessibility)}</div><div class="row wrap">${button("Refresh setup status", "refresh-setup", "refresh")}${button("Finish setup", "complete-setup", "check", "primary", setupReady() ? "" : "disabled")}${button("Do this later", "complete-setup", "", "ghost", 'data-skip="true"')}</div></section>`;
+}
 function renderHome() {
   const stats = state.stats || {},
     today = stats.today || 0,
@@ -446,7 +459,7 @@ function renderHome() {
     count = stats.recordings ?? state.history.length;
   const daily = stats.daily?.slice(-7) || [],
     max = Math.max(1, ...daily.map((x) => x.words));
-  return `${heading("A little less typing", `Your words, in motion${state.settings.name ? ", " + esc(state.settings.name) : ""}.`, `${today.toLocaleString()} words spoken today. What’s on your mind?`)}${!state.speechStatus.ready ? `<div class="banner">The local speech runtime needs setup. Run <code>npm run setup:speech</code> from this repository.</div>` : ""}<div class="hero"><div><p class="eyebrow">Speak naturally. Stay in flow.</p><h2>A thought worth saying.</h2><p class="muted">Hold <kbd>⌥ Space</kbd> in any app. Release to write.<br>Use <kbd>⌥ ⇧ Space</kbd> for hands-free dictation.</p><div class="row">${button("Start dictating", "record", "mic", "lime")}${button("Set up shortcuts", "navigate", "arrow", "", 'data-page="settings"')}</div></div><div class="hero-graphic">${'<div class="wave"></div>'.repeat(7)}</div></div><div class="grid four">${[
+  return `${heading("A little less typing", `Your words, in motion${state.settings.name ? ", " + esc(state.settings.name) : ""}.`, `${today.toLocaleString()} words spoken today. What’s on your mind?`)}${renderSetup()}${!state.speechStatus.ready ? `<div class="banner">The local speech runtime needs setup. Run <code>npm run setup:speech</code> from this repository.</div>` : ""}<div class="hero"><div><p class="eyebrow">Speak naturally. Stay in flow.</p><h2>A thought worth saying.</h2><p class="muted">Hold <kbd>⌥ Space</kbd> in any app. Release to write.<br>Use <kbd>⌥ ⇧ Space</kbd> for hands-free dictation.</p><div class="row">${button("Start dictating", "record", "mic", "lime")}${button("Set up shortcuts", "navigate", "arrow", "", 'data-page="settings"')}</div></div><div class="hero-graphic">${'<div class="wave"></div>'.repeat(7)}</div></div><div class="grid four">${[
     ["words", total.toLocaleString(), "Words captured", "Your ideas, saved"],
     ["fire", stats.streak || 0, "Day streak", "Keep your momentum"],
     [
@@ -781,7 +794,7 @@ function renderSettings() {
     .join("")}</div><div class="card">${body}</div></div>`;
 }
 function renderHelp() {
-  return `${heading("A voice worth keeping", "Meet Scribble.", "An independent, open-source voice workspace. Local speech, useful tools, and no account required.")}<div class="grid two"><div class="card"><h2>Start with one sentence.</h2><ol><li>Download a speech model in Speech models.</li><li>Allow microphone and Accessibility access.</li><li>Hold Option+Space in the app where you want to write.</li><li>Release. Your words appear at the cursor.</li></ol>${button("Check permissions", "navigate", "shield", "primary", 'data-page="settings"')}</div><div class="card"><h2>Free, local components.</h2><p>Speech recognition uses Whisper.cpp and optional Parakeet. Language-model features use Ollama or your explicitly configured provider.</p><p class="muted">Scribble’s source is original. Vowen’s public behavior informed the feature checklist. No Vowen application code or artwork ships with Scribble.</p><span class="badge">MICROPHONE ICON · SCRIBBLE</span></div></div><div class="section-heading"><h2>Useful shortcuts</h2></div><div class="card">${[
+  return `${heading("A voice worth keeping", "Meet Scribble.", "An independent, open-source voice workspace. Local speech, useful tools, and no account required.")}<div class="grid two"><div class="card"><h2>Start with one sentence.</h2><ol><li>Download a speech model in Speech models.</li><li>Allow microphone and Accessibility access.</li><li>Hold Option+Space in the app where you want to write.</li><li>Release. Your words appear at the cursor.</li></ol>${button("Check permissions", "navigate", "shield", "primary", 'data-page="settings"')}${button("Run setup again", "restart-setup", "refresh", "ghost")}</div><div class="card"><h2>Free, local components.</h2><p>Speech recognition uses Whisper.cpp and optional Parakeet. Language-model features use Ollama or your explicitly configured provider.</p><p class="muted">Scribble’s source is original. Vowen’s public behavior informed the feature checklist. No Vowen application code or artwork ships with Scribble.</p><span class="badge">MICROPHONE ICON · SCRIBBLE</span></div></div><div class="section-heading"><h2>Useful shortcuts</h2></div><div class="card">${[
     ["⌥ Space", "Hold to dictate"],
     ["⌥ ⇧ Space", "Hands-free recording"],
     ["⌥ ⌃ Space", "Voice command"],
@@ -1842,6 +1855,21 @@ document.addEventListener("click", async (e) => {
       await request("open-url", { url: b.dataset.url });
       return;
     }
+    if (a === "refresh-setup") {
+      await refreshPermissions();
+      return;
+    }
+    if (a === "complete-setup") {
+      if (b.dataset.skip !== "true" && !setupReady()) return;
+      await request("preferences", { onboardingCompleted: true });
+      return;
+    }
+    if (a === "restart-setup") {
+      page = "home";
+      await request("preferences", { onboardingCompleted: false });
+      await refreshPermissions();
+      return;
+    }
     if (a === "check-permissions") {
       await refreshPermissions();
       if (page !== "settings") {
@@ -2016,6 +2044,10 @@ document.addEventListener("change", async (e) => {
       }
       return;
     }
+    if (input.name === "onboardingModel") {
+      await request("preferences", { modelId: input.value, speechProvider: "local" });
+      return;
+    }
     if (input.name === "fileModel") {
       if (input.value)
         Object.assign(fileSpeechOptions, {
@@ -2177,7 +2209,7 @@ document.addEventListener("keydown", (e) => {
 });
 async function refreshPermissions() {
   permissions = await request("permissions").catch(() => ({}));
-  if (page === "settings" && settingsTab === "permissions") render();
+  if ((page === "settings" && settingsTab === "permissions") || (page === "home" && state.settings.onboardingCompleted === false)) render();
 }
 $("#modal").addEventListener("close", () => void stopHotkeyCapture());
 api.on(({ event, data }) => {
@@ -2257,6 +2289,7 @@ api
   .then((x) => {
     state = x;
     render();
+    if (state.settings.onboardingCompleted === false) void refreshPermissions();
   })
   .catch((e) => {
     $("#content").textContent = "Scribble could not connect: " + e.message;

@@ -4,6 +4,7 @@ const fs = require("node:fs"),
   crypto = require("node:crypto");
 const SETTINGS = {
   name: "",
+  onboardingCompleted: false,
   theme: "light",
   modelId: "base.en",
   speechProvider: "local",
@@ -330,6 +331,10 @@ class Store {
     next.settings = {
       ...structuredClone(SETTINGS),
       ...this.validateSettings(value.settings || {}),
+      // Legacy saved workspaces and backups should not interrupt established users.
+      ...(!Object.hasOwn(value.settings || {}, "onboardingCompleted")
+        ? { onboardingCompleted: true }
+        : {}),
     };
     for (const kind of [
       "history",
