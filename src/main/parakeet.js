@@ -30,6 +30,12 @@ class ParakeetEngine extends EventEmitter {
   runtimePath() {
     return (
       process.env.SCRIBBLE_PARAKEET_BIN ||
+      (process.resourcesPath &&
+      fs.existsSync(
+        path.join(process.resourcesPath, "native/parakeet/ScribbleParakeet"),
+      )
+        ? path.join(process.resourcesPath, "native/parakeet/ScribbleParakeet")
+        : null) ||
       path.join(this.dataDir, "runtime/parakeet/ScribbleParakeet")
     );
   }
@@ -175,9 +181,7 @@ class ParakeetEngine extends EventEmitter {
       const wav = path.join(temp, "audio.wav"),
         out = path.join(temp, "result.json");
       const { run, resolveExecutablePath } = require("./speech");
-      const ffmpeg =
-        process.env.SCRIBBLE_FFMPEG_BIN ||
-        require("@ffmpeg-installer/ffmpeg").path;
+      const ffmpeg = require("./ffmpeg").ffmpegExecutable({resourcesPath: this.resourcesPath});
       this.emit("progress", { stage: "decoding", progress: 0 });
       await run(
         resolveExecutablePath(ffmpeg),

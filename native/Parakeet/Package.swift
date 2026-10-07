@@ -2,4 +2,4 @@
 import PackageDescription
 let package = Package(name: "ScribbleParakeet", platforms: [.macOS(.v14)], dependencies: [
  .package(url: "https://github.com/FluidInference/FluidAudio.git", revision: "0b1f46289fe27d95b5e66ad8be46e64f5ee02ae7", traits: [])
-], targets: [.executableTarget(name: "ScribbleParakeet", dependencies: [.product(name: "FluidAudio", package: "FluidAudio")])])
+], targets: [.executableTarget(name: "ScribbleParakeet", dependencies: [.product(name: "FluidAudio", package: "FluidAudio")]),.executableTarget(name: "ScribbleCatalog", dependencies: [.product(name: "FluidAudio", package: "FluidAudio")])])

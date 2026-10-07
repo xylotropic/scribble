@@ -54,6 +54,18 @@ try {
   }
   if (!success) throw error;
 }
+await run(
+  swift,
+  [
+    ...buildArgs.slice(0, -1),
+    "ScribbleCatalog",
+    ...(selectedSDK ? ["--sdk", selectedSDK] : []),
+  ],
+  {
+    onData: (s) => process.stdout.write(s),
+    env: selectedSDK ? { SDKROOT: selectedSDK } : undefined,
+  },
+);
 const output = (
   await run(
     swift,
@@ -66,6 +78,10 @@ await mkdir(runtime, { recursive: true });
 await cp(
   path.join(output, "ScribbleParakeet"),
   path.join(runtime, "ScribbleParakeet"),
+);
+await cp(
+  path.join(output, "ScribbleCatalog"),
+  path.join(runtime, "ScribbleCatalog"),
 );
 for (const name of await readdir(output))
   if (name.endsWith(".bundle"))

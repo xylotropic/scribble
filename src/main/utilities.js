@@ -96,9 +96,7 @@ async function commitFile(temp, output, overwrite) {
   }
 }
 function ffmpeg() {
-  return resolveExecutablePath(
-    process.env.SCRIBBLE_FFMPEG_BIN || require("@ffmpeg-installer/ffmpeg").path,
-  );
+  return resolveExecutablePath(require("./ffmpeg").ffmpegExecutable());
 }
 function bitrate(value, fallback) {
   if (value === undefined) return fallback;
@@ -168,6 +166,60 @@ async function convertImage(input, temp, options, output) {
     height: result.height,
     bytes: result.size,
   };
+}
+async function imagePalette(input, temp, options) {
+  const count = integer(options.colors, 6, 1, 16, "Palette colors");
+  const { data, info } = await require("sharp")(input, {
+    limitInputPixels: LIMITS.imagePixels,
+  })
+    .rotate()
+    .resize({
+      width: 128,
+      height: 128,
+      fit: "inside",
+      withoutEnlargement: true,
+      kernel: "nearest",
+    })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const bins = new Map();
+  let pixels = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 128) continue;
+    pixels++;
+    const key =
+      (data[i] >> 5) * 64 + (data[i + 1] >> 5) * 8 + (data[i + 2] >> 5);
+    const bin = bins.get(key) || { n: 0, r: 0, g: 0, b: 0 };
+    bin.n++;
+    bin.r += data[i];
+    bin.g += data[i + 1];
+    bin.b += data[i + 2];
+    bins.set(key, bin);
+  }
+  if (!pixels)
+    throw new Error("Image contains no visible pixels for a palette");
+  const colors = [...bins.values()]
+    .sort((a, b) => b.n - a.n || a.r - b.r)
+    .slice(0, count)
+    .map((bin) => {
+      const rgb = [bin.r, bin.g, bin.b].map((x) => Math.round(x / bin.n));
+      return {
+        hex: "#" + rgb.map((x) => x.toString(16).padStart(2, "0")).join(""),
+        rgb,
+        proportion: bin.n / pixels,
+      };
+    });
+  const details = {
+    format: "json",
+    colors,
+    sampledPixels: pixels,
+    sampleWidth: info.width,
+    sampleHeight: info.height,
+    method: "RGB bins of width 32; average color per dominant bin",
+  };
+  await fsp.writeFile(temp, JSON.stringify(details, null, 2) + "\n");
+  return details;
 }
 async function convertMedia(input, temp, options, output, video) {
   const format = (
@@ -526,6 +578,8 @@ async function performUtility({ operation, files, output, options = {} } = {}) {
   operation = aliases[operation] || operation;
   const supported = [
     "image-convert",
+    "image-compress",
+    "image-palette",
     "audio-convert",
     "video-convert",
     "pdf-merge",
@@ -560,6 +614,25 @@ async function performUtility({ operation, files, output, options = {} } = {}) {
           options,
           destination,
         );
+        break;
+      case "image-palette":
+        details = await imagePalette(inputs[0].file, temp, options);
+        break;
+      case "image-compress":
+        details = await convertImage(
+          inputs[0].file,
+          temp,
+          { quality: 75, ...options },
+          destination,
+        );
+        details = {
+          ...details,
+          inputBytes: inputs[0].stat.size,
+          reduced: details.bytes < inputs[0].stat.size,
+          savedBytes: Math.max(0, inputs[0].stat.size - details.bytes),
+        };
+        if (!details.reduced)
+          details.notice = "Re-encoded image is not smaller than the input";
         break;
       case "audio-convert":
       case "video-convert":
@@ -612,4 +685,4 @@ async function performUtility({ operation, files, output, options = {} } = {}) {
     await fsp.rm(temp, { recursive: true, force: true });
   }
 }
-module.exports = { performUtility, LIMITS, safeEntryName, crc32 };
+module.exports = { performUtility, markdownPDF, LIMITS, safeEntryName, crc32 };

@@ -75,7 +75,7 @@ test("real WAV converts to MP3, M4A, Opus and PCM WAV", () =>
       assert.ok(r.details.bytes > 100);
       const decoded = path.join(dir, format + ".pcm");
       await run(
-        resolveExecutablePath(require("@ffmpeg-installer/ffmpeg").path),
+        resolveExecutablePath(require("../src/main/ffmpeg").ffmpegExecutable()),
         [
           "-nostdin",
           "-y",
@@ -96,21 +96,24 @@ test("real WAV converts to MP3, M4A, Opus and PCM WAV", () =>
 test("real MP4 converts to WebM and MP4 with resize", () =>
   fixture(async (dir) => {
     const input = path.join(dir, "source.mp4");
-    await run(resolveExecutablePath(require("@ffmpeg-installer/ffmpeg").path), [
-      "-nostdin",
-      "-y",
-      "-f",
-      "lavfi",
-      "-i",
-      "color=c=blue:s=64x64:r=10",
-      "-t",
-      "0.3",
-      "-c:v",
-      "libx264",
-      "-pix_fmt",
-      "yuv420p",
-      input,
-    ]);
+    await run(
+      resolveExecutablePath(require("../src/main/ffmpeg").ffmpegExecutable()),
+      [
+        "-nostdin",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=blue:s=64x64:r=10",
+        "-t",
+        "0.3",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        input,
+      ],
+    );
     for (const format of ["mp4", "webm"]) {
       const result = await performUtility({
         operation: "video-convert",
@@ -319,3 +322,56 @@ test("text conversion rejects invalid UTF-8 without publishing a corrupted file"
     );
     await assert.rejects(fs.access(output));
   }));
+
+test("dominant palette measures a real red and blue generated image", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "palette-"));
+  try {
+    const raw = Buffer.alloc(40 * 20 * 3);
+    for (let i = 0; i < 40 * 20; i++) {
+      raw[i * 3 + (i % 40 < 30 ? 0 : 2)] = 255;
+    }
+    const input = path.join(dir, "colors.png");
+    await require("sharp")(raw, { raw: { width: 40, height: 20, channels: 3 } })
+      .png()
+      .toFile(input);
+    const output = path.join(dir, "palette.json");
+    const result = await performUtility({
+      operation: "image-palette",
+      files: [input],
+      output,
+      options: { colors: 2 },
+    });
+    const palette = JSON.parse(await fs.readFile(output, "utf8"));
+    assert.equal(palette.colors[0].hex, "#ff0000");
+    assert.equal(palette.colors[1].hex, "#0000ff");
+    assert.equal(palette.colors[0].proportion, 0.75);
+    assert.equal(result.details.sampledPixels, 800);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("image compression reports actual byte reduction even when output grows", async () => {
+  await fixture(async (dir) => {
+    const input = path.join(dir, "tiny.png");
+    await sharp({
+      create: { width: 1, height: 1, channels: 3, background: "#ff0000" },
+    })
+      .png({ compressionLevel: 9 })
+      .toFile(input);
+    const output = path.join(dir, "compressed.jpg");
+    const result = await performUtility({
+      operation: "image-compress",
+      files: [input],
+      output,
+    });
+    const original = (await fs.stat(input)).size,
+      actual = (await fs.stat(output)).size;
+    assert.ok(actual > original);
+    assert.equal(result.details.reduced, false);
+    assert.equal(result.details.savedBytes, 0);
+    assert.match(result.details.notice, /not smaller/);
+    assert.equal(result.details.inputBytes, original);
+    assert.equal(result.details.bytes, actual);
+  });
+});

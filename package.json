@@ -10,21 +10,24 @@
     "start": "electron .",
     "build:native": "node scripts/build-native.mjs",
     "setup:speech": "node scripts/setup-speech.mjs",
-    "setup": "npm run build:native && npm run setup:speech",
+    "setup": "npm run build:native && npm run setup:speech && npm run setup:ffmpeg",
     "test": "node --test test/*.test.js tests/*.test.js",
     "icons": "node scripts/icons.cjs",
-    "package": "npm run build:native && npm run icons && electron-builder --mac dir",
-    "dist": "npm run build:native && npm run icons && electron-builder --mac dmg zip",
+    "package": "npm run build:native && npm run prepare:runtime && npm run icons && electron-builder --mac dir",
+    "dist": "npm run build:native && npm run prepare:runtime && npm run icons && electron-builder --mac dmg zip",
     "setup:parakeet": "node scripts/setup-parakeet.mjs",
-    "setup:ai": "node scripts/setup-ai.mjs"
+    "setup:ai": "node scripts/setup-ai.mjs",
+    "prepare:runtime": "node scripts/prepare-runtime.mjs",
+    "setup:ffmpeg": "node scripts/setup-ffmpeg.mjs"
   },
   "dependencies": {
-    "@ffmpeg-installer/ffmpeg": "1.1.0",
     "@iarna/toml": "^2.2.5",
     "@pdf-lib/fontkit": "^1.1.1",
     "adm-zip": "^0.6.1",
     "pdf-lib": "1.17.1",
-    "sharp": "0.34.5",
+    "pdfjs-dist": "6.4.299",
+    "sanitize-html": "2.18.0",
+    "sharp": "0.35.5",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
@@ -44,16 +47,43 @@
       "assets/**/*",
       "package.json",
       "native/Parakeet/models.json",
+      "native/Parakeet/catalog-models.json",
       "scripts/scribble.cjs"
     ],
     "extraResources": [
       {
         "from": "release/native/scribble-bridge",
         "to": "native/scribble-bridge"
+      },
+      {
+        "from": "release/runtime/whisper-cli",
+        "to": "native/speech/whisper-cli"
+      },
+      {
+        "from": "release/runtime/WHISPER-LICENSE",
+        "to": "native/speech/WHISPER-LICENSE"
+      },
+      {
+        "from": "release/runtime/parakeet",
+        "to": "native/parakeet",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "release/runtime/ollama",
+        "to": "runtime/ollama"
+      },
+      {
+        "from": "release/runtime/ffmpeg",
+        "to": "native/ffmpeg"
+      },
+      {
+        "from": "release/runtime/licenses/ffmpeg",
+        "to": "native/ffmpeg-notices"
       }
     ],
     "asarUnpack": [
-      "node_modules/@ffmpeg-installer/**/*",
       "node_modules/sharp/**/*",
       "node_modules/@img/**/*"
     ],
@@ -71,8 +101,40 @@
         "NSMicrophoneUsageDescription": "Scribble records your voice for local transcription.",
         "NSScreenCaptureUsageDescription": "Scribble captures meeting system audio only when you start a meeting recording.",
         "NSAppleEventsUsageDescription": "Scribble inserts your dictation in the application you are using."
+      },
+      "minimumSystemVersion": "14.0.0",
+      "identity": "-",
+      "signIgnore": [
+        "runtime/ollama/",
+        "native/parakeet/.*\\.bundle",
+        "native/ffmpeg-notices/"
+      ]
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "mp3",
+          "wav",
+          "m4a",
+          "aac",
+          "ogg",
+          "flac",
+          "wma",
+          "opus",
+          "mp4",
+          "mov",
+          "avi",
+          "mkv",
+          "flv",
+          "wmv",
+          "webm",
+          "mpeg",
+          "mpg"
+        ],
+        "name": "Audio or video recording",
+        "role": "Viewer"
       }
-    }
+    ]
   },
   "bin": {
     "scribble": "scripts/scribble.cjs"

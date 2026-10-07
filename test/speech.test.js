@@ -35,7 +35,7 @@ test("model identifiers cannot escape data directory", async () => {
     await assert.rejects(engine.downloadModel("../bad"), /Unknown/);
     await assert.rejects(engine.deleteModel("../bad"), /Unknown/);
     assert.equal(engine.status().ready, false);
-    assert.equal(engine.listModels().length, 9);
+    assert.equal(engine.listModels().length, 14);
     assert.ok(MODELS.every((m) => /^[0-9a-f]{64}$/.test(m.sha256)));
   } finally {
     await rm(dataDir, { recursive: true, force: true });

@@ -10,12 +10,12 @@ import { pipeline } from 'node:stream/promises';
 import { pathToFileURL } from 'node:url';
 
 export const release = Object.freeze({ version: '0.40.0', url: 'https://github.com/ollama/ollama/releases/download/v0.40.0/ollama-darwin.tgz', sha256: 'b490b4925a95c5f3dfcd889e566cf3dcd727848d59057fb00b03f1d6630326dc' });
-export function validateModel(model) { if (!/^qwen3:(?:0\.6b|4b)$/.test(model)) throw Error('Choose the explicitly local model qwen3:0.6b or qwen3:4b'); return model; }
+export function validateModel(model) { if (!/^(?:qwen3:(?:0\.6b|4b)|qwen2\.5:7b)$/.test(model)) throw Error('Choose the explicitly local model qwen3:0.6b, qwen3:4b or qwen2.5:7b'); return model; }
 export function validateEndpoint(value) { const url = new URL(value); if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw Error('AI setup accepts only an http://127.0.0.1:PORT endpoint'); return url.origin; }
 async function run(binary, args, options = {}) { await new Promise((resolve, reject) => { const child = spawn(binary, args, { stdio: 'inherit', ...options }); child.on('error', reject); child.on('exit', code => code === 0 ? resolve() : reject(Error(`${path.basename(binary)} exited with ${code}`))); }); }
 export async function api(endpoint, pathname, body, fetcher = fetch) { const result = await fetcher(endpoint + pathname, { ...(body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30 * 60 * 1000) }); if (!result.ok) throw Error(`Ollama ${pathname}: ${result.status} ${await result.text()}`); const value = await result.json(); if (value.error) throw Error(value.error); return value; }
 export async function setup(options = {}) {
-  const model = validateModel(options.model || 'qwen3:0.6b'); const endpoint = validateEndpoint(options.endpoint || 'http://127.0.0.1:11434');
+  const model = validateModel(options.model || 'qwen2.5:7b'); const endpoint = validateEndpoint(options.endpoint || 'http://127.0.0.1:11434');
   const root = path.resolve(options.root || path.join(os.homedir(), '.local/share/scribble-tools/ollama'));
   let binary = options.binary || [path.join(root, release.version, 'bin/ollama'), path.join(root, release.version, 'ollama'), path.join(root, release.version, 'Ollama.app/Contents/Resources/ollama')].find(file => fs.existsSync(file)) || path.join(root, release.version, 'bin/ollama');
   if (!fs.existsSync(binary)) {
@@ -41,8 +41,8 @@ export async function setup(options = {}) {
   } else console.log('Reusing the existing local Ollama endpoint without changing its service configuration.');
   console.log(`Pulling local ${model} (model download only)…`); await api(endpoint, '/api/pull', { model, stream: false });
   const version = await api(endpoint, '/api/version'); const models = await api(endpoint, '/api/tags');
-  const generated = await api(endpoint, '/api/chat', { model, stream: false, think: false, messages: [{ role: 'user', content: 'Reply with only the word ready.' }], options: { temperature: 0, num_predict: 24 } });
-  if (!generated.message?.content?.trim()) throw Error('Local model returned no generated content');
+  const generated = await api(endpoint, '/api/chat', { model, stream: false, messages: [{ role: 'user', content: 'Reply with only the word ready.' }], options: { temperature: 0, num_predict: 2048 } });
+  if (!/^ready[.!]?$/i.test(generated.message?.content?.trim() || '')) throw Error('Local generation did not satisfy the ready smoke test; inspect the model/template before using it');
   const evidence = { verifiedAt: new Date().toISOString(), endpoint, model, version, serverPid, reusedExistingService: existing, modelInfo: models.models?.find(x => x.name === model), request: 'Reply with only the word ready.', response: generated.message.content.trim(), done: generated.done, evalCount: generated.eval_count, totalDuration: generated.total_duration };
   await fsp.writeFile(path.join(root, 'verification.json'), JSON.stringify(evidence, null, 2)); console.log(JSON.stringify(evidence, null, 2)); return evidence;
 }

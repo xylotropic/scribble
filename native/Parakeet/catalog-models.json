@@ -1,0 +1,484 @@
+{
+  "parakeet-ja": {
+    "name": "Parakeet Japanese",
+    "repo": "FluidInference/parakeet-0.6b-ja-coreml",
+    "revision": "2952296ff1da4a6d6a7aec545e226367db80c612",
+    "license": "CC-BY-4.0",
+    "licenseURL": "https://creativecommons.org/licenses/by/4.0/",
+    "language": "ja",
+    "modelSubdirectory": "",
+    "files": [
+      {
+        "path": "Decoderv2.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "86795f3f612cf5bceb5d3ccb62353e7b249ec0d947de2d92f3a493b41c61cfc3",
+        "gitBlob": "42c838d12b376cf983b60e3ca63bcb4e83ef0368"
+      },
+      {
+        "path": "Decoderv2.mlmodelc/coremldata.bin",
+        "bytes": 493,
+        "sha256": "aba05a4a882fb8149c0229b0eb36e24269fb9f008e65f302eef37b1f6c982ed3",
+        "gitBlob": "10d8d7c84aa9f4f91def4ef59449f16e238927cb"
+      },
+      {
+        "path": "Decoderv2.mlmodelc/metadata.json",
+        "bytes": 3316,
+        "sha256": null,
+        "gitBlob": "9c343374ae87a088bd6b472a1f94f5d2bba23d97"
+      },
+      {
+        "path": "Decoderv2.mlmodelc/model.mil",
+        "bytes": 13106,
+        "sha256": null,
+        "gitBlob": "bb303095a971531c5dcb5b05bdd3de61a1baf559"
+      },
+      {
+        "path": "Decoderv2.mlmodelc/weights/weight.bin",
+        "bytes": 17051392,
+        "sha256": "a56d792edf3b88e30466c0b992bb7e316fa743c90f8809c2be9d2ecb8ffbd48e",
+        "gitBlob": "ac555d4a7a9ba8c62d9697a592286cc937743be8"
+      },
+      {
+        "path": "Encoder.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "64d086974fa873a29bac8face69e71df44f678e8591dc848650fdfbd4110730d",
+        "gitBlob": "9cb411ee45c2aa7ecb0f01fdba4699e3f51e8b26"
+      },
+      {
+        "path": "Encoder.mlmodelc/coremldata.bin",
+        "bytes": 507,
+        "sha256": "6e24d36005b89f97ab672596f94215883b19008f556ac1874500385994bd885f",
+        "gitBlob": "793ca29c9025479c463a090840bd905b4bac5215"
+      },
+      {
+        "path": "Encoder.mlmodelc/metadata.json",
+        "bytes": 2930,
+        "sha256": null,
+        "gitBlob": "996205ad7fd01f2848ab88b2e15e4a7e0b5028ad"
+      },
+      {
+        "path": "Encoder.mlmodelc/model.mil",
+        "bytes": 1086104,
+        "sha256": null,
+        "gitBlob": "148bfe302d1042040725ab64ae535c27c991c5d5"
+      },
+      {
+        "path": "Encoder.mlmodelc/weights/weight.bin",
+        "bytes": 593943616,
+        "sha256": "257685d3fdb578c5d6d7f0a5460c778f6104bcf2f264e4ae704b885c69ad6dda",
+        "gitBlob": "3b85bfadeef357349b82ddab6c7e1d496d1e4f64"
+      },
+      {
+        "path": "Jointerv2.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "7dcee73505a75e1264f5d2c40f3767fe528768c00ed73b3937b354d10b41e779",
+        "gitBlob": "58788c7e7fc643da9264f052353a64f8a6141454"
+      },
+      {
+        "path": "Jointerv2.mlmodelc/coremldata.bin",
+        "bytes": 521,
+        "sha256": "98c853843c56998e061a2749365c0b1e0bfd5b03f2f54465e843f3de83e8c148",
+        "gitBlob": "a6dd55b7c1e51954e485235ca4ae72b7b2b9ebab"
+      },
+      {
+        "path": "Jointerv2.mlmodelc/metadata.json",
+        "bytes": 3464,
+        "sha256": null,
+        "gitBlob": "adf18a7f73d9772479b4516dc9907625519c972a"
+      },
+      {
+        "path": "Jointerv2.mlmodelc/model.mil",
+        "bytes": 11774,
+        "sha256": null,
+        "gitBlob": "397bf07e5a9de743b1b1487c967c5996cfbf487b"
+      },
+      {
+        "path": "Jointerv2.mlmodelc/weights/weight.bin",
+        "bytes": 6078924,
+        "sha256": "d6f24519c7c6959e8ec6fb078e8c05d912d292fcb57720c63fdc9291b1db122d",
+        "gitBlob": "9cba47b9b1166b749b44c5cc5113634680b95391"
+      },
+      {
+        "path": "Preprocessor.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "315309121ac09c8fb7ed9f8dab20a30e440530b527401af5abcf6d0cf959e495",
+        "gitBlob": "1d1148d23a0af5923031319ae011cd585c28360c"
+      },
+      {
+        "path": "Preprocessor.mlmodelc/coremldata.bin",
+        "bytes": 512,
+        "sha256": "de3624dd8335b3b0391be95da73b59577916f3ac7d1c6d30a66fd16369af7cb8",
+        "gitBlob": "532c868d8979a91fd6f4775d21596aa90f2ebb25"
+      },
+      {
+        "path": "Preprocessor.mlmodelc/metadata.json",
+        "bytes": 2837,
+        "sha256": null,
+        "gitBlob": "e193df09ab2b3e3045df614d1f95cfa3e1647347"
+      },
+      {
+        "path": "Preprocessor.mlmodelc/model.mil",
+        "bytes": 27152,
+        "sha256": null,
+        "gitBlob": "83376d0b8c509fbf9c422b68daa2e01b568b9f1c"
+      },
+      {
+        "path": "Preprocessor.mlmodelc/weights/weight.bin",
+        "bytes": 807968,
+        "sha256": "6512ba5d1acc3ffe6f322089c0ece5466f93c7ac77c267dd851a1fb517c637f9",
+        "gitBlob": "8311050cacba9f0bdd6d5de75eba9c7fe776715b"
+      },
+      {
+        "path": "vocab.json",
+        "bytes": 29658,
+        "sha256": null,
+        "gitBlob": "6771d5a9c66f716d700552022454618756155863"
+      }
+    ]
+  },
+  "parakeet-zh": {
+    "name": "Parakeet Mandarin",
+    "repo": "FluidInference/parakeet-ctc-0.6b-zh-cn-coreml",
+    "revision": "ad0da3a453ce93ae53263f9a757ad365ce90bd58",
+    "license": "CC-BY-4.0",
+    "licenseURL": "https://creativecommons.org/licenses/by/4.0/",
+    "language": "zh",
+    "modelSubdirectory": "",
+    "files": [
+      {
+        "path": "Decoder.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "edfa4aaa1b17ee4080b5e844c9f46f7b3d5c03b0a24ca03b3f542e77dc60350b",
+        "gitBlob": "a0276e52dfba91e441acb920a3205de20798f139"
+      },
+      {
+        "path": "Decoder.mlmodelc/coremldata.bin",
+        "bytes": 471,
+        "sha256": "b45dc5cf68c51d524a024b310640453d08a9b9e11426ff8b5d8630e2bc16f351",
+        "gitBlob": "4068771213628f657f3472a6aa667e4c07cbd0e8"
+      },
+      {
+        "path": "Decoder.mlmodelc/metadata.json",
+        "bytes": 1850,
+        "sha256": null,
+        "gitBlob": "c695f11df81c43cb4af2ac63f5cbc28bfe2acc9d"
+      },
+      {
+        "path": "Decoder.mlmodelc/model.mil",
+        "bytes": 3610,
+        "sha256": null,
+        "gitBlob": "0a37e31c8c7a6fda1867fb07b5a14e6cea94d54d"
+      },
+      {
+        "path": "Decoder.mlmodelc/weights/weight.bin",
+        "bytes": 14352242,
+        "sha256": "49fd5a48d005c8313016103db2f545e9fd25655a101c480d4a08462241a08737",
+        "gitBlob": "55b1405fb56fa892ddffa894c10bef723e08885a"
+      },
+      {
+        "path": "Encoder-v2-int8.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "934d915a79e7e4c8011341730d9e248975d80905a22106df08c28afadc0f0a33",
+        "gitBlob": "33a958540a883df96900d9e4bc0993ca9122b25c"
+      },
+      {
+        "path": "Encoder-v2-int8.mlmodelc/coremldata.bin",
+        "bytes": 513,
+        "sha256": "8dab7ffa18c57e90311bc429036d19ff1f3f3988ec0b968798c23f59f47fa9df",
+        "gitBlob": "9e1cc6f85104739db42c3389a5de0a4609b57f71"
+      },
+      {
+        "path": "Encoder-v2-int8.mlmodelc/metadata.json",
+        "bytes": 2943,
+        "sha256": null,
+        "gitBlob": "2ee63523d5d66231c717267427d95200d1c00df0"
+      },
+      {
+        "path": "Encoder-v2-int8.mlmodelc/model.mil",
+        "bytes": 1098426,
+        "sha256": null,
+        "gitBlob": "46f60aa9a88c2e4f581edbbab0556246611ff64c"
+      },
+      {
+        "path": "Encoder-v2-int8.mlmodelc/weights/weight.bin",
+        "bytes": 593429888,
+        "sha256": "e2eec41d6e9eeac16261f6fae4ef5385371da435e24762062198e5048ee78020",
+        "gitBlob": "f9ea2e26eb93ef48132b706c7df4e66bcc8ad5d5"
+      },
+      {
+        "path": "Preprocessor.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "6e5906b2490b33f1b3874086e1fe030e94e2ce9f4984a55b88a8d0fa170e7956",
+        "gitBlob": "ec1253b54e7e5a1b6e05c0cb7c6c82300e8a4ae3"
+      },
+      {
+        "path": "Preprocessor.mlmodelc/coremldata.bin",
+        "bytes": 502,
+        "sha256": "be3a68a43ae0e11f084d7a00b94eb73af1ae57db211782ca211fa8190dd5ceb0",
+        "gitBlob": "8ccc496341e0588754e73d78b60df120dd998c4c"
+      },
+      {
+        "path": "Preprocessor.mlmodelc/metadata.json",
+        "bytes": 2827,
+        "sha256": null,
+        "gitBlob": "e1d75b130c7c1e04425887b4207e311a5f0ddb62"
+      },
+      {
+        "path": "Preprocessor.mlmodelc/model.mil",
+        "bytes": 27134,
+        "sha256": null,
+        "gitBlob": "b983d737c7ad6c929a8bf4b71f18d7e7dbc702db"
+      },
+      {
+        "path": "Preprocessor.mlmodelc/weights/weight.bin",
+        "bytes": 807968,
+        "sha256": "327ad1b64737e7cb824578bed6069ef46fae4d13faf83eb226aefd3bf08083ed",
+        "gitBlob": "7b0cccc7b13953f44d662c565049b1d2aa828787"
+      },
+      {
+        "path": "vocab.json",
+        "bytes": 67395,
+        "sha256": null,
+        "gitBlob": "78172d95f0b9c8e1e0b1752cf63114a8abce271b"
+      }
+    ]
+  },
+  "nemotron-en": {
+    "name": "Nemotron English",
+    "repo": "FluidInference/nemotron-speech-streaming-en-0.6b-coreml",
+    "revision": "e673531caa6d25ab7baf5a8c14c9b99ba1551838",
+    "license": "NVIDIA-Open-Model-License",
+    "licenseURL": "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/",
+    "language": "en",
+    "modelSubdirectory": "nemotron_coreml_2240ms",
+    "files": [
+      {
+        "path": "nemotron_coreml_2240ms/decoder.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "1e71eacbdeef85ec32ccb31c70670ce73f478fc3427e18c4a17506fcea69b6f6",
+        "gitBlob": "99574629938829bf1ba7b9c96f25b99dad1355f1"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/decoder.mlmodelc/coremldata.bin",
+        "bytes": 493,
+        "sha256": "403aa30321704087945383db8349fdce409215e0c7fb3fcaddb92656d6de88cb",
+        "gitBlob": "41fbf0d66f048a8fecdc343f60bb06a0eb6e5362"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/decoder.mlmodelc/model.mil",
+        "bytes": 13093,
+        "sha256": null,
+        "gitBlob": "32e9617e51d60c6fcfd6fc25e55a3c849147e5c0"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/decoder.mlmodelc/weights/weight.bin",
+        "bytes": 14429952,
+        "sha256": "d9758e49f9b2b9a0462c933256663d4174209739e62f0ddc14e4147bc50e7818",
+        "gitBlob": "c6206dd794dbfacd7bca9520136697d9a58030ef"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/decoder_joint.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "d46ecf790a728d91b8962ec62e597980e288e66c775e45429bf734b54c658ffc",
+        "gitBlob": "89e455e81859e197d5996f36d657868c4fa41df1"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/decoder_joint.mlmodelc/coremldata.bin",
+        "bytes": 514,
+        "sha256": "0161ed3e81177d166e8c5fb29b0f2fef67e98a05111b1e173c73427f337f25c7",
+        "gitBlob": "c38069ba88e4220f77de7dc865fe2ef00d6ff337"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/decoder_joint.mlmodelc/model.mil",
+        "bytes": 17146,
+        "sha256": null,
+        "gitBlob": "d13f7e178b9e5cad3648948941696657d23985d2"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/decoder_joint.mlmodelc/weights/weight.bin",
+        "bytes": 17876866,
+        "sha256": "96cac67a1352e45a2418284779dbd5efe5865159b7b92f328247e5ed31485f52",
+        "gitBlob": "044e38fdf051deb67dd79cbb4af35cd546b6dc5a"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/encoder/encoder_int8.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "4766055cb558dcc03983a56d5388af7a659efabb42f3316cda5a6b919decf223",
+        "gitBlob": "86ad087c7a09d4404ee9cc9f8616df48e4cbb3f8"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/encoder/encoder_int8.mlmodelc/coremldata.bin",
+        "bytes": 609,
+        "sha256": "3f863b74a80d9db8b328e14ce4aeb31064a136c5faae5978d3f70dfec20b6349",
+        "gitBlob": "05b2c9fa6fdf96af8912764ab653a74797e974f3"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/encoder/encoder_int8.mlmodelc/model.mil",
+        "bytes": 995836,
+        "sha256": null,
+        "gitBlob": "85b2f24a607284bd12d7687052dbefcc3604c672"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/encoder/encoder_int8.mlmodelc/weights/weight.bin",
+        "bytes": 590092992,
+        "sha256": "0c67d14d95f9172e8391147f65c568eb3b9f66b5daa819ae05ce0eac8713a7eb",
+        "gitBlob": "6f1adf248bc79a204430b217f699d33b4d09a064"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/joint.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "9191ce6547771319e0cefb4bb25c225102d62ffd22035f83bc64c91cae8c6076",
+        "gitBlob": "8ab3da82ec0bfd24c4bbcc8bc74c0ef798542fbc"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/joint.mlmodelc/coremldata.bin",
+        "bytes": 401,
+        "sha256": "70798ae506920164d76c1095c0d6227a65965d4288894ce262e0e629356eea0d",
+        "gitBlob": "70ca17ebe45642614524c3492677a1cdd21dd498"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/joint.mlmodelc/model.mil",
+        "bytes": 5064,
+        "sha256": null,
+        "gitBlob": "ee0de427f27c11b836ecbc28447bc06e9769b6c7"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/joint.mlmodelc/weights/weight.bin",
+        "bytes": 3446978,
+        "sha256": "d1d45514a91da39f24e264712a9f8b5a2a90e9cbce04bad3f3f74242bea106d5",
+        "gitBlob": "49d37acdc792d288f608fa4807e957cbd9521b86"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/metadata.json",
+        "bytes": 441,
+        "sha256": null,
+        "gitBlob": "31b07deae2e1ca2174e5b8de48d1ebe9c4edfb71"
+      },
+      {
+        "path": "nemotron_coreml_2240ms/tokenizer.json",
+        "bytes": 18374,
+        "sha256": null,
+        "gitBlob": "7e894382d6e171df387b4532651581a5522d20db"
+      }
+    ]
+  },
+  "nemotron-multilingual": {
+    "name": "Nemotron Multilingual",
+    "repo": "FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML",
+    "revision": "1a41b75758b0337ff67db7d5408280aaaf23074e",
+    "license": "OpenMDW-1.1",
+    "licenseURL": "https://openmdw.ai/license/1-1/",
+    "language": "auto",
+    "modelSubdirectory": "multilingual/2240ms",
+    "files": [
+      {
+        "path": "multilingual/2240ms/decoder.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "fdb14a08e42b4806a2d1505501586be71e4f04ca9256c719544fd7ed6937e509",
+        "gitBlob": "6d1da7489b64e3e6513ae9a70aa2c9cad18c649c"
+      },
+      {
+        "path": "multilingual/2240ms/decoder.mlmodelc/coremldata.bin",
+        "bytes": 433,
+        "sha256": "3a89047b6f74ee3d0a74c72f8c8e5016d76d9487d030f0661fe80220b441a6fd",
+        "gitBlob": "f068f7767e3224f5a5479dc20d7cf54384f92bfb"
+      },
+      {
+        "path": "multilingual/2240ms/decoder.mlmodelc/model.mil",
+        "bytes": 11743,
+        "sha256": null,
+        "gitBlob": "c8e816ae3ba2f2796f7f0e568a1c505b7789781f"
+      },
+      {
+        "path": "multilingual/2240ms/decoder.mlmodelc/weights/weight.bin",
+        "bytes": 29870592,
+        "sha256": "dcdeccd4ccf46e2675224f9f030d46c1a89e2bda4abb316e901e1a21f1597f8f",
+        "gitBlob": "d337a15c3738ff2fc286d4329f29e91dac32ecee"
+      },
+      {
+        "path": "multilingual/2240ms/decoder_joint.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "8a8e98a54ed1f16c3d5125816a002b991e167d620beb8fcc557f26d9a1c092f8",
+        "gitBlob": "12fefe914b844d2fe6a8f7f8bfbb549dd8b45e8c"
+      },
+      {
+        "path": "multilingual/2240ms/decoder_joint.mlmodelc/coremldata.bin",
+        "bytes": 454,
+        "sha256": "6404b542fb5d5faa79648fc96a79a0b981cbd087df0378adefd1f45ae56dd86e",
+        "gitBlob": "237f65d18903f8d8bdab985a165663ec6f0820c9"
+      },
+      {
+        "path": "multilingual/2240ms/decoder_joint.mlmodelc/model.mil",
+        "bytes": 15801,
+        "sha256": null,
+        "gitBlob": "8ed23d599c24d330f6d3774ef11154dec22c6f70"
+      },
+      {
+        "path": "multilingual/2240ms/decoder_joint.mlmodelc/weights/weight.bin",
+        "bytes": 48782272,
+        "sha256": "01f21eb747fbc53bd0ed7efebea1bf0aa655ebf2816f21d0bb6554c9b7fcfc0b",
+        "gitBlob": "5c8c062fd9461e5e579f621cdccaedaa1a57a2d9"
+      },
+      {
+        "path": "multilingual/2240ms/encoder.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "af569fd95237bdf8b91d38094691bfc990fcf3534316fa615bac5964c02809e4",
+        "gitBlob": "0795a6e1d2a0f3a23218f5abe9f246a6a404d080"
+      },
+      {
+        "path": "multilingual/2240ms/encoder.mlmodelc/coremldata.bin",
+        "bytes": 573,
+        "sha256": "d5471a4edf55ce02dab51e5d01c86b419a7659bcdd6aac216ba6f0b795eae8bf",
+        "gitBlob": "09fdeab19507bc02a9054ff0155e8c445379c33c"
+      },
+      {
+        "path": "multilingual/2240ms/encoder.mlmodelc/model.mil",
+        "bytes": 1010788,
+        "sha256": null,
+        "gitBlob": "46267b034c98ae3aefa1f72eaf8650a254deedfc"
+      },
+      {
+        "path": "multilingual/2240ms/encoder.mlmodelc/weights/weight.bin",
+        "bytes": 565336640,
+        "sha256": "2e00be98049a22e095452c020f183d2b23728e145cc814ba031436931b4f2e8f",
+        "gitBlob": "15a9977eabe4d212f6775bc2c6653c508556d54f"
+      },
+      {
+        "path": "multilingual/2240ms/joint.mlmodelc/analytics/coremldata.bin",
+        "bytes": 243,
+        "sha256": "a1a90a7d5f8b86f564a42ab45b42a43eb0bbce6682176916bd94591b28cca447",
+        "gitBlob": "85265398a9d4a252abafafb61d0364dd1682f4f7"
+      },
+      {
+        "path": "multilingual/2240ms/joint.mlmodelc/coremldata.bin",
+        "bytes": 341,
+        "sha256": "8f750980da8ea3397d860f69e0755d3adf61ee763d7f189405d50d4e2d9f8ca0",
+        "gitBlob": "20901d7e565b36627b81d00b7626e8a6617789c9"
+      },
+      {
+        "path": "multilingual/2240ms/joint.mlmodelc/model.mil",
+        "bytes": 5072,
+        "sha256": null,
+        "gitBlob": "3745b706550d92175473b1bd7016afd8b38685da"
+      },
+      {
+        "path": "multilingual/2240ms/joint.mlmodelc/weights/weight.bin",
+        "bytes": 18911744,
+        "sha256": "c0ef0a3a6598f962d2aad598dc6850e4428874033419817121e11f1fff4a9cfe",
+        "gitBlob": "ec0ef89a60e3f5bf8344ff385bf18b80e6e4b54f"
+      },
+      {
+        "path": "multilingual/2240ms/metadata.json",
+        "bytes": 3005,
+        "sha256": null,
+        "gitBlob": "d0cc24c3804a6259a43c2c4ac968f24d2a1a2c7f"
+      },
+      {
+        "path": "multilingual/2240ms/tokenizer.json",
+        "bytes": 284969,
+        "sha256": null,
+        "gitBlob": "5c9c31a266fd62950553b9d5fef65598813f55e0"
+      }
+    ]
+  }
+}

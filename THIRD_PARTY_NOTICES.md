@@ -7,8 +7,10 @@ Scribble source and original artwork are MIT licensed. Dependencies retain their
 - FluidAudio: Apache-2.0; used by the original Parakeet adapter.
 - NVIDIA Parakeet CoreML models: upstream model licensing applies; pinned download manifests identify their source.
 - Ollama: MIT; optional runtime, installed from its official release.
-- Qwen3: upstream model licensing applies; optional downloaded model.
-- FFmpeg: the supplied binary has its own LGPL/GPL configuration and notices. Distribution must preserve the relevant FFmpeg license and source obligations; inspect the pinned installer package before distributing a release.
+- Qwen2.5/Qwen3: upstream model licensing applies; optional downloaded models.
+- FFmpeg 8.0.3: standalone GPL build with x264, libvpx, Opus and LAME, with nonfree components disabled. Exact corresponding source archives, manifests, license texts and build recipe ship under `Contents/Resources/native/ffmpeg-notices`. See [build provenance](docs/licenses/ffmpeg.md).
+- PDF.js: Apache-2.0; parses searchable Memory PDFs.
+- sanitize-html: MIT; restricts rich replacements to inert formatting.
 - Sharp / libvips, pdf-lib, fontkit, YAML, TOML, and ZIP dependencies retain their package licenses.
 
 Model/runtime downloads are not committed to this repository. System fonts used for PDF generation are selected from the user's Mac, not redistributed as source assets.

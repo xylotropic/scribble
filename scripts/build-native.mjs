@@ -2,8 +2,10 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 if (process.platform !== 'darwin') { console.log('Native macOS bridge build skipped on this platform.'); process.exit(0); }
-const sdk = process.env.SCRIBBLE_MACOS_SDK || '/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk';
-if (!existsSync(sdk)) throw new Error(`macOS SDK missing: ${sdk}. Set SCRIBBLE_MACOS_SDK to an installed SDK.`);
+const selected=spawnSync('xcrun',['--sdk','macosx','--show-sdk-path'],{encoding:'utf8'}).stdout?.trim();
+const compatible='/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk';
+const sdk = process.env.SCRIBBLE_MACOS_SDK || (existsSync(compatible)?compatible:selected);
+if (!sdk || !existsSync(sdk)) throw new Error(`macOS SDK missing: ${sdk}. Set SCRIBBLE_MACOS_SDK to an installed SDK.`);
 mkdirSync('release/native', { recursive: true });
 const arch = process.env.SCRIBBLE_NATIVE_ARCH || process.arch;
 const targetArch = arch === 'arm64' ? 'arm64' : 'x86_64';

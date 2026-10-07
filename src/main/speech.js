@@ -39,6 +39,11 @@ const MODELS = [
     "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
   ],
   [
+    "large-v3",
+    3095033483,
+    "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+  ],
+  [
     "large-v3-turbo",
     1624555275,
     "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
@@ -123,14 +128,27 @@ class SpeechEngine extends EventEmitter {
     this.active = null;
     const { ParakeetEngine } = require("./parakeet");
     this.parakeet = new ParakeetEngine({ dataDir });
+    const { CatalogEngine, CATALOG_MODELS } = require("./catalog-engine");
+    this.catalog = new CatalogEngine({ dataDir });
+    this.catalogIds = new Set(CATALOG_MODELS.map((m) => m.id));
     for (const event of ["download-progress", "models-changed", "progress"])
-      this.parakeet.on(event, (data) =>
-        this.emit(event, event === "models-changed" ? this.listModels() : data),
-      );
+      for (const engine of [this.parakeet, this.catalog])
+        engine.on(event, (data) =>
+          this.emit(
+            event,
+            event === "models-changed" ? this.listModels() : data,
+          ),
+        );
   }
   runtimePath() {
     return (
       process.env.SCRIBBLE_WHISPER_BIN ||
+      (process.resourcesPath &&
+      fs.existsSync(
+        path.join(process.resourcesPath, "native/speech/whisper-cli"),
+      )
+        ? path.join(process.resourcesPath, "native/speech/whisper-cli")
+        : null) ||
       path.join(
         this.dataDir,
         "runtime",
@@ -145,13 +163,18 @@ class SpeechEngine extends EventEmitter {
     return {
       ready: fs.existsSync(this.runtimePath()),
       runtime: this.runtimePath(),
-      busy: !!this.active || this.parakeet.status().busy,
+      busy:
+        !!this.active ||
+        this.parakeet.status().busy ||
+        this.catalog.status().busy,
       downloads: [
         ...this.downloads.keys(),
         ...this.parakeet.status().downloads,
+        ...this.catalog.status().downloads,
       ],
       defaultModel: "base.en",
       parakeet: this.parakeet.status(),
+      catalog: this.catalog.status(),
     };
   }
   listModels() {
@@ -159,9 +182,10 @@ class SpeechEngine extends EventEmitter {
       ...m,
       installed: fs.existsSync(path.join(this.modelDir, `ggml-${m.id}.bin`)),
       downloading: this.downloads.has(m.id),
-    })).concat(this.parakeet.listModels());
+    })).concat(this.parakeet.listModels(), this.catalog.listModels());
   }
   async downloadModel(id) {
+    if (this.catalogIds.has(id)) return this.catalog.downloadModel(id);
     if (id?.startsWith("parakeet-")) return this.parakeet.downloadModel(id);
     const m = model(id);
     if (this.downloads.has(id))
@@ -209,11 +233,13 @@ class SpeechEngine extends EventEmitter {
     }
   }
   cancelDownload(id) {
+    if (this.catalogIds.has(id)) return this.catalog.cancelDownload(id);
     if (id?.startsWith("parakeet-")) return this.parakeet.cancelDownload(id);
     model(id);
     this.downloads.get(id)?.abort();
   }
   async deleteModel(id) {
+    if (this.catalogIds.has(id)) return this.catalog.deleteModel(id);
     if (id?.startsWith("parakeet-")) return this.parakeet.deleteModel(id);
     model(id);
     if (this.downloads.has(id))
@@ -225,6 +251,7 @@ class SpeechEngine extends EventEmitter {
   cancelTranscription() {
     this.active?.controller.abort();
     this.parakeet.cancelTranscription();
+    this.catalog.cancelTranscription();
   }
   async transcribe(
     filePath,
@@ -236,8 +263,20 @@ class SpeechEngine extends EventEmitter {
       threads = Math.min(8, os.availableParallelism()),
     } = {},
   ) {
-    if (modelId?.startsWith("parakeet-") && this.active)
+    if (
+      this.active ||
+      this.parakeet.status().busy ||
+      this.catalog.status().busy
+    )
       throw new Error("A transcription is already running");
+    if (this.catalogIds.has(modelId))
+      return this.catalog.transcribe(filePath, {
+        modelId,
+        language,
+        translate,
+        prompt,
+        threads,
+      });
     if (modelId?.startsWith("parakeet-"))
       return this.parakeet.transcribe(filePath, {
         modelId,
@@ -269,13 +308,7 @@ class SpeechEngine extends EventEmitter {
       temp = await fsp.mkdtemp(path.join(os.tmpdir(), "scribble-speech-"));
       const wav = path.join(temp, "audio.wav"),
         out = path.join(temp, "result");
-      let ffmpeg = process.env.SCRIBBLE_FFMPEG_BIN;
-      if (!ffmpeg)
-        try {
-          ffmpeg = require("@ffmpeg-installer/ffmpeg").path;
-        } catch {
-          throw new Error("FFmpeg is missing. Run npm install.");
-        }
+      const ffmpeg = require("./ffmpeg").ffmpegExecutable({resourcesPath: this.resourcesPath});
       this.emit("progress", { stage: "decoding", progress: 0 });
       await run(
         resolveExecutablePath(ffmpeg),

@@ -1,10 +1,10 @@
 # Scribble
 
-An original, open-source voice workspace for macOS. Speech transcription runs on your Mac. Optional text assistance runs through local Ollama or a provider you explicitly configure.
+An original, open-source voice workspace for macOS. Speech transcription runs on your Mac by default. Optional cloud speech and text assistance runs through local Ollama or a provider you explicitly configure.
 
 ## Build and run
 
-Requires macOS, Node.js 24+, and Apple Command Line Tools (`xcode-select --install`). Apple Silicon supports Parakeet; Whisper also supports Intel Macs.
+Requires macOS 14+, Node.js 24+, and Apple Command Line Tools (`xcode-select --install`). Apple Silicon supports Parakeet; Whisper also supports Intel Macs.
 
 ```sh
 npm ci
@@ -26,7 +26,9 @@ npm test
 npm run package
 ```
 
-The macOS app appears in `release/mac-arm64/Scribble.app` on Apple Silicon. Unsigned local builds require macOS permission setup and are not notarized releases. Grant microphone access for recording and Accessibility for global shortcuts, text insertion, and expansions. Screen/system-audio permission is optional for meeting audio.
+Packaging builds the speech runtimes, a redistributable FFmpeg from pinned official sources, and bundles Ollama without model weights. Its first build can take several minutes and requires network downloads; later builds reuse compiled dependencies. Corresponding FFmpeg sources and notices are included in the app.
+
+The macOS app appears in `release/mac-arm64/Scribble.app` on Apple Silicon. Locally ad-hoc signed builds require macOS permission setup and are not notarized releases. Grant microphone access for recording and Accessibility for global shortcuts, text insertion, and expansions. Screen/system-audio permission is optional for meeting audio.
 
 ## Workspace
 
@@ -43,7 +45,7 @@ See [CLI and MCP](docs/cli.md), [native bridge](docs/native.md), [file utilities
 
 ## Data and privacy
 
-Settings, retained recordings, models, and history live in `~/Library/Application Support/Scribble`. Configure recording/history retention in Settings. API keys use Electron secure storage. Clipboard monitoring is opt-in. No telemetry is implemented. Local AI uses a loopback service; remote AI receives text only when explicitly configured and used.
+Settings, retained recordings, models, and history live in `~/Library/Application Support/Scribble`. Configure recording/history retention in Settings. API keys use Electron secure storage. Clipboard monitoring is opt-in. No telemetry is implemented. Local AI uses a loopback service; remote AI receives text only when explicitly configured and used. Adding or re-indexing Memory uses the configured language model; choose Ollama to keep those reference files local. Cloud speech receives the audio explicitly submitted while a cloud speech provider is selected.
 
 ## Provenance
 

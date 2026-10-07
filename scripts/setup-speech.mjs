@@ -69,6 +69,8 @@ const configureArgs = [
   build,
   "-DCMAKE_BUILD_TYPE=Release",
   "-DBUILD_SHARED_LIBS=OFF",
+  "-DGGML_NATIVE=OFF",
+  ...(process.platform === "darwin" ? ["-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0"] : []),
   "-DWHISPER_BUILD_TESTS=OFF",
   "-DWHISPER_BUILD_EXAMPLES=ON",
   "-DGGML_METAL_EMBED_LIBRARY=ON",

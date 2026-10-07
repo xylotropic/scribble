@@ -1,0 +1,135 @@
+{
+  "verifiedAt": "2026-10-07T07:20:08.694Z",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "runtime": "/Users/floydkorzan-mac-mini/Library/Application Support/Scribble/runtime/parakeet/ScribbleCatalog",
+  "runs": [
+    {
+      "modelId": "nemotron-en",
+      "fixtureSource": "whisper.cpp v1.8.7 upstream JFK sample",
+      "fixtureSHA256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e",
+      "elapsedMs": 969,
+      "duration": 11,
+      "segments": [
+        {
+          "text": "And so, my fellow Americans ask not what your country can do for you",
+          "start": 0.16,
+          "end": 7.04
+        },
+        {
+          "end": 10.16,
+          "start": 8.16,
+          "text": "ask what you can do for your country"
+        }
+      ],
+      "text": "And so, my fellow Americans ask not what your country can do for you ask what you can do for your country",
+      "language": "en"
+    },
+    {
+      "modelId": "nemotron-multilingual",
+      "fixtureSource": "whisper.cpp v1.8.7 upstream JFK sample",
+      "fixtureSHA256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e",
+      "elapsedMs": 720,
+      "text": "And so my fellow Americans ask not what your country can do for you ask what you can do for your country",
+      "segments": [
+        {
+          "text": "And so my fellow Americans ask not what your country can do for you",
+          "end": 7.2,
+          "start": 0.48
+        },
+        {
+          "text": "ask what you can do for your country",
+          "end": 10.32,
+          "start": 8.32
+        }
+      ],
+      "duration": 11,
+      "language": "en"
+    },
+    {
+      "modelId": "nemotron-multilingual",
+      "fixtureSource": "ephemeral macOS say synthetic zh speech",
+      "fixtureSHA256": "94e9a948a487c1d169165c69c0e07147f65f632a758e40a82cfcb1723c7b83ad",
+      "elapsedMs": 230,
+      "duration": 3.7906875,
+      "text": "你好, 世界今天我们测试本地语音识别",
+      "segments": [
+        {
+          "start": 0.24,
+          "text": "你好,世界今天我们测试本地语音识别",
+          "end": 3.7906875
+        }
+      ],
+      "language": "zh"
+    },
+    {
+      "modelId": "nemotron-multilingual",
+      "fixtureSource": "ephemeral macOS say synthetic ja speech",
+      "fixtureSHA256": "c9e7437ae76c0c905c5193414137f61835eb7840f20b07f8edbdf9ff10bc7ce1",
+      "elapsedMs": 230,
+      "language": "ja",
+      "duration": 4.1865,
+      "text": "こんにちは今日は音声認識のテストをしています",
+      "segments": [
+        {
+          "end": 4.08,
+          "start": 0.32,
+          "text": "こんにちは今日は音声認識のテストをしています"
+        }
+      ]
+    },
+    {
+      "modelId": "parakeet-ja",
+      "fixtureSource": "ephemeral macOS say synthetic ja speech",
+      "fixtureSHA256": "c9e7437ae76c0c905c5193414137f61835eb7840f20b07f8edbdf9ff10bc7ce1",
+      "elapsedMs": 569,
+      "text": "こんにちは、きょうは音声認識のテストをしています。",
+      "segments": [
+        {
+          "text": "こんにちは、きょうは音声認識のテストをしています。",
+          "end": 4.16,
+          "start": 0
+        }
+      ],
+      "duration": 4.1865,
+      "language": "ja"
+    },
+    {
+      "modelId": "parakeet-zh",
+      "fixtureSource": "ephemeral macOS say synthetic zh speech",
+      "fixtureSHA256": "94e9a948a487c1d169165c69c0e07147f65f632a758e40a82cfcb1723c7b83ad",
+      "elapsedMs": 626,
+      "text": "你好世界，今天我们测试本地语音识别。",
+      "language": "zh",
+      "segments": [
+        {
+          "start": 0,
+          "text": "你好世界，今天我们测试本地语音识别。",
+          "end": 3.7906875
+        }
+      ],
+      "duration": 3.7906875
+    },
+    {
+      "modelId": "parakeet-zh",
+      "fixtureSource": "ephemeral macOS say synthetic zh speech",
+      "fixtureSHA256": "2f1acf72451666f52b9f89536bfaa21299f1188c67c956a4e1354d1b4d24b1cd",
+      "elapsedMs": 253,
+      "text": "你好世界，今天我们测试本地语音识别，你好世界，今天我们测试本地语音识别，你好世界，今天我们测试本地语音识别，你好世界，今天我们测试本地语音识别，你好世界今天我们测试本地语音识别。",
+      "segments": [
+        {
+          "end": 14,
+          "start": 0,
+          "text": "你好世界，今天我们测试本地语音识别，你好世界，今天我们测试本地语音识别，你好世界，今天我们测试本地语音识别，你好世界，今天我们"
+        },
+        {
+          "end": 19.7311875,
+          "start": 14,
+          "text": "测试本地语音识别，你好世界今天我们测试本地语音识别。"
+        }
+      ],
+      "duration": 19.7311875,
+      "language": "zh"
+    }
+  ]
+}
