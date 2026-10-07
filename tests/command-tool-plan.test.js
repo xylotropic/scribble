@@ -32,3 +32,7 @@ test('prototype/accessor inputs refused without getter execution and outputs det
 test('prompt exposes trusted opaque IDs only, not endpoint or execution configuration',()=>{
  const prompt=selectionPrompt({targets:{code:{kind:'editor',path:'/private/secret'},'../evil':{kind:'app'}}});assert.ok(prompt.includes('code'));assert.equal(prompt.includes('/private/secret'),false);assert.equal(prompt.includes('../evil'),false);
 });
+test('single-call text selections preserve generated content and reject oversized or unknown fields',()=>{
+ const {parseSelection}=require('../src/main/command-tool-plan');assert.deepEqual(parseSelection('{"kind":"text","text":"Bonjour 日本語"}'),{kind:'text',text:'Bonjour 日本語'});
+ assert.throws(()=>parseSelection({kind:'text',text:'x'.repeat(100001)}),/generated text/);assert.throws(()=>parseSelection({kind:'text',text:'answer',tool:'timer'}),/field/);assert.throws(()=>parseSelection('x'.repeat(512*1024+1)),/limit/);
+});

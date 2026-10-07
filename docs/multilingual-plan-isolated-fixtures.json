@@ -1,0 +1,59 @@
+{
+  "model": "qwen2.5:7b",
+  "execution": "selection only; no tools executed",
+  "outputs": [
+    {
+      "instruction": "Converta as imagens selecionadas para WebP.",
+      "response": {
+        "version": 1,
+        "tool": "image-convert",
+        "arguments": {
+          "format": "webp"
+        }
+      }
+    },
+    {
+      "instruction": "Unisci i PDF selezionati.",
+      "response": {
+        "version": 1,
+        "tool": "pdf-merge",
+        "arguments": {}
+      }
+    },
+    {
+      "instruction": "선택한 파일을 ZIP으로 압축해 주세요.",
+      "response": {
+        "version": 1,
+        "tool": "archive-create",
+        "arguments": {}
+      }
+    },
+    {
+      "instruction": "اضبط مؤقتًا لمدة عشر دقائق.",
+      "response": {
+        "version": 1,
+        "tool": "timer",
+        "arguments": {
+          "seconds": 600
+        }
+      }
+    },
+    {
+      "instruction": "Ouvre les paramètres Bluetooth.",
+      "response": {
+        "version": 1,
+        "tool": "settings-open",
+        "arguments": {
+          "pane": "bluetooth"
+        }
+      }
+    },
+    {
+      "instruction": "Réécris le texte gentiment.",
+      "response": {
+        "kind": "text",
+        "text": "Réecris le texte de manière plus gentille."
+      }
+    }
+  ]
+}

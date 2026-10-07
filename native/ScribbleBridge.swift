@@ -87,6 +87,95 @@ struct IndicatorGeometry {
         return IndicatorGeometry(frame:NSRect(x:x,y:y,width:width,height:height),notch:notch,hardwareNotch:hardware,safeTop:notch ? safeTop : 0,fallbackReason:fallback)
     }
 }
+// Original countdown pill. Validation, ordering, countdown and geometry need no desktop access.
+struct TimerPillEntry { let id:String; let title:String; let endsAt:Double }
+struct TimerPillSnapshot {
+    var entries:[TimerPillEntry]=[]
+    var labels=["cancel":"Cancel","countPattern":"{count} timers","timer":"Timer"]
+    static func plain(_ value:Any?, max:Int) -> String? { guard let text=value as? String,!text.isEmpty,text.count<=max,!text.unicodeScalars.contains(where:{CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0)}) else{return nil};return text }
+    mutating func apply(_ request:[String:Any],now:Double) throws {
+        guard let raw=request["timers"] as? [[String:Any]],raw.count<=32 else {throw IndicatorState.invalid("Timer pill accepts at most32 timers")}
+        var next=TimerPillSnapshot();next.labels=labels;var ids=Set<String>()
+        for item in raw {
+            guard Set(item.keys).isSubset(of:["id","title","endsAt"]),let id=Self.plain(item["id"],max:100),ids.insert(id).inserted,let title=Self.plain(item["title"],max:200),let number=item["endsAt"] as? NSNumber,CFGetTypeID(number) != CFBooleanGetTypeID() else {throw IndicatorState.invalid("Invalid timer pill item")}
+            let end=number.doubleValue
+            guard end.isFinite,end>0,end<=now+30*86400*1000 else {throw IndicatorState.invalid("Timer pill deadline exceeds30 days")}
+            next.entries.append(TimerPillEntry(id:id,title:title,endsAt:end))
+        }
+        if let raw=request["labels"] {
+            guard let values=raw as? [String:Any],Set(values.keys).isSubset(of:["cancel","countPattern","timer"]) else {throw IndicatorState.invalid("Invalid timer pill labels")}
+            for (key,value) in values {guard let text=Self.plain(value,max:200) else {throw IndicatorState.invalid("Invalid timer pill label")};if key=="countPattern" && text.components(separatedBy:"{count}").count != 2 {throw IndicatorState.invalid("Timer count label requires exactly one {count}")};next.labels[key]=text}
+        }
+        entries=next.entries.sorted {$0.endsAt==$1.endsAt ? $0.id<$1.id : $0.endsAt<$1.endsAt};labels=next.labels
+    }
+    func active(now:Double)->[TimerPillEntry] {entries.filter {$0.endsAt>now}}
+    func metadata(now:Double)->[String:Any] {let active=active(now:now);var result:[String:Any]=["visible":!active.isEmpty,"count":active.count];if let first=active.first {result["nextId"]=first.id;result["remainingMs"]=max(0,first.endsAt-now)};return result}
+    static func countdown(end:Double,now:Double)->String {let total=Int(ceil(max(0,end-now)/1000));let hours=total/3600;return hours>0 ? String(format:"%d:%02d:%02d",hours,(total/60)%60,total%60) : String(format:"%d:%02d",total/60,total%60)}
+}
+func timerPillGeometry(visible:NSRect,indicator:NSRect?=nil)->NSRect {
+    let margin=min(32,max(0,min(visible.width,visible.height)/8));let width=min(330,max(1,visible.width-2*margin)),height=min(76,max(1,visible.height-2*margin))
+    var result=NSRect(x:visible.maxX-margin-width,y:visible.minY+margin,width:width,height:height)
+    if let indicator,result.intersects(indicator) {let top=NSRect(x:result.minX,y:visible.maxY-margin-height,width:width,height:height);if !top.intersects(indicator) {result=top}}
+    return result
+}
+func timerPillAccessibilitySummary(timer:String,title:String,countdown:String,count:String)->String {[timer,title,countdown,count].joined(separator:". ")}
+final class TimerPillView:NSView {
+    let titleField=NSTextField(labelWithString:""),countdownField=NSTextField(labelWithString:""),countField=NSTextField(labelWithString:"")
+    override init(frame:NSRect) {
+        super.init(frame:frame)
+        setAccessibilityElement(true);setAccessibilityRole(.group)
+        for field in [titleField,countdownField,countField] {field.lineBreakMode = .byTruncatingTail;field.isSelectable=false;field.setAccessibilityElement(true);field.setAccessibilityRole(.staticText);addSubview(field)}
+        titleField.font=NSFont.systemFont(ofSize:13,weight:.medium);titleField.textColor = .white
+        countdownField.font=NSFont.monospacedDigitSystemFont(ofSize:17,weight:.semibold);countdownField.textColor=NSColor(calibratedRed:0.6,green:0.94,blue:0.43,alpha:1)
+        countField.font=NSFont.systemFont(ofSize:11);countField.textColor = .lightGray
+    }
+    required init?(coder:NSCoder) {fatalError("Timer pill uses programmatic views")}
+    func update(title:String,countdown:String,count:String,timerLabel:String,cancelButton:NSButton) {
+        titleField.stringValue=title;countdownField.stringValue=countdown;countField.stringValue=count
+        titleField.setAccessibilityLabel(timerLabel)
+        setAccessibilityLabel(timerPillAccessibilitySummary(timer:timerLabel,title:title,countdown:countdown,count:count))
+        // Explicit children retain the localized Cancel button alongside standard readable text.
+        setAccessibilityChildren([titleField,countdownField,countField,cancelButton])
+        titleField.frame=NSRect(x:46,y:43,width:max(1,bounds.width-128),height:20)
+        countdownField.frame=NSRect(x:46,y:15,width:100,height:22)
+        countField.frame=NSRect(x:147,y:18,width:max(1,bounds.width-165),height:17)
+        needsDisplay=true
+    }
+    override func draw(_ dirtyRect:NSRect) {
+        NSColor.clear.setFill();bounds.fill();NSColor(calibratedWhite:0.03,alpha:0.97).setFill();NSBezierPath(roundedRect:bounds,xRadius:19,yRadius:19).fill()
+        NSColor(calibratedRed:0.6,green:0.94,blue:0.43,alpha:1).setStroke()
+        let clock=NSBezierPath(ovalIn:NSRect(x:15,y:35,width:21,height:21));clock.lineWidth=2;clock.stroke()
+        let hand=NSBezierPath();hand.move(to:NSPoint(x:25.5,y:51));hand.line(to:NSPoint(x:25.5,y:45.5));hand.line(to:NSPoint(x:30,y:43));hand.lineWidth=2;hand.stroke()
+    }
+}
+final class NativeTimerPill:NSObject {
+    private var snapshot=TimerPillSnapshot(),panel:IndicatorPanel?,view:TimerPillView?,cancelButton:NSButton?,tick:Timer?,selectedId:String?,closing=false
+    var indicatorFrame:()->NSRect? = {nil}
+    func sync(_ request:[String:Any]) throws->[String:Any] {guard !closing else {throw IndicatorState.invalid("Timer pill is shutting down")};let now=Date().timeIntervalSince1970*1000;try snapshot.apply(request,now:now);refresh(now:now);if tick==nil && !snapshot.active(now:now).isEmpty {tick=Timer.scheduledTimer(withTimeInterval:0.25,repeats:true){[weak self] _ in self?.refresh(now:Date().timeIntervalSince1970*1000)}};return snapshot.metadata(now:now)}
+    func hide(){tick?.invalidate();tick=nil;panel?.orderOut(nil);selectedId=nil}
+    func shutdown(){closing=true;hide();panel?.close();panel=nil;view=nil;cancelButton=nil;snapshot.entries=[]}
+    private func refresh(now:Double) {
+        let active=snapshot.active(now:now);guard let first=active.first else {hide();return}
+        let point=NSEvent.mouseLocation;guard let screen=NSScreen.screens.first(where:{$0.frame.contains(point)}) ?? NSScreen.main else {hide();return}
+        let layout=timerPillGeometry(visible:screen.visibleFrame,indicator:indicatorFrame())
+        if panel==nil {let window=IndicatorPanel(contentRect:layout,styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false);window.isOpaque=false;window.backgroundColor = .clear;window.hasShadow=true;window.level=NSWindow.Level(rawValue:NSWindow.Level.statusBar.rawValue+1);window.collectionBehavior=[.canJoinAllSpaces,.fullScreenAuxiliary,.stationary,.ignoresCycle];window.hidesOnDeactivate=false;window.isFloatingPanel=true;window.becomesKeyOnlyIfNeeded=true;window.isReleasedWhenClosed=false;let content=TimerPillView(frame:NSRect(origin:.zero,size:layout.size));window.contentView=content;let button=NSButton(title:"",target:self,action:#selector(cancelTimer));button.bezelStyle = .rounded;button.isBordered=false;button.font=NSFont.systemFont(ofSize:11);button.contentTintColor = .white;content.addSubview(button);panel=window;view=content;cancelButton=button}
+        guard let panel,let view,let cancelButton else{return};if panel.frame != layout {panel.setFrame(layout,display:false)}
+        view.update(title:first.title,countdown:TimerPillSnapshot.countdown(end:first.endsAt,now:now),count:snapshot.labels["countPattern"]!.replacingOccurrences(of:"{count}",with:String(active.count)),timerLabel:snapshot.labels["timer"]!,cancelButton:cancelButton);selectedId=first.id
+        cancelButton.title=snapshot.labels["cancel"]!;cancelButton.setAccessibilityLabel(snapshot.labels["cancel"]!);cancelButton.frame=NSRect(x:max(0,layout.width-78),y:43,width:min(70,layout.width),height:22)
+        if !panel.isVisible {panel.orderFrontRegardless()}
+    }
+    @objc private func cancelTimer(){guard let id=selectedId,snapshot.active(now:Date().timeIntervalSince1970*1000).contains(where:{$0.id==id}) else{return};emit(["event":"timer-cancel","id":id])}
+}
+func timerPillSelfTest()->[String:Any] {
+    let now=1000000.0;var state=TimerPillSnapshot();try! state.apply(["timers":[["id":"b","title":"Later","endsAt":now+120000],["id":"a","title":"日本語 <plain>","endsAt":now+1501],["id":"expired","title":"Old","endsAt":now-1]],"labels":["countPattern":"{count}件","cancel":"取消"]],now:now)
+    let initial=state.metadata(now:now);var rejected=0;for invalid:[String:Any] in [["timers":[["id":"a","title":"Control\n","endsAt":now+1000]]],["timers":[["id":"a","title":"A","endsAt":Double.nan]]],["timers":[["id":"a","title":"A","endsAt":true]]],["timers":[["id":"a","title":"A","endsAt":now+31*86400*1000]]],["timers":Array(repeating:["id":"a","title":"A","endsAt":now+1000],count:33)],["timers":[["id":"a","title":"A","endsAt":now+1000],["id":"a","title":"B","endsAt":now+2000]]],["timers":[],"labels":["countPattern":"{count} {count}"]],["timers":[["id":String(repeating:"a",count:101),"title":"A","endsAt":now+1000]]],["timers":[["id":"a","title":String(repeating:"a",count:201),"endsAt":now+1000]]],["timers":[],"labels":["cancel":"Control\u{0085}"]]] {do{try state.apply(invalid,now:now)}catch{rejected+=1}}
+    var maximum=TimerPillSnapshot();try! maximum.apply(["timers":(0..<32).map{["id":"timer-\($0)","title":"Timer","endsAt":now+1000] as [String:Any]}],now:now)
+    let atomic = state.metadata(now:now)["nextId"] as? String == "a" && state.metadata(now:now)["count"] as? Int == 2 && state.labels["cancel"]=="取消"
+    let visible=NSRect(x:-1800,y:-400,width:1800,height:970),indicator=NSRect(x:-340,y:-370,width:320,height:100),frame=timerPillGeometry(visible:visible,indicator:indicator),tiny=NSRect(x:10,y:20,width:20,height:20)
+    let expired=state.metadata(now:now+121000);try! state.apply(["timers":[]],now:now)
+    return ["selfTest":"timer-pill","accessiblePlainSummary":timerPillAccessibilitySummary(timer:"タイマー",title:"日本語 <plain>",countdown:"0:02",count:"2件") == "タイマー. 日本語 <plain>. 0:02. 2件","maxAccepted":maximum.active(now:now).count == 32,"nearest":initial["nextId"] as? String == "a","count":initial["count"] as? Int == 2,"ceilSeconds":TimerPillSnapshot.countdown(end:now+1501,now:now)=="0:02","hourCountdown":TimerPillSnapshot.countdown(end:now+3600001,now:now)=="1:00:01","expiredZero":TimerPillSnapshot.countdown(end:now-1,now:now)=="0:00","allExpiredHidden":expired["visible"] as? Bool == false,"emptyHidden":state.metadata(now:now)["visible"] as? Bool == false,"rejected":rejected,"atomic":atomic,"negativeOriginAndDock":visible.contains(frame),"avoidsIndicator":!frame.intersects(indicator),"tinyClamped":tiny.contains(timerPillGeometry(visible:tiny)),"noWindowCreated":true]
+}
+
 struct IndicatorState {
     var enabled = true, style = "notch", position = "top", state = "idle", mode = "dictation", text = "", tone = "", level = 0.0, canSelectTone = false
     var labels = ["dictate":"Dictate","command":"Command","note":"Note","stop":"Stop","cancel":"Cancel","open":"Open","tones":"Tone","status":"Ready","fallback":"This display has no notch. Using a pill indicator."]
@@ -528,6 +617,7 @@ func commandScreenSelfTest() -> [String:Any] {
 
 final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     let indicator = NativeIndicator()
+    let timerPill = NativeTimerPill()
     var expansionClipboardHistory = false
     var tap: CFMachPort?
     let eventTapAllowed = !CommandLine.arguments.contains("--no-event-tap")
@@ -963,6 +1053,7 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
             case "commandScreenFinish": guard !commandScreenShutdown else {throw commandScreenError("Screen capture is shutting down")};guard #available(macOS 14.0, *) else {throw commandScreenError("Command screen capture requires macOS 14 or later")};result = try await commandScreenController().finish(request)
             case "commandScreenCancel": guard #available(macOS 14.0, *) else {throw commandScreenError("Command screen capture requires macOS 14 or later")};result = try commandScreenController().cancel(request)
             case "indicatorConfigure": result = try indicator.configure(request)
+            case "timerPillSync": timerPill.indicatorFrame = { [weak self] in guard let self,let frame=self.indicator.metadata()["frame"] as? [String:CGFloat],self.indicator.visible else{return nil};return NSRect(x:frame["x"] ?? 0,y:frame["y"] ?? 0,width:frame["width"] ?? 0,height:frame["height"] ?? 0) }; result = try timerPill.sync(request)
             case "indicatorShow": result = try indicator.configure(request,show:true)
             case "indicatorUpdate": result = try indicator.configure(request)
             case "indicatorHide": indicator.hide();result = indicator.metadata()
@@ -1080,6 +1171,7 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
         } catch { emit(["id":id, "ok":false, "error":error.localizedDescription]) }
     }
 }
+if CommandLine.arguments.contains("--timer-pill-self-test") {emit(timerPillSelfTest());exit(0)}
 if CommandLine.arguments.contains("--clipboard-history-self-test") {
     let transient=NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
     let privateItem=pasteboardInsertionItem("Private",html:"<b>Private</b>",allowClipboardHistory:false), publicItem=pasteboardInsertionItem("Public",html:nil,allowClipboardHistory:true)
@@ -1215,5 +1307,5 @@ if CommandLine.arguments.contains("--mouse-hotkey-self-test") {
 let nativeApplication = NSApplication.shared
 nativeApplication.setActivationPolicy(.prohibited)
 bridge.startTap()
-DispatchQueue.global().async { while let line = readLine() { guard let data = line.data(using:.utf8), let object = try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { emit(["ok":false,"error":"Invalid JSON"]); continue }; DispatchQueue.main.async { Task { await bridge.command(object) } } }; DispatchQueue.main.async { Task { bridge.cancelCommandScreen(); bridge.indicator.hide(); _ = try? await bridge.stopSystemCapture(); exit(0) } } }
+DispatchQueue.global().async { while let line = readLine() { guard let data = line.data(using:.utf8), let object = try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { emit(["ok":false,"error":"Invalid JSON"]); continue }; DispatchQueue.main.async { Task { await bridge.command(object) } } }; DispatchQueue.main.async { Task { bridge.cancelCommandScreen(); bridge.timerPill.shutdown(); bridge.indicator.hide(); _ = try? await bridge.stopSystemCapture(); exit(0) } } }
 nativeApplication.run()
