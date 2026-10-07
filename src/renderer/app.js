@@ -625,7 +625,16 @@ function renderSettings() {
   if (settingsTab === "audio")
     body = `<h2>Your microphone.</h2><p class="muted">Choose a connected input. Refreshing devices asks the browser for microphone access so labels are available.</p>${button("Refresh microphones", "refresh-mics", "refresh")}<div id="microphone-list" class="stack"></div><p class="tip">The system default follows your Mac’s selected microphone. Disconnecting a selected device requires choosing another input.</p>`;
   if (settingsTab === "language")
-    body = `<h2>Every word, understood.</h2>${setting("Dictation language", "Auto-detect works with multilingual speech models.", "language", "select", langList)}${setting("Translate to English", "Whisper can translate other languages during transcription.", "translate")}${setting(
+    body = `<h2>Every word, understood.</h2>${setting(
+      "Whisper resource mode",
+      "Automatic uses available acceleration. CPU mode disables GPU use and limits Whisper to two CPU threads. CoreML and cloud engines manage their own resources.",
+      "resourceMode",
+      "select",
+      [
+        ["automatic", "Automatic"],
+        ["cpu", "CPU · reduced parallelism"],
+      ],
+    )}${setting("Dictation language", "Auto-detect works with multilingual speech models.", "language", "select", langList)}${setting("Translate to English", "Whisper can translate other languages during transcription.", "translate")}${setting(
       "Summary language",
       "The language model writes notes in this language.",
       "summaryLanguage",

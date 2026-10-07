@@ -388,7 +388,11 @@ async function enhance(text, settings) {
   return chat(
     settings,
     [
-      { role: "system", content: settings.aiInstructions },
+      {
+        role: "system",
+        content: `${settings.aiInstructions}
+Use ${settings.spelling === "uk" ? "British" : "American"} English spelling for ordinary English prose. Preserve proper names, exact quotations, URLs, code and these vocabulary terms: ${store.data.dictionary.map((item) => item.word).join(", ")}. Do not translate non-English text.`,
+      },
       { role: "user", content: text },
     ],
     apiKey(),
@@ -674,6 +678,11 @@ async function transcribeAndProcess(
       modelId: settings.modelId,
       language: settings.language,
       translate: settings.translate,
+      useGpu: settings.resourceMode !== "cpu",
+      threads: Math.min(
+        settings.resourceMode === "cpu" ? 2 : 8,
+        os.availableParallelism(),
+      ),
       prompt: store.data.dictionary.map((x) => x.word).join(", "),
     });
   else {

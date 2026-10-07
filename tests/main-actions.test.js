@@ -213,17 +213,67 @@ test("Transcript edits require caption correction before subtitle export", async
 });
 
 test("file commands route to a saved utility result and report cancellation honestly", async (t) => {
-  const h = harness(t, { chat: async () => { throw Error("File commands must not ask AI to simulate an operation"); } });
+  const h = harness(t, {
+    chat: async () => {
+      throw Error("File commands must not ask AI to simulate an operation");
+    },
+  });
   let request;
   h.actions.utility = async (value) => {
     request = value;
-    return { output: "/tmp/palette.json", details: { operation: "image-palette" } };
+    return {
+      output: "/tmp/palette.json",
+      details: { operation: "image-palette" },
+    };
   };
-  const saved = await h.actions.command({ text: "extract a color palette from this image" });
+  const saved = await h.actions.command({
+    text: "extract a color palette from this image",
+  });
   assert.equal(request.operation, "image-palette");
   assert.match(saved.text, /Saved \/tmp\/palette.json/);
   h.actions.utility = async () => null;
   const cancelled = await h.actions.command({ text: "compress this image" });
   assert.equal(cancelled.kind, "cancelled");
   assert.equal(cancelled.text, "File operation cancelled.");
+});
+
+test("AI cleanup observes English spelling and protects dictionary terms", async (t) => {
+  let messages;
+  const h = harness(t, {
+    chat: async (_settings, value) => {
+      messages = value;
+      return "The colour is blue.";
+    },
+  });
+  h.store.updateSettings({ aiEnhance: true, spelling: "uk", autoPaste: false });
+  h.store.upsert("dictionary", { word: "ColorSync", aliases: [] });
+  await h.processFile("/fixture.wav", { kind: "dictation" });
+  assert.match(messages[0].content, /British English spelling/);
+  assert.match(
+    messages[0].content,
+    /Preserve proper names, exact quotations, URLs, code/,
+  );
+  assert.match(messages[0].content, /ColorSync/);
+});
+
+test("CPU resource mode disables Whisper GPU and caps worker threads", async (t) => {
+  let options;
+  const h = harness(t, {
+    transcribe: async (_file, value) => {
+      options = value;
+      return { text: "CPU fixture", segments: [], duration: 1 };
+    },
+  });
+  h.store.updateSettings({
+    resourceMode: "cpu",
+    aiEnhance: false,
+    autoPaste: false,
+  });
+  await h.processFile("/fixture.wav", { kind: "dictation" });
+  assert.equal(options.useGpu, false);
+  assert.ok(options.threads >= 1 && options.threads <= 2);
+  assert.throws(
+    () => h.store.updateSettings({ resourceMode: "pretend" }),
+    /Invalid resource mode/,
+  );
 });

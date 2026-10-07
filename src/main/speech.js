@@ -261,6 +261,7 @@ class SpeechEngine extends EventEmitter {
       translate = false,
       prompt = "",
       threads = Math.min(8, os.availableParallelism()),
+      useGpu = true,
     } = {},
   ) {
     if (
@@ -308,7 +309,9 @@ class SpeechEngine extends EventEmitter {
       temp = await fsp.mkdtemp(path.join(os.tmpdir(), "scribble-speech-"));
       const wav = path.join(temp, "audio.wav"),
         out = path.join(temp, "result");
-      const ffmpeg = require("./ffmpeg").ffmpegExecutable({resourcesPath: this.resourcesPath});
+      const ffmpeg = require("./ffmpeg").ffmpegExecutable({
+        resourcesPath: this.resourcesPath,
+      });
       this.emit("progress", { stage: "decoding", progress: 0 });
       await run(
         resolveExecutablePath(ffmpeg),
@@ -342,6 +345,8 @@ class SpeechEngine extends EventEmitter {
         String(threads),
         "-pp",
       ];
+      if (typeof useGpu !== "boolean") throw Error("Invalid GPU preference");
+      if (!useGpu) args.push("--no-gpu");
       if (translate) args.push("-tr");
       if (prompt) args.push("--prompt", prompt);
       this.emit("progress", { stage: "transcribing", progress: 0 });

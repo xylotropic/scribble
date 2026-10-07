@@ -7,6 +7,7 @@ const SETTINGS = {
   theme: "light",
   modelId: "base.en",
   speechProvider: "local",
+  resourceMode: "automatic",
   speechCloudModel: "",
   speechCloudVersion: "2026-08-14",
   language: "auto",
@@ -166,6 +167,11 @@ class Store {
   validateSettings(patch) {
     if (!patch || typeof patch !== "object" || Array.isArray(patch))
       throw Error("Invalid preferences");
+    if (
+      patch.resourceMode !== undefined &&
+      !["automatic", "cpu"].includes(patch.resourceMode)
+    )
+      throw Error("Invalid resource mode");
     for (const [k, v] of Object.entries(patch)) {
       if (!Object.hasOwn(SETTINGS, k)) throw Error("Unknown preference: " + k);
       if (
