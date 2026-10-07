@@ -13,12 +13,13 @@
     "setup": "npm run build:native && npm run setup:speech && npm run setup:ffmpeg",
     "test": "node --test test/*.test.js tests/*.test.js",
     "icons": "node scripts/icons.cjs",
-    "package": "npm run build:native && npm run prepare:runtime && npm run icons && electron-builder --mac dir",
-    "dist": "npm run build:native && npm run prepare:runtime && npm run icons && electron-builder --mac dmg zip",
+    "package": "npm run build:native && npm run build:share && npm run prepare:runtime && npm run icons && electron-builder --mac dir",
+    "dist": "npm run build:native && npm run build:share && npm run prepare:runtime && npm run icons && electron-builder --mac dmg zip",
     "setup:parakeet": "node scripts/setup-parakeet.mjs",
     "setup:ai": "node scripts/setup-ai.mjs",
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
-    "setup:ffmpeg": "node scripts/setup-ffmpeg.mjs"
+    "setup:ffmpeg": "node scripts/setup-ffmpeg.mjs",
+    "build:share": "node scripts/build-share-extension.mjs"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
@@ -107,7 +108,8 @@
       "signIgnore": [
         "runtime/ollama/",
         "native/parakeet/.*\\.bundle",
-        "native/ffmpeg-notices/"
+        "native/ffmpeg-notices/",
+        "PlugIns/ScribbleShare\\.appex"
       ]
     },
     "fileAssociations": [
@@ -133,6 +135,12 @@
         ],
         "name": "Audio or video recording",
         "role": "Viewer"
+      }
+    ],
+    "extraFiles": [
+      {
+        "from": "release/native/ScribbleShare.appex",
+        "to": "PlugIns/ScribbleShare.appex"
       }
     ]
   },

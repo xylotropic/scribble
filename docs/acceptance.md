@@ -104,3 +104,19 @@ Public Vowen engine coverage exceeds a Whisper-only implementation. NVIDIA's [Pa
 
 - The rebuilt app launched from `release/mac-arm64/Scribble.app`; its renderer URL proves it was the new package rather than the older installed copy. Command Mode visibly exposes file context and screen-context controls. Dictionary → Expansions → Add expansion visibly exposes typed shortcut, rich replacement, formatting controls and template variables. This observes UI availability, not system-wide insertion success.
 - Full suite after rich expansion changes: 186 tests, 181 passed, five optional live tests skipped. The rebuilt app passes strict deep signature verification. Accessibility authentication remains at the macOS password sheet.
+
+### Packaged command and history runtime check
+
+- In the running packaged app, Command Mode transformed the disposable fixture `Scribble command fixture October seven.` to uppercase. Refining with lowercase updated the displayed result. The running app’s Unix-socket CLI returned the same history ID with both revisions, exact source context and final output. This establishes local typed command execution, refinement and persisted revision inspection; it does not establish microphone commands or insertion into another app.
+
+- Actual packaged local AI command: qwen2.5:7b rewrote the disposable Cedar fixture to `Maya will finish the Cedar demo by October 14 and needs the review by October 12.` The app displayed the output and the socket CLI returned the identical persisted context/result. Owner and both dates were preserved in this case. This fixture is not a claim of general model accuracy.
+
+### Packaged Memory runtime check
+
+- Added a disposable named Cedar reference in the packaged Memory UI. Actual local qwen2.5:7b indexing reached `indexed`, with a summary preserving coordinator Maya Chen, review October 12, 2026, delivery October 14, 2026 and copper color. Command Mode retrieved the coordinator, review date and color correctly; the UI and socket history agreed. The disposable reference was then disabled, with the UI checkbox visibly off. This proves the tested note-indexing/retrieval path, not arbitrary reference accuracy or PDF import.
+
+- A generated searchable PDF was imported through the packaged native file picker. PDF.js extracted all four fixture lines, local AI indexing reached indexed, and the app displayed the correct coordinator Jordan Lee, November 5, 2026 date and AURORA-57 identifier. The socket CLI confirmed identical extracted source and summary. The reference was disabled afterward. Scanned PDF OCR remains unsupported; this test covers a searchable single-page fixture.
+
+### Embedded Share extension
+
+- Original Swift Share extension is compiled with application-extension restrictions and embedded at Contents/PlugIns/ScribbleShare.appex by package/dist. The embedded extension and complete host pass strict signature verification. The nested extension retains app-sandbox and user-selected read-only entitlements. A read-only pluginkit inventory currently reports no registered match; actual Finder discovery/handoff is still unverified.
