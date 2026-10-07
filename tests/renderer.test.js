@@ -627,3 +627,52 @@ test(
     );
   },
 );
+
+test(
+  "Microphone priorities fall through missing devices and stop at the first usable input",
+  options,
+  async (t) => {
+    const h = await fixture(t);
+    h.data.settings.microphonePriority = ["missing-input", "working-input"];
+    h.emit("state", h.data);
+    const requests = [];
+    h.w.navigator.mediaDevices.getUserMedia = async (options) => {
+      requests.push(options.audio.deviceId?.exact || "default");
+      if (requests.length === 1) {
+        const error = Error("Disconnected");
+        error.name = "NotFoundError";
+        throw error;
+      }
+      return { getTracks: () => h.tracks };
+    };
+    await h.click('[data-action="record"]');
+    assert.deepEqual(requests, ["missing-input", "working-input"]);
+    assert.equal(h.recorders.length, 1);
+  },
+);
+
+test(
+  "Cancelling a rejected microphone request prevents fallback acquisition",
+  options,
+  async (t) => {
+    const h = await fixture(t);
+    h.data.settings.microphonePriority = ["missing-input", "second-input"];
+    h.emit("state", h.data);
+    let rejectRequest;
+    let requests = 0;
+    h.w.navigator.mediaDevices.getUserMedia = async () => {
+      requests++;
+      return new Promise((_resolve, reject) => {
+        rejectRequest = reject;
+      });
+    };
+    await h.click('[data-action="record"]');
+    h.emit("recording-control", { action: "cancel" });
+    const error = Error("Disconnected");
+    error.name = "NotFoundError";
+    rejectRequest(error);
+    await flush();
+    assert.equal(requests, 1);
+    assert.equal(h.recorders.length, 0);
+  },
+);

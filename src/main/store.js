@@ -14,6 +14,7 @@ const SETTINGS = {
   summaryLanguage: "en",
   translate: false,
   microphoneId: "default",
+  microphonePriority: [],
   autoPaste: true,
   autoEnter: false,
   restoreClipboard: true,
@@ -172,6 +173,17 @@ class Store {
       !["automatic", "cpu"].includes(patch.resourceMode)
     )
       throw Error("Invalid resource mode");
+    if (
+      patch.microphonePriority !== undefined &&
+      (!Array.isArray(patch.microphonePriority) ||
+        patch.microphonePriority.length > 32 ||
+        patch.microphonePriority.some(
+          (id) => typeof id !== "string" || !id || id.length > 512,
+        ) ||
+        new Set(patch.microphonePriority).size !==
+          patch.microphonePriority.length)
+    )
+      throw Error("Invalid microphone priority");
     for (const [k, v] of Object.entries(patch)) {
       if (!Object.hasOwn(SETTINGS, k)) throw Error("Unknown preference: " + k);
       if (

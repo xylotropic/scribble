@@ -101,6 +101,7 @@ let state = null,
   commandTextContext = "",
   historyKind = "all",
   historyLimit = 100,
+  microphoneDevices = [],
   originalHistory = new Set(),
   historyRevision = new Map();
 let recordingToken = 0,
@@ -623,7 +624,7 @@ function renderSettings() {
       ],
     )}`;
   if (settingsTab === "audio")
-    body = `<h2>Your microphone.</h2><p class="muted">Choose a connected input. Refreshing devices asks the browser for microphone access so labels are available.</p>${button("Refresh microphones", "refresh-mics", "refresh")}<div id="microphone-list" class="stack"></div><p class="tip">The system default follows your Mac’s selected microphone. Disconnecting a selected device requires choosing another input.</p>`;
+    body = `<h2>Your microphone.</h2><p class="muted">Choose a connected input. Refreshing devices asks the browser for microphone access so labels are available.</p>${button("Refresh microphones", "refresh-mics", "refresh")}<div id="microphone-list" class="stack"></div><p class="tip">The system default follows your Mac’s selected microphone. Unavailable preferred inputs fall through to the next choice and then the system default.</p><h3>Preferred order</h3><ol>${(s.microphonePriority || []).map((id) => `<li>${esc(id === "default" ? "System default" : microphoneDevices.find((device) => device.deviceId === id)?.label || "Saved microphone (refresh for name)")}</li>`).join("")}</ol>${button("Clear preferred order", "clear-mic-priority", "close", "ghost")}`;
   if (settingsTab === "language")
     body = `<h2>Every word, understood.</h2>${setting(
       "Whisper resource mode",
@@ -1059,19 +1060,31 @@ async function recordingStart(mode) {
   paused = false;
   chunks = [];
   try {
-    const device = state.settings.microphoneId;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: device === "default" ? true : { deviceId: { exact: device } },
-      });
-    } catch (error) {
-      if (
-        device === "default" ||
-        !["NotFoundError", "OverconstrainedError"].includes(error.name)
-      )
-        throw error;
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      toast("Selected microphone is unavailable. Using the system default.");
+    const candidates = [
+      ...new Set([
+        ...(state.settings.microphonePriority || []),
+        state.settings.microphoneId,
+        "default",
+      ]),
+    ];
+    for (const [index, device] of candidates.entries()) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: device === "default" ? true : { deviceId: { exact: device } },
+        });
+        if (index > 0)
+          toast(
+            "Preferred microphone unavailable. Using the next available input.",
+          );
+        break;
+      } catch (error) {
+        if (token !== recordingToken) return;
+        if (
+          !["NotFoundError", "OverconstrainedError"].includes(error.name) ||
+          index === candidates.length - 1
+        )
+          throw error;
+      }
     }
     if (token !== recordingToken) {
       stream.getTracks().forEach((t) => t.stop());
@@ -1738,6 +1751,7 @@ document.addEventListener("click", async (e) => {
       const inputs = (await navigator.mediaDevices.enumerateDevices()).filter(
         (d) => d.kind === "audioinput",
       );
+      microphoneDevices = inputs;
       $("#microphone-list").innerHTML =
         `<label class="field">Input device<select data-setting="microphoneId"><option value="default">System default</option>${inputs
           .filter((d) => d.deviceId !== "default")
@@ -1745,7 +1759,27 @@ document.addEventListener("click", async (e) => {
             (d) =>
               `<option value="${esc(d.deviceId)}" ${d.deviceId === state.settings.microphoneId ? "selected" : ""}>${esc(d.label || "Microphone")}</option>`,
           )
-          .join("")}</select></label>`;
+          .join(
+            "",
+          )}</select></label>${button("Prefer selected input", "prefer-mic", "mic")}`;
+      return;
+    }
+    if (a === "prefer-mic") {
+      const selected = $("[data-setting=microphoneId]")?.value;
+      if (!selected) return;
+      await request("preferences", {
+        microphonePriority: [
+          selected,
+          ...(state.settings.microphonePriority || []).filter(
+            (id) => id !== selected,
+          ),
+        ],
+      });
+      toast("Selected input moved to the top of microphone priorities.");
+      return;
+    }
+    if (a === "clear-mic-priority") {
+      await request("preferences", { microphonePriority: [] });
       return;
     }
     if (a === "recordings-folder") {
@@ -1842,6 +1876,7 @@ document.addEventListener("click", async (e) => {
     }
   } catch (e) {
     console.error(e);
+    toast(e.message || "Operation failed");
   } finally {
     if (document.contains(b)) b.disabled = false;
   }
