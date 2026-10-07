@@ -6,13 +6,16 @@ const { spawn } = require("node:child_process"),
 class NativeBridge extends EventEmitter {
   constructor(
     binary,
-    { spawnProcess = spawn, exists = fs.existsSync, timeoutMs = 30000 } = {},
+    { spawnProcess = spawn, exists = fs.existsSync, timeoutMs = 30000, closeTimeoutMs = 2000, killGraceMs = 1000 } = {},
   ) {
     super();
     this.binary = binary;
     this.pending = new Map();
     this.counter = 0;
     this.timeoutMs = timeoutMs;
+    this.closeTimeoutMs = closeTimeoutMs;
+    this.killGraceMs = killGraceMs;
+    this.forcedExit = false;
     this.available = exists(binary);
     this.closed = false;
     if (!this.available) return;
@@ -36,11 +39,17 @@ class NativeBridge extends EventEmitter {
       } else if (x.event) this.emit(x.event, x);
     });
     this.child.on("error", (e) => this.fail(e));
-    this.child.on("exit", () => {
+    const finished = (code, signal) => {
+      if (this.exitResult) return;
       clearTimeout(this.killTimer);
+      clearTimeout(this.exitDeadline);
       this.lines.close();
       this.fail(Error("Native bridge stopped"));
-    });
+      this.exitResult = { exited: true, forced: this.forcedExit, code, signal };
+      this.resolveClose?.(this.exitResult);
+    };
+    this.child.on("exit", finished);
+    this.child.on("close", finished);
     this.child.stdin.on("error", (e) => this.fail(e));
     this.child.stderr.on("data", (b) => this.emit("diagnostic", b.toString()));
   }
@@ -82,14 +91,31 @@ class NativeBridge extends EventEmitter {
     });
   }
   close() {
-    if (this.closed) return;
+    if (this.closePromise) return this.closePromise;
     this.closed = true;
     this.fail(Error("Native bridge closed"));
-    if (!this.child) return;
-    // EOF lets the Swift helper flush and stop ScreenCaptureKit before exiting.
-    this.child.stdin.end();
-    this.killTimer = setTimeout(() => this.child.kill(), 2000);
-    this.killTimer.unref();
+    if (!this.child || this.exitResult) {
+      this.closePromise = Promise.resolve(this.exitResult || { exited: true, forced: false, notStarted: true });
+      return this.closePromise;
+    }
+    this.closePromise = new Promise(resolve => { this.resolveClose = resolve; });
+    // EOF allows the native helper to flush ScreenCaptureKit. Await its exit, not the write.
+    try { this.child.stdin.end(); } catch (error) { this.fail(error); }
+    if (!this.exitResult) this.killTimer = setTimeout(() => {
+      if (this.exitResult) return;
+      this.forcedExit = true;
+      this.exitDeadline = setTimeout(() => {
+        if (!this.exitResult) {
+          const resolve = this.resolveClose;
+          this.closePromise = null;
+          this.resolveClose = null;
+          resolve({ exited: false, forced: true, reason: "exit-not-confirmed" });
+        }
+      }, this.killGraceMs);
+      try { this.child.kill("SIGKILL"); } catch (error) { this.emit("diagnostic", error.message); }
+    }, this.closeTimeoutMs);
+    return this.closePromise;
   }
+
 }
 module.exports = { NativeBridge };

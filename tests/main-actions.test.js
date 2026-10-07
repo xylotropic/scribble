@@ -6,9 +6,10 @@ const test = require("node:test"),
   os = require("node:os"),
   path = require("node:path");
 const { createRequire } = require("node:module");
+async function waitUntil(predicate) { for(let i=0;i<100;i++){ if(predicate()) return; await new Promise(r=>setTimeout(r,5)); } assert.fail('Expected asynchronous shutdown to finish'); }
 const mainPath = path.resolve(__dirname, "../src/main/index.js"),
   localRequire = createRequire(mainPath);
-function harness(t, { cloudSilence, chat, transcribe, summaryCLI, shell, chromeLauncher, spawn, nativeRequest, clipboardText = "clipboard", models = [] } = {}) {
+function harness(t, { cloudSilence, chat, transcribe, summaryCLI, shell, chromeLauncher, spawn, nativeRequest, nativeClose, closeAI, clipboardText = "clipboard", models = [] } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scribble-actions-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { Store } = localRequire("./store"),
@@ -41,7 +42,7 @@ function harness(t, { cloudSilence, chat, transcribe, summaryCLI, shell, chromeL
   };
   const native = {
     available: true,
-    close() { nativeCalls.push({ command:"close" }); },
+    close() { nativeCalls.push({ command:"close" }); return nativeClose ? nativeClose() : Promise.resolve({exited:true}); },
     request: async (command, args) => {
       nativeCalls.push({ command, args });
       if (nativeRequest) return nativeRequest(command, args);
@@ -61,7 +62,7 @@ function harness(t, { cloudSilence, chat, transcribe, summaryCLI, shell, chromeL
         : name === "./summary-cli"
         ? (summaryCLI || localRequire(name))
         : name === "./ai-runtime"
-        ? { ensureLocalAI: async () => ({}), closeLocalAI: async () => ({}) }
+        ? { ensureLocalAI: async () => ({}), closeLocalAI: closeAI || (async () => ({})) }
         : name === "electron"
           ? electron
           : name === "./ai"
@@ -312,9 +313,9 @@ test('unavailable Accessibility capture is stopped and reports the required perm
 test('graceful quit closes native services then exits rather than restarting quit negotiation', async t=> {
  const h=harness(t);let prevented=0;
  h.appEvents['before-quit']({preventDefault(){prevented++;}});
- assert.equal(prevented,1);assert.ok(h.nativeCalls.some(x=>x.command==='close'));
+ assert.equal(prevented,1);
  await new Promise(resolve=>setImmediate(resolve));
- assert.deepEqual(h.exits,[0]);
+ assert.ok(h.nativeCalls.some(x=>x.command==='close'));assert.deepEqual(h.exits,[0]);
 });
 
 test("note summary CLI routes separately from global chat and records provenance", async (t) => {
@@ -544,4 +545,83 @@ test("disabled or inconclusive cloud gate proceeds to normal credential validati
   h.store.updateSettings({ enhancedSilenceDetection:true });
   await assert.rejects(h.processFile("/fixture.wav"), /Configure an API key/);
   assert.equal(analyzed, 1);
+});
+
+test("clipboard manager insertion permission is independent of local clipboard monitoring", async (t) => {
+  const h = harness(t);
+  await h.actions.preferences({ clipboardHistory: true });
+  assert.equal(h.nativeCalls.findLast(call => call.command === "clipboardMonitoring").args.enabled, true);
+  assert.equal(h.nativeCalls.findLast(call => call.command === "setExpansions").args.allowClipboardHistory, false);
+  await h.actions.paste({ text: "private fixture" });
+  assert.equal(h.nativeCalls.findLast(call => call.command === "paste").args.allowClipboardHistory, false);
+  await h.actions.preferences({ clipboardHistory: false, allowDictationsInClipboardHistory: true });
+  assert.equal(h.nativeCalls.findLast(call => call.command === "clipboardMonitoring").args.enabled, false);
+  assert.equal(h.nativeCalls.findLast(call => call.command === "setExpansions").args.allowClipboardHistory, true);
+  await h.actions.paste({ text: "public fixture" });
+  assert.equal(h.nativeCalls.findLast(call => call.command === "paste").args.allowClipboardHistory, true);
+});
+
+test("cancelled pending system start is stopped and deleted before a new session can start", async t => {
+ let startResolve,startedResolve;const started=new Promise(resolve=>{startedResolve=resolve;});let starts=0;
+ const h=harness(t,{nativeRequest:async(command,args)=>{if(command==='recordSystemStart'){starts++;fs.writeFileSync(args.path,'partial system audio');if(starts===1){startedResolve();await new Promise(resolve=>{startResolve=resolve;});}}return {};}});
+ h.token=(await h.actions['start-recording']({mode:'note'}))?.recordingToken;const first=h.actions['start-system-audio']({recordingToken:h.token}).catch(error=>error);await started;
+ const file=h.nativeCalls.find(c=>c.command==='recordSystemStart').args.path;const cancellation=h.actions['cancel-recording']();
+ await assert.rejects(h.actions['start-system-audio']({recordingToken:h.token}),/already starting/);const before=h.nativeCalls.filter(c=>c.command==='frontmost').length;h.token=(await h.actions['start-recording']({mode:'note'}))?.recordingToken;assert.equal(h.nativeCalls.filter(c=>c.command==='frontmost').length,before);
+ startResolve();assert.equal((await first).name,'AbortError');await cancellation;assert.equal(fs.existsSync(file),false);assert.equal(h.nativeCalls.filter(c=>c.command==='recordSystemStop').length,1);assert.equal(h.store.data.history.length,0);
+ h.token=(await h.actions['start-recording']({mode:'note'}))?.recordingToken;await h.actions['start-system-audio']({recordingToken:h.token});const secondFile=h.nativeCalls.filter(c=>c.command==='recordSystemStart').at(-1).args.path;assert.ok(fs.existsSync(secondFile));assert.equal(h.nativeCalls.filter(c=>c.command==='recordSystemStop').length,1);await h.actions['cancel-recording']();assert.equal(fs.existsSync(secondFile),false);
+});
+test("cancellation while stopping system audio retains ownership until cleanup and never clears a newer session",async t=>{
+ let stopResolve,stopStartedResolve;const stopStarted=new Promise(resolve=>{stopStartedResolve=resolve;});let stops=0;
+ const h=harness(t,{nativeRequest:async(command,args)=>{if(command==='recordSystemStart')fs.writeFileSync(args.path,'system audio');if(command==='recordSystemStop'&&++stops===1){stopStartedResolve();await new Promise(resolve=>{stopResolve=resolve;});}return {};}});
+ h.token=(await h.actions['start-recording']({mode:'note'}))?.recordingToken;await h.actions['start-system-audio']({recordingToken:h.token});const cancellation=h.actions['cancel-recording']();await stopStarted;await assert.rejects(h.actions['start-system-audio']({recordingToken:h.token}),/already starting/);stopResolve();await cancellation;
+ h.token=(await h.actions['start-recording']({mode:'note'}))?.recordingToken;await h.actions['start-system-audio']({recordingToken:h.token});assert.equal(h.nativeCalls.filter(c=>c.command==='recordSystemStop').length,1);await h.actions['cancel-recording']();assert.equal(h.nativeCalls.filter(c=>c.command==='recordSystemStop').length,2);
+});
+test("native start failure cleans partial audio; failed stop blocks replacement and can be retried",async t=>{
+ let failStart=true,failStop=false;const h=harness(t,{nativeRequest:async(command,args)=>{if(command==='recordSystemStart'){fs.writeFileSync(args.path,'partial');if(failStart)throw Error('Native start failed');}if(command==='recordSystemStop'&&failStop)throw Error('Native stop failed');return {};}});
+ h.token=(await h.actions['start-recording']({mode:'note'}))?.recordingToken;await assert.rejects(h.actions['start-system-audio']({recordingToken:h.token}),/Native start failed/);const firstFile=h.nativeCalls.find(c=>c.command==='recordSystemStart').args.path;assert.equal(fs.existsSync(firstFile),false);await h.actions['recording-failed']({message:'start failed'});
+ failStart=false;h.token=(await h.actions['start-recording']({mode:'note'}))?.recordingToken;await h.actions['start-system-audio']({recordingToken:h.token});failStop=true;await assert.rejects(h.actions['cancel-recording'](),/Native stop failed/);await assert.rejects(h.actions['start-system-audio']({recordingToken:h.token}),/already starting/);failStop=false;await h.actions['cancel-recording']();h.token=(await h.actions['start-recording']({mode:'note'}))?.recordingToken;await h.actions['start-system-audio']({recordingToken:h.token});await h.actions['cancel-recording']();assert.equal(h.store.data.history.length,0);
+});
+test("cancel during system-audio finalization discards both files and prevents transcription/history",async t=>{
+ let stopResolve,readyResolve;const ready=new Promise(resolve=>{readyResolve=resolve;});let transcriptions=0;
+ const h=harness(t,{transcribe:async()=>{transcriptions++;return {text:'must not save',segments:[],duration:1};},nativeRequest:async(command,args)=>{if(command==='recordSystemStart')fs.writeFileSync(args.path,'system audio');if(command==='recordSystemStop'){readyResolve();await new Promise(resolve=>{stopResolve=resolve;});}return {};}});
+ h.store.updateSettings({saveAudio:true});h.token=(await h.actions['start-recording']({mode:'note'}))?.recordingToken;await h.actions['start-system-audio']({recordingToken:h.token});const save=h.actions['save-recording']({bytes:Buffer.from('microphone audio'),mode:'note'}).catch(error=>error);await ready;const cancellation=h.actions['cancel-recording']();stopResolve();assert.equal((await save).name,'AbortError');await cancellation;assert.equal(transcriptions,0);assert.equal(h.store.data.history.length,0);assert.equal(h.store.data.notes.length,0);assert.deepEqual(fs.readdirSync(path.join(h.directory,'recordings')),[]);assert.equal(h.nativeCalls.filter(c=>c.command==='recordSystemStop').length,1);
+});
+
+test('system audio requires the exact live note token and rejects old delayed IPC', async t=>{
+ const h=harness(t);const old=await h.actions['start-recording']({mode:'note'});await h.actions['cancel-recording']();const current=await h.actions['start-recording']({mode:'note'});
+ assert.notEqual(old.recordingToken,current.recordingToken);await assert.rejects(h.actions['start-system-audio']({recordingToken:old.recordingToken}),/matching note/);await assert.rejects(h.actions['start-system-audio'](),/matching note/);assert.equal(h.nativeCalls.filter(c=>c.command==='recordSystemStart').length,0);
+ await h.actions['start-system-audio'](current);await h.actions['cancel-recording']();const dictation=await h.actions['start-recording']({mode:'dictation'});await assert.rejects(h.actions['start-system-audio'](dictation),/matching note/);await h.actions['cancel-recording']();
+});
+test('quit cancels late capture startup, cleans capture before closing, and awaits native plus owned AI', async t=>{
+ let startResolve,startSeen,nativeResolve,aiResolve;const started=new Promise(r=>startSeen=r);const nativeDone=new Promise(r=>nativeResolve=r),aiDone=new Promise(r=>aiResolve=r);
+ const h=harness(t,{nativeRequest:async(command,args)=>{if(command==='recordSystemStart'){fs.writeFileSync(args.path,'partial');startSeen();return new Promise(r=>startResolve=r);}return {};},nativeClose:()=>nativeDone,closeAI:()=>aiDone});
+ const token=await h.actions['start-recording']({mode:'note'});const start=h.actions['start-system-audio'](token).catch(e=>e);await started;const file=h.nativeCalls.find(c=>c.command==='recordSystemStart').args.path;
+ h.appEvents['before-quit']({preventDefault(){}});await assert.rejects(h.actions['start-system-audio'](token),/already starting|matching note/);startResolve({});assert.equal((await start).name,'AbortError');await new Promise(r=>setImmediate(r));assert.equal(fs.existsSync(file),false);assert.deepEqual(h.nativeCalls.filter(c=>['recordSystemStop','close'].includes(c.command)).map(c=>c.command),['recordSystemStop','close']);assert.deepEqual(h.exits,[]);
+ nativeResolve({exited:true});await new Promise(r=>setImmediate(r));assert.deepEqual(h.exits,[]);aiResolve({});await waitUntil(()=>h.exits.length);assert.deepEqual(h.exits,[0]);
+});
+test('quit bounds hung native startup and removes partial capture only after confirmed helper exit', async t=>{
+ let rejectStart,startSeen,closeResolve;const started=new Promise(r=>startSeen=r),closed=new Promise(r=>closeResolve=r);
+ const h=harness(t,{nativeRequest:async(command,args)=>{if(command==='recordSystemStart'){fs.writeFileSync(args.path,'partial');startSeen();return new Promise((_r,j)=>rejectStart=j);}return {};},nativeClose:()=>{rejectStart(Error('Native bridge closed'));return closed;}});
+ const token=await h.actions['start-recording']({mode:'note'});const start=h.actions['start-system-audio'](token).catch(e=>e);await started;const file=h.nativeCalls.find(c=>c.command==='recordSystemStart').args.path;h.appEvents['before-quit']({preventDefault(){}});
+ await new Promise(r=>setTimeout(r,2050));assert.equal(fs.existsSync(file),true);assert.equal(h.nativeCalls.filter(c=>c.command==='recordSystemStop').length,0);assert.deepEqual(h.exits,[]);closeResolve({exited:true});await start;await waitUntil(()=>h.exits.length);assert.equal(fs.existsSync(file),false);assert.deepEqual(h.exits,[0]);
+});
+
+test('quit retains partial audio if helper exit cannot be confirmed', async t=>{
+ let closes=0;const notices=[];const h=harness(t,{nativeRequest:async(command,args)=>{if(command==='recordSystemStart')fs.writeFileSync(args.path,'partial');if(command==='recordSystemStop')throw Error('Cannot confirm stop');return {};},nativeClose:async()=>({exited:++closes>1,forced:true})});h.initializeUtilityWindow({isDestroyed:()=>false,show(){},webContents:{send(_channel,payload){notices.push(payload);}}});
+ const token=await h.actions['start-recording']({mode:'note'});await h.actions['start-system-audio'](token);const file=h.nativeCalls.find(c=>c.command==='recordSystemStart').args.path;h.appEvents['before-quit']({preventDefault(){}});await waitUntil(()=>notices.some(n=>n.event==='notice'));assert.equal(fs.existsSync(file),true);assert.deepEqual(h.exits,[]);assert.match(notices.find(n=>n.event==='notice').data.body,/could not confirm/);h.appEvents['before-quit']({preventDefault(){}});await waitUntil(()=>h.exits.length);assert.equal(fs.existsSync(file),false);assert.deepEqual(h.exits,[0]);assert.equal(closes,2);assert.equal(h.store.data.history.length,0);
+});
+
+test('unconfirmed app-owned AI shutdown refuses exit and retries confirmed shutdown', async t=>{
+ let attempts=0;const notices=[];const h=harness(t,{closeAI:async()=>++attempts===1?{owned:true,stopped:false}:{owned:false,stopped:true}});h.initializeUtilityWindow({isDestroyed:()=>false,show(){},webContents:{send(_channel,payload){notices.push(payload);}}});
+ h.appEvents['before-quit']({preventDefault(){}});await waitUntil(()=>notices.some(n=>n.event==='notice'));assert.deepEqual(h.exits,[]);h.appEvents['before-quit']({preventDefault(){}});await waitUntil(()=>h.exits.length);assert.deepEqual(h.exits,[0]);assert.match(notices.find(n=>n.event==='notice').data.body,/local AI/);
+});
+
+test("quit immediately tells renderer to release microphone even when helper exit is unconfirmed", async (t) => {
+  const messages = [];
+  const h = harness(t, { nativeClose: async () => ({ exited: false }) });
+  h.initializeUtilityWindow({ isDestroyed: () => false, show() {}, webContents: { send(_channel, payload) { messages.push(payload); } } });
+  h.appEvents["before-quit"]({ preventDefault() {} });
+  assert.ok(messages.some(message => message.event === "recording-control" && message.data.action === "shutdown"));
+  await waitUntil(() => messages.some(message => message.event === "notice"));
+  assert.deepEqual(h.exits, []);
 });

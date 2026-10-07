@@ -323,3 +323,58 @@ test("cloud silence preferences are opt-in, bounded, atomic, and persisted", (t)
   store.updateSettings({ enhancedSilenceDetection: false });
   assert.equal(new Store(store.dir).data.settings.silenceSensitivity, 3.7);
 });
+
+test("existing local clipboard opt-in does not enable external dictation history", (t) => {
+  const store = workspace(t);
+  store.updateSettings({ clipboardHistory: true });
+  const existing = JSON.parse(fs.readFileSync(store.file, "utf8"));
+  delete existing.settings.allowDictationsInClipboardHistory;
+  fs.writeFileSync(store.file, JSON.stringify(existing));
+  const reopened = new Store(store.dir);
+  assert.equal(reopened.data.settings.clipboardHistory, true);
+  assert.equal(reopened.data.settings.allowDictationsInClipboardHistory, false);
+  assert.throws(() => reopened.updateSettings({ allowDictationsInClipboardHistory: "true" }));
+});
+
+test('meeting microphone priority preserves inherited null and explicit empty/own overrides across persistence',t=>{
+ const store=workspace(t);assert.equal(store.data.settings.meetingMicrophonePriority,null);
+ for(const priority of [[],['usb','default'],null]){store.updateSettings({meetingMicrophonePriority:priority});const restored=new Store(store.dir);assert.deepEqual(restored.data.settings.meetingMicrophonePriority,priority);}
+ for(const priority of [undefined,'usb',{},[''],['usb','usb'],['a'.repeat(513)]])assert.throws(()=>store.updateSettings({meetingMicrophonePriority:priority}),/microphone priority/);
+ assert.equal(store.data.settings.meetingMicrophonePriority,null);
+});
+
+test('legacy workspace missing meeting priority restores inherited default rather than copying global',t=>{
+ const store=workspace(t);const legacy=JSON.parse(JSON.stringify(store.data));delete legacy.settings.meetingMicrophonePriority;legacy.settings.microphonePriority=['usb'];
+ store.restore(legacy);assert.equal(store.data.settings.meetingMicrophonePriority,null);
+ store.updateSettings({microphonePriority:['headset']});assert.equal(store.data.settings.meetingMicrophonePriority,null);
+ const invalid=JSON.parse(JSON.stringify(store.data));invalid.settings.meetingMicrophonePriority=['usb','usb'];assert.throws(()=>store.restore(invalid),/microphone priority/);assert.deepEqual(store.data.settings.microphonePriority,['headset']);
+});
+
+test('native close awaits confirmed exit, is idempotent, and rejects pending requests', async () => {
+ const {child,bridge}=helper({closeTimeoutMs:100});const request=assert.rejects(bridge.request('recordSystemStart'),/closed/);
+ const closing=bridge.close();assert.equal(bridge.close(),closing);let done=false;closing.then(()=>done=true);await request;assert.equal(done,false);assert.equal(child.stdin.writableEnded,true);
+ child.emit('exit',0,null);assert.deepEqual(await closing,{exited:true,forced:false,code:0,signal:null});assert.equal(bridge.pending.size,0);
+});
+test('native shutdown escalates to SIGKILL and reports unconfirmed exit honestly', async () => {
+ const {child,bridge}=helper({closeTimeoutMs:5,killGraceMs:5});let signal;child.kill=s=>{signal=s;return true;};const result=await bridge.close();assert.equal(signal,'SIGKILL');assert.equal(result.exited,false);assert.equal(result.reason,'exit-not-confirmed');child.emit('exit',null,'SIGKILL');
+});
+test('native close waits for real child EOF cleanup and confirms forced real child exit', async () => {
+ const {spawn}=require('node:child_process');
+ const graceful=new NativeBridge('/fake',{exists:()=>true,spawnProcess:()=>spawn(process.execPath,['-e',"process.stdin.resume();process.stdin.on('end',()=>setTimeout(()=>process.exit(0),30))"]),closeTimeoutMs:1000});
+ const result=await graceful.close();assert.equal(result.exited,true);assert.equal(result.forced,false);assert.equal(result.code,0);
+ const stubborn=new NativeBridge('/fake',{exists:()=>true,spawnProcess:()=>spawn(process.execPath,['-e',"process.stdin.resume();setInterval(()=>{},1000)"]),closeTimeoutMs:50,killGraceMs:1000});
+ const forced=await stubborn.close();assert.equal(forced.exited,true);assert.equal(forced.forced,true);assert.equal(forced.signal,'SIGKILL');
+});
+
+test('unconfirmed native close can retry while pending close stays idempotent', async()=>{
+ const {child,bridge}=helper({closeTimeoutMs:5,killGraceMs:5});let attempts=0;child.kill=signal=>{attempts++;if(attempts===2)child.emit('exit',null,signal);return true;};
+ const first=bridge.close();assert.equal(first,bridge.close());assert.equal((await first).exited,false);const second=bridge.close();assert.notEqual(first,second);assert.equal(second,bridge.close());assert.equal((await second).exited,true);assert.equal(attempts,2);
+});
+test('meeting priority persists all33 copied global-plus-legacy candidates while global limit stays32',t=>{
+ const store=workspace(t),global=Array.from({length:32},(_,i)=>'device-'+i),chain=[...global,'legacy'];
+ store.updateSettings({microphonePriority:global,microphoneId:'legacy',meetingMicrophonePriority:chain});
+ const restored=new Store(store.dir);assert.deepEqual(restored.data.settings.meetingMicrophonePriority,chain);
+ const {captureCandidates}=require('../src/shared/microphone-preferences');assert.deepEqual(captureCandidates(restored.data.settings,'meeting'),captureCandidates(restored.data.settings));
+ assert.throws(()=>store.updateSettings({microphonePriority:chain}),/priority/);assert.throws(()=>store.updateSettings({meetingMicrophonePriority:[...chain,'extra']}),/priority/);
+ assert.deepEqual(store.data.settings.meetingMicrophonePriority,chain);
+});

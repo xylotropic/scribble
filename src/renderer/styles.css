@@ -973,3 +973,8 @@ dialog h2 {
 
 @media (max-width: 1000px) { .onboard-grid { grid-template-columns: 1fr; } }
 .onboard-step p { margin: 8px 0; }
+
+.mic-rank.disconnected { opacity: .6; }
+.mic-rank[draggable="true"] { cursor: grab; }
+#mic-input-meter { width: 100px; height: 16px; }
+.meeting-microphones { margin-bottom: 16px; }

@@ -45,7 +45,7 @@ See [CLI and MCP](docs/cli.md), [native bridge](docs/native.md), [file utilities
 
 ## Data and privacy
 
-Settings, retained recordings, models, and history live in `~/Library/Application Support/Scribble`. Configure recording/history retention in Settings. API keys use Electron secure storage. Clipboard monitoring is opt-in. No telemetry is implemented. Local AI uses a loopback service; remote AI receives text only when explicitly configured and used. Adding or re-indexing Memory uses the configured language model; choose Ollama to keep those reference files local. Cloud speech receives the audio explicitly submitted while a cloud speech provider is selected.
+Settings, retained recordings, models, and history live in `~/Library/Application Support/Scribble`. Configure recording/history retention in Settings. API keys use Electron secure storage. Clipboard monitoring is opt-in. Allowing other clipboard managers to retain inserted dictation is a separate setting, off by default. No telemetry is implemented. Local AI uses a loopback service; remote AI receives text only when explicitly configured and used. Adding or re-indexing Memory uses the configured language model; choose Ollama to keep those reference files local. Cloud speech receives the audio explicitly submitted while a cloud speech provider is selected.
 
 ## Provenance
 

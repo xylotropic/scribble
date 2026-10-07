@@ -247,6 +247,34 @@ func notchIndicatorSelfTest() -> [String:Any] {
     return ["selfTest":"notch-indicator","notch":notch.notch,"topAnchored":notch.frame.maxY == laptop.maxY,"gapCentered":notch.frame.midX == (left.maxX+right.minX)/2,"externalFallback":!external.notch && external.frame.minX < 0,"bottomPill":!bottom.notch && bottom.frame.minY == visible.minY+16,"bottomHardwareMetadata":bottom.hardwareNotch && bottom.fallbackReason == "position-bottom","topFallbackReason":external.fallbackReason == "display-has-no-notch" && !external.hardwareNotch,"pillAvoidsMenuDock":external.frame.maxY == externalVisible.maxY-16 && externalVisible.contains(external.frame) && externalBottom.frame.minY == externalVisible.minY+16 && externalVisible.contains(externalBottom.frame),"levelRetainsContext":retained,"rejected":rejects,"atomicValidation":atomic,"noWindowCreated":true]
 }
 
+// Main-queue session ownership; pending starts retain their guard until completion.
+final class SystemCaptureOwnership {
+    private(set) var generation: UInt64 = 0
+    private(set) var starting: UInt64?
+    private(set) var owner: UInt64?
+    func begin() -> UInt64? { guard starting == nil, owner == nil else { return nil }; generation += 1; starting = generation; owner = generation; return generation }
+    func beginOperation(_ token: UInt64) -> Bool { guard owner == token, starting == nil else { return false }; starting = token; return true }
+    func owns(_ token: UInt64) -> Bool { owner == token }
+    func cancel() { generation += 1; owner = nil }
+    func finish(_ token: UInt64) { if starting == token { starting = nil } }
+}
+@MainActor final class RetainedCaptureStop<Capture: AnyObject> {
+    nonisolated init() {}
+    private(set) var handle: Capture?
+    private var task: Task<Void, Error>?
+    private var taskCapture: Capture?
+    var blocksNewStarts: Bool { handle != nil || task != nil }
+    func retain(_ capture: Capture) -> Bool { guard (handle == nil || handle === capture), (task == nil || taskCapture === capture) else { return false }; handle = capture; return true }
+    func confirm(_ capture: Capture) { if handle === capture { handle = nil } }
+    func stop(_ capture: Capture, operation: @escaping () async throws -> Void) async throws {
+        guard retain(capture) else { throw CancellationError() }
+        if let task { try await task.value; return }
+        let pending = Task { try await operation() }
+        task = pending; taskCapture = capture
+        do { try await pending.value; confirm(capture); task = nil; taskCapture = nil }
+        catch { task = nil; taskCapture = nil; if handle === capture { throw error } }
+    }
+}
 final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     let indicator = NativeIndicator()
     var expansionClipboardHistory = false
@@ -336,10 +364,14 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     var injecting = false
     var monitor: Timer?
     var stream: SCStream?
-    var captureStarting = false
+    let captureOwnership = SystemCaptureOwnership()
+    let retainedCapture = RetainedCaptureStop<SCStream>()
+    var pendingCapture: SCStream?
+    var audioStream: SCStream?
     var systemPaused = false
     var audioFile: AVAudioFile?
     var recordingPath: String?
+    var partialCapturePaths = Set<String>()
     let audioQueue = DispatchQueue(label: "scribble.audio")
     var pasteboardCount = NSPasteboard.general.changeCount
     func status() -> [String: Any] { ["accessibility": AXIsProcessTrusted(), "screenRecording": CGPreflightScreenCaptureAccess(), "microphone": AVCaptureDevice.authorizationStatus(for: .audio).rawValue, "hotkeys": tap != nil, "hotkeyCaptureActive":hotkeyCaptureActive, "hotkeyBindings": bindings.map { ["keyCode":$0.key, "inputKind":$0.key >= 130 ? "mouse" : ($0.key < 0 ? "modifiers" : "keyboard"), "modifierFlags":$0.flags.rawValue, "sideModifierFlags":$0.sideFlags, "mode":$0.mode, "toggle":$0.toggle, "active":$0.held, "toneId":$0.toneId ?? "", "utilityId":$0.utilityId ?? ""] as [String:Any] }, "systemRecording": stream != nil, "systemPaused": systemPaused, "permissionIdentity": ["pid": ProcessInfo.processInfo.processIdentifier, "executable": CommandLine.arguments.first ?? "", "bundleId": Bundle.main.bundleIdentifier ?? "", "microphoneSource": "native-helper-AVCaptureDevice"]] }
@@ -571,17 +603,40 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
         return Unmanaged.passUnretained(event)
     }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .audio, sampleBuffer.isValid, let format = sampleBuffer.formatDescription, let desc = CMAudioFormatDescriptionGetStreamBasicDescription(format), let audioFormat = AVAudioFormat(streamDescription: desc) else { return }
+        guard audioStream === stream, type == .audio, sampleBuffer.isValid, let format = sampleBuffer.formatDescription, let desc = CMAudioFormatDescriptionGetStreamBasicDescription(format), let audioFormat = AVAudioFormat(streamDescription: desc) else { return }
         let count = CMSampleBufferGetNumSamples(sampleBuffer)
         guard let buffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: AVAudioFrameCount(count)) else { return }
         buffer.frameLength = AVAudioFrameCount(count)
         let result = CMSampleBufferCopyPCMDataIntoAudioBufferList(sampleBuffer, at: 0, frameCount: Int32(count), into: buffer.mutableAudioBufferList)
         guard result == noErr else { return }
-        do { if audioFile == nil, let recordingPath { audioFile = try AVAudioFile(forWriting: URL(fileURLWithPath: recordingPath), settings: audioFormat.settings) }; try audioFile?.write(from: buffer) } catch { emit(["event":"recordingError", "error":error.localizedDescription]) }
+        do { if audioFile == nil, let recordingPath { guard !FileManager.default.fileExists(atPath:recordingPath) else { throw NSError(domain:"Scribble",code:2,userInfo:[NSLocalizedDescriptionKey:"System audio output already exists"]) }; audioFile = try AVAudioFile(forWriting: URL(fileURLWithPath: recordingPath), settings: audioFormat.settings); partialCapturePaths.insert(recordingPath) }; try audioFile?.write(from: buffer) } catch { emit(["event":"recordingError", "error":error.localizedDescription]) }
     }
-    func stream(_ stream: SCStream, didStopWithError error: Error) {
-        audioQueue.async { self.audioFile = nil }
-        DispatchQueue.main.async { self.stream = nil; self.systemPaused = false; emit(["event":"recordingError", "error":error.localizedDescription]) }
+    func stream(_ stoppedStream: SCStream, didStopWithError error: Error) {
+        DispatchQueue.main.async {
+            guard self.stream === stoppedStream || self.pendingCapture === stoppedStream else { return }
+            self.retainedCapture.confirm(stoppedStream); self.captureOwnership.cancel(); self.stream = nil; self.pendingCapture = nil; self.systemPaused = false
+            self.audioQueue.sync { if self.audioStream === stoppedStream { self.audioStream = nil; self.audioFile = nil; self.recordingPath = nil } }
+            emit(["event":"recordingError", "error":error.localizedDescription])
+        }
+    }
+    @MainActor func stopSystemCapture() async throws -> String {
+        captureOwnership.cancel()
+        let capture = retainedCapture.handle ?? stream ?? pendingCapture, paused = systemPaused
+        let completed = stream != nil
+        audioQueue.sync { audioStream = nil }
+        if let capture {
+            try await retainedCapture.stop(capture) { if !paused { try await capture.stopCapture() } }
+            if stream === capture { stream = nil }; if pendingCapture === capture { pendingCapture = nil }
+        }
+        systemPaused = false
+        var savedPath = ""
+        audioQueue.sync {
+            audioFile = nil
+            if completed { savedPath = recordingPath ?? "" }
+            else if let recordingPath, partialCapturePaths.remove(recordingPath) != nil { try? FileManager.default.removeItem(atPath:recordingPath) }
+            audioFile = nil; recordingPath = nil
+        }
+        return savedPath
     }
     @objc func pollClipboard() {
         let pb = NSPasteboard.general
@@ -658,25 +713,54 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
                 result = true
             case "open": guard let url = URL(string: request["url"] as? String ?? ""), ["https", "http", "mailto", "x-apple.systempreferences"].contains(url.scheme ?? "") else { throw NSError(domain: "Scribble", code: 1, userInfo: [NSLocalizedDescriptionKey:"Unsupported URL"]) }; result = NSWorkspace.shared.open(url)
             case "recordSystemStart":
-                guard stream == nil, !captureStarting, let path = request["path"] as? String, path.hasPrefix("/") else { throw NSError(domain:"Scribble", code:2, userInfo:[NSLocalizedDescriptionKey:"Already recording or missing absolute output path"]) }
-                captureStarting = true
-                defer { captureStarting = false }
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                guard let display = content.displays.first else { throw NSError(domain:"Scribble", code:3, userInfo:[NSLocalizedDescriptionKey:"No display available"]) }
-                let config = SCStreamConfiguration(); config.capturesAudio = true; config.excludesCurrentProcessAudio = true; config.width = 2; config.height = 2; config.minimumFrameInterval = CMTime(value: 1, timescale: 1); config.sampleRate = 48000; config.channelCount = 2
-                let ownBundle = request["excludeBundleId"] as? String ?? "org.scribble.voice"
-                let excluded = content.applications.filter { $0.bundleIdentifier == ownBundle }
-                let capture = SCStream(filter: SCContentFilter(display: display, excludingApplications: excluded, exceptingWindows: []), configuration: config, delegate: self)
-                recordingPath = path; audioFile = nil; try capture.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue); try await capture.startCapture(); stream = capture; systemPaused = false; result = ["path":path]
+                guard !retainedCapture.blocksNewStarts, let path = request["path"] as? String, path.hasPrefix("/"), !FileManager.default.fileExists(atPath:path), let token = captureOwnership.begin() else { throw NSError(domain:"Scribble", code:2, userInfo:[NSLocalizedDescriptionKey:"Already recording or invalid/existing output path"]) }
+                defer { captureOwnership.finish(token) }
+                var capture: SCStream?
+                do {
+                    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly:true)
+                    guard captureOwnership.owns(token) else { throw CancellationError() }
+                    guard let display = content.displays.first else { throw NSError(domain:"Scribble", code:3, userInfo:[NSLocalizedDescriptionKey:"No display available"]) }
+                    let config = SCStreamConfiguration(); config.capturesAudio = true; config.excludesCurrentProcessAudio = true; config.width = 2; config.height = 2; config.minimumFrameInterval = CMTime(value:1,timescale:1); config.sampleRate = 48000; config.channelCount = 2
+                    let ownBundle = request["excludeBundleId"] as? String ?? "org.scribble.voice"
+                    let excluded = content.applications.filter { $0.bundleIdentifier == ownBundle }
+                    let candidate = SCStream(filter:SCContentFilter(display:display,excludingApplications:excluded,exceptingWindows:[]),configuration:config,delegate:self)
+                    capture = candidate; pendingCapture = candidate; _ = retainedCapture.retain(candidate)
+                    audioQueue.sync { audioStream = candidate; recordingPath = path; audioFile = nil }
+                    try candidate.addStreamOutput(self,type:.audio,sampleHandlerQueue:audioQueue)
+                    try await candidate.startCapture()
+                    guard captureOwnership.owns(token), pendingCapture === candidate else { throw CancellationError() }
+                    audioQueue.sync { _ = partialCapturePaths.remove(path) }
+                    pendingCapture = nil; stream = candidate; systemPaused = false; result = ["path":path]
+                } catch {
+                    if captureOwnership.owns(token) { captureOwnership.cancel() }
+                    audioQueue.sync { if audioStream === capture { audioStream = nil } }
+                    if let capture {
+                        // A failed cleanup keeps its retryable handle and blocks new starts.
+                        do { try await retainedCapture.stop(capture) { try await capture.stopCapture() } }
+                        catch { throw error }
+                        if pendingCapture === capture { pendingCapture = nil }
+                    }
+                    audioQueue.sync {
+                        audioFile = nil; recordingPath = nil
+                        if partialCapturePaths.remove(path) != nil { try? FileManager.default.removeItem(atPath:path) }
+                    }
+                    throw error
+                }
             case "recordSystemPause":
-                guard let stream else { throw NSError(domain:"Scribble", code:5, userInfo:[NSLocalizedDescriptionKey:"No system recording is active"]) }
-                if !systemPaused { try await stream.stopCapture(); systemPaused = true }
+                guard let capture = stream, let token = captureOwnership.owner else { throw NSError(domain:"Scribble",code:5,userInfo:[NSLocalizedDescriptionKey:"No system recording is active"]) }
+                guard captureOwnership.beginOperation(token) else { throw CancellationError() }; defer { captureOwnership.finish(token) }
+                if !systemPaused { try await capture.stopCapture(); guard captureOwnership.owns(token), stream === capture else { throw CancellationError() }; systemPaused = true }
                 result = ["paused":systemPaused]
             case "recordSystemResume":
-                guard let stream else { throw NSError(domain:"Scribble", code:5, userInfo:[NSLocalizedDescriptionKey:"No system recording is active"]) }
-                if systemPaused { try await stream.startCapture(); systemPaused = false }
+                guard let capture = stream, let token = captureOwnership.owner else { throw NSError(domain:"Scribble",code:5,userInfo:[NSLocalizedDescriptionKey:"No system recording is active"]) }
+                guard captureOwnership.beginOperation(token) else { throw CancellationError() }; defer { captureOwnership.finish(token) }
+                if systemPaused {
+                    try await capture.startCapture()
+                    guard captureOwnership.owns(token), stream === capture else { try await retainedCapture.stop(capture) { try await capture.stopCapture() }; throw CancellationError() }
+                    systemPaused = false
+                }
                 result = ["paused":systemPaused]
-            case "recordSystemStop": if let stream, !systemPaused { try await stream.stopCapture() }; stream = nil; systemPaused = false; audioQueue.sync { audioFile = nil }; result = ["path":recordingPath ?? ""]; recordingPath = nil
+            case "recordSystemStop": result = ["path":try await stopSystemCapture()]
             default: throw NSError(domain:"Scribble", code:4, userInfo:[NSLocalizedDescriptionKey:"Unknown command"])
             }
             emit(["id":id, "ok":true, "result":result])
@@ -699,6 +783,35 @@ if CommandLine.arguments.contains("--template-self-test") {
     emit(["plain":plain,"html":rich,"literal":templateValues("{clipboard}",values:["clipboard":"{date}","date":"Should not expand"])]); exit(0)
 }
 if CommandLine.arguments.contains("--clipboard-self-test") { let passed = clipboardSelfTest(); emit(["ok":passed, "privatePasteboard":true]); exit(passed ? 0 : 1) }
+if CommandLine.arguments.contains("--system-capture-self-test") {
+    let state = SystemCaptureOwnership(), first = state.begin()!
+    state.cancel(); let lateStartRejected = !state.owns(first), pendingStartGuarded = state.begin() == nil
+    state.finish(first); let second = state.begin()!
+    state.finish(first); let newOwnerPreserved = state.owns(second) && state.starting == second
+    state.finish(second); let resumeToken = second; state.cancel()
+    let lateResumeRejected = !state.owns(resumeToken), third = state.begin()!
+    let staleStopCannotOwnNew = !state.owns(second) && state.owns(third)
+    state.cancel(); state.finish(third)
+    let passed = lateStartRejected && pendingStartGuarded && newOwnerPreserved && lateResumeRejected && staleStopCannotOwnNew && state.owner == nil && state.starting == nil
+    Task { @MainActor in
+        let retained = RetainedCaptureStop<NSObject>(), fixture = NSObject()
+        _ = retained.retain(fixture)
+        var rejected = false
+        do { try await retained.stop(fixture) { throw NSError(domain:"fixture",code:1) } } catch { rejected = true }
+        let failedStopRetains = rejected && retained.handle === fixture
+        let replacementRefused = !retained.retain(NSObject())
+        var calls = 0
+        let firstStop = Task { @MainActor in try await retained.stop(fixture) { calls += 1; try await Task.sleep(nanoseconds:5_000_000) } }
+        let secondStop = Task { @MainActor in try await retained.stop(fixture) { calls += 1 } }
+        var retryConfirmed = false
+        do { try await firstStop.value; try await secondStop.value; retryConfirmed = retained.handle == nil } catch {}
+        let coalescedStops = calls == 1
+        let allPassed = passed && failedStopRetains && replacementRefused && retryConfirmed && coalescedStops
+        emit(["selfTest":"system-capture", "ok":allPassed,"lateStartRejected":lateStartRejected,"pendingStartGuarded":pendingStartGuarded,"newOwnerPreserved":newOwnerPreserved,"lateResumeRejected":lateResumeRejected,"staleStopCannotOwnNew":staleStopCannotOwnNew,"failedStopRetains":failedStopRetains,"replacementRefused":replacementRefused,"retryConfirmed":retryConfirmed,"coalescedStops":coalescedStops]); exit(allPassed ? 0 : 1)
+    }
+    RunLoop.main.run()
+
+}
 let bridge = Bridge()
 if CommandLine.arguments.contains("--status") { emit(bridge.status()); exit(0) }
 if CommandLine.arguments.contains("--hotkey-tone-self-test") { let binding = Bridge.Binding(key:49,flags:.maskAlternate,mode:"dictation",toggle:false,toneId:"tone-fixture"); bridge.emitHotkey("start",binding); bridge.emitHotkey("stop",binding); exit(0) }
@@ -774,5 +887,5 @@ if CommandLine.arguments.contains("--mouse-hotkey-self-test") {
 let nativeApplication = NSApplication.shared
 nativeApplication.setActivationPolicy(.prohibited)
 bridge.startTap()
-DispatchQueue.global().async { while let line = readLine() { guard let data = line.data(using:.utf8), let object = try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { emit(["ok":false,"error":"Invalid JSON"]); continue }; DispatchQueue.main.async { Task { await bridge.command(object) } } }; DispatchQueue.main.async { Task { bridge.indicator.hide(); if let stream = bridge.stream, !bridge.systemPaused { try? await stream.stopCapture() }; bridge.audioQueue.sync { bridge.audioFile = nil }; exit(0) } } }
+DispatchQueue.global().async { while let line = readLine() { guard let data = line.data(using:.utf8), let object = try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { emit(["ok":false,"error":"Invalid JSON"]); continue }; DispatchQueue.main.async { Task { await bridge.command(object) } } }; DispatchQueue.main.async { Task { bridge.indicator.hide(); _ = try? await bridge.stopSystemCapture(); exit(0) } } }
 nativeApplication.run()

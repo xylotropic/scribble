@@ -20,6 +20,7 @@ const SETTINGS = {
   translate: false,
   microphoneId: "default",
   microphonePriority: [],
+  meetingMicrophonePriority: null,
   autoPaste: true,
   autoEnter: false,
   restoreClipboard: true,
@@ -62,6 +63,7 @@ const SETTINGS = {
   ],
   expansionsEnabled: true,
   clipboardHistory: false,
+  allowDictationsInClipboardHistory: false,
   preferredBrowser: "Google Chrome",
   dailyGoal: 1000,
   recordingsDir: "",
@@ -187,23 +189,16 @@ class Store {
       !["automatic", "cpu"].includes(patch.resourceMode)
     )
       throw Error("Invalid resource mode");
-    if (
-      patch.microphonePriority !== undefined &&
-      (!Array.isArray(patch.microphonePriority) ||
-        patch.microphonePriority.length > 32 ||
-        patch.microphonePriority.some(
-          (id) => typeof id !== "string" || !id || id.length > 512,
-        ) ||
-        new Set(patch.microphonePriority).size !==
-          patch.microphonePriority.length)
-    )
-      throw Error("Invalid microphone priority");
+    const { validatePriority } = require("../shared/microphone-preferences");
+    if (patch.microphonePriority !== undefined) validatePriority(patch.microphonePriority);
+    if (Object.hasOwn(patch, "meetingMicrophonePriority")) validatePriority(patch.meetingMicrophonePriority, true, 33);
     if (patch.silenceSensitivity !== undefined &&
       (!Number.isFinite(patch.silenceSensitivity) || patch.silenceSensitivity < 1 || patch.silenceSensitivity > 5))
       throw Error("Silence sensitivity must be from 1 to 5");
     if (patch.locale !== undefined && !require("../shared/i18n").locales.some((locale) => locale.id === patch.locale)) throw Error("Unsupported interface language");
     for (const [k, v] of Object.entries(patch)) {
       if (!Object.hasOwn(SETTINGS, k)) throw Error("Unknown preference: " + k);
+      if (k === "meetingMicrophonePriority") continue;
       if (
         typeof v !== typeof SETTINGS[k] ||
         Array.isArray(SETTINGS[k]) !== Array.isArray(v) ||

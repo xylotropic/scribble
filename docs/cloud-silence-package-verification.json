@@ -1,0 +1,36 @@
+{
+  "verifiedAt": "2026-10-07T11:21:30.447Z",
+  "commit": "a0360ed34dcc19adc0c330af9a154d1615dea9a9",
+  "tree": "2adfe6aae2fd4dec17ab6e2a41203c612c9a54a2",
+  "app": "/tmp/scribble-cloud-silence-package-20261007/mac-arm64/Scribble.app",
+  "architecture": "arm64",
+  "guard": {
+    "architectures": [
+      "arm64"
+    ],
+    "checkedExecutables": 6
+  },
+  "shippedAsarFilesByteIdentical": 49,
+  "packageMetadataMatched": [
+    "name",
+    "version",
+    "main",
+    "dependencies"
+  ],
+  "nativeModules": [
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.5.node",
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.7.dylib"
+  ],
+  "signature": {
+    "deepStrict": true,
+    "adHoc": true,
+    "hardenedRuntime": true,
+    "notarized": false
+  },
+  "sourceRuntimeFilesAndLinksUnchanged": 83,
+  "bridgeAndShareRebuilt": true,
+  "limitations": [
+    "No GUI launch or live permission/inference checks performed by this verification.",
+    "Existing speech/FFmpeg/Parakeet/Ollama runtime binaries reused; external Ollama service unchanged."
+  ]
+}

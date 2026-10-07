@@ -124,7 +124,7 @@ async function fixture(
           };
         });
       if (action === "start-recording") {
-        emit("recording-control", { action: "start", mode: args.mode });
+        emit("recording-control", { action: "start", mode: args.mode, recordingToken: "fixture-capture-token" });
         return true;
       }
       if (action === "cancel-recording") {
@@ -141,6 +141,7 @@ async function fixture(
   };
   w.HTMLDialogElement.prototype.close = function () {
     this.open = false;
+    this.dispatchEvent(new w.Event("close"));
   };
   w.Blob = global.Blob;
   Object.defineProperty(w.navigator, "mediaDevices", {
@@ -156,7 +157,8 @@ async function fixture(
     static isTypeSupported() {
       return true;
     }
-    constructor() {
+    constructor(inputStream) {
+      this.inputStream = inputStream;
       this.state = "inactive";
       recorders.push(this);
     }
@@ -178,6 +180,7 @@ async function fixture(
   if (timerScheduler) { w.setInterval = timerScheduler.setInterval; w.clearInterval = timerScheduler.clearInterval; }
   w.eval(fs.readFileSync(path.join(__dirname, "../src/shared/i18n.js"), "utf8"));
   w.eval(fs.readFileSync(path.join(__dirname, "../src/shared/form-translations.js"), "utf8"));
+  w.eval(fs.readFileSync(path.join(__dirname, "../src/shared/microphone-preferences.js"), "utf8"));
   w.eval(
     fs.readFileSync(path.join(__dirname, "../src/renderer/app.js"), "utf8"),
   );
@@ -1166,4 +1169,185 @@ test('experimental cloud silence settings are opt-in, localized and persist nume
   assert.equal(h.w.document.querySelector('#silence-sensitivity-value').textContent,'3.7×'); slider.dispatchEvent(new h.w.Event('change',{bubbles:true})); await flush();
   const saved=h.calls.filter(c=>c.action==='preferences').at(-1).args; assert.equal(saved.silenceSensitivity,3.7); assert.equal(typeof saved.silenceSensitivity,'number'); assert.deepEqual(Object.keys(saved),['silenceSensitivity']); assert.equal(h.data.settings.language,originalLanguage);
   h.w.document.querySelector('[data-setting="enhancedSilenceDetection"]').click(); await flush(); assert.equal(h.w.document.querySelector('[data-setting="silenceSensitivity"]'),null); assert.equal(h.data.settings.silenceSensitivity,3.7);
+});
+
+test('Settings search groups live controls using English words and synonyms in a localized UI', options, async t => {
+  const h=await fixture(t); h.data.settings.locale='ja'; h.emit('state',h.data); await h.click('[data-page="settings"]'); await h.click('[data-tab="recording"]');
+  const search=h.w.document.querySelector('#settings-search'); search.focus(); h.input('#settings-search','clipboard'); search.setSelectionRange(2,5);
+  assert.equal(h.w.document.activeElement,search); assert.equal(search.selectionStart,2); assert.equal(search.selectionEnd,5);
+  assert.ok(h.w.document.querySelector('#settings-body [data-setting="autoPaste"]')); assert.ok(h.w.document.querySelector('#settings-body [data-setting="restoreClipboard"]')); assert.ok(h.w.document.querySelector('#settings-body [data-setting="clipboardHistory"]'));
+  assert.equal(h.w.document.querySelector('#settings-body [data-setting="restoreClipboard"]').getAttribute('aria-label'),'クリップボードを復元');
+  const checkbox=h.w.document.querySelector('#settings-body [data-setting="clipboardHistory"]'); const before=h.data.settings.clipboardHistory; checkbox.click(); await flush(); assert.equal(h.data.settings.clipboardHistory,!before); assert.equal(h.w.document.querySelector('#settings-search').value,'clipboard');
+  h.input('#settings-search','clipboard restore'); assert.ok(h.w.document.querySelector('#settings-body [data-setting="restoreClipboard"]')); assert.equal(h.w.document.querySelector('#settings-body [data-setting="clipboardHistory"]'),null);
+  h.input('#settings-search','board restore'); assert.ok(h.w.document.querySelector('#settings-body [data-setting="restoreClipboard"]')); h.input('#settings-search','clipboard nonexistent'); assert.equal(h.w.document.querySelector('#settings-body [data-setting]'),null);
+  h.input('#settings-search','permissions'); assert.equal(h.w.document.querySelector('#settings-body [data-action="request-permission"]'),null);
+  h.input('#settings-search','recording'); assert.ok(h.w.document.querySelector('#settings-body [data-setting="indicatorStyle"]')); assert.ok(h.w.document.querySelector('#settings-body [data-setting="saveAudio"]'));
+  h.input('#settings-search',''); assert.ok(h.w.document.querySelector('#settings-body [data-setting="indicatorStyle"]')); assert.equal(h.w.document.querySelector('[data-tab="recording"]').classList.contains('active'),true);
+  h.input('#settings-search','experimental'); await h.click('#settings-body [data-tab="experimental"]'); assert.equal(h.w.document.querySelector('#settings-search').value,''); assert.ok(h.w.document.querySelector('[data-setting="enhancedSilenceDetection"]'));
+  h.input('#settings-search','<img src=x>'); assert.equal(h.w.document.querySelector('#settings-body img'),null); const currentSearch=h.w.document.querySelector('#settings-search'); currentSearch.focus(); currentSearch.dispatchEvent(new h.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true})); assert.equal(currentSearch.value,''); assert.equal(h.w.document.activeElement,currentSearch); assert.ok(h.w.document.querySelector('[data-setting="enhancedSilenceDetection"]'));
+});
+
+test('external clipboard retention and local clipboard monitoring remain independent searchable preferences', options, async t => {
+  const h=await fixture(t); h.data.settings.allowDictationsInClipboardHistory=false; h.data.settings.clipboardHistory=true; h.data.settings.locale='es'; h.emit('state',h.data);
+  await h.click('[data-page="settings"]'); await h.click('[data-tab="developer"]');
+  let permission=h.w.document.querySelector('[data-setting="allowDictationsInClipboardHistory"]'); assert.equal(permission.checked,false); permission.click(); await flush();
+  assert.equal(h.data.settings.allowDictationsInClipboardHistory,true); assert.equal(h.data.settings.clipboardHistory,true);
+  assert.deepEqual(clone(h.calls.filter(c=>c.action==='preferences').at(-1).args),{allowDictationsInClipboardHistory:true});
+  h.input('#settings-search','clipboard'); assert.ok(h.w.document.querySelector('[data-setting="clipboardHistory"]')); assert.ok(h.w.document.querySelector('[data-setting="allowDictationsInClipboardHistory"]'));
+  const local=h.w.document.querySelector('[data-setting="clipboardHistory"]'); local.click(); await flush(); assert.equal(h.data.settings.clipboardHistory,false); assert.equal(h.data.settings.allowDictationsInClipboardHistory,true);
+  h.input('#settings-search','dictations transient'); permission=h.w.document.querySelector('[data-setting="allowDictationsInClipboardHistory"]'); assert.ok(permission); assert.equal(h.w.document.querySelector('[data-setting="clipboardHistory"]'),null);
+});
+
+
+test('late cancelled microphone A cannot clear pending B or allow cancelled B to start', options, async t => {
+  const h=await fixture(t); const pending=[]; h.w.navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>pending.push(resolve));
+  const makeStream=()=>{const track={stops:0,stop(){this.stops++}}; return {track,getTracks:()=>[track],getAudioTracks:()=>[track]};};
+  const a=makeStream(),b=makeStream(),c=makeStream();
+  await h.click('[data-action="record"]'); h.emit('recording-control',{action:'cancel'}); await flush();
+  await h.click('[data-action="record"]'); pending[0](a); await flush(); assert.equal(a.track.stops,1); assert.equal(h.recorders.length,0);
+  h.emit('recording-control',{action:'cancel'}); pending[1](b); await flush(); assert.equal(b.track.stops,1); assert.equal(h.recorders.length,0);
+  await h.click('[data-action="record"]'); pending[2](c); await flush(); assert.equal(h.recorders.length,1); assert.equal(h.recorders[0].inputStream,c);
+  await h.click('[data-action="stop-record"]'); assert.equal(c.track.stops,1); assert.equal(h.calls.filter(call=>call.action==='save-recording').length,1);
+});
+
+test('stale acquired stream cleans only itself while newer recorder remains active', options, async t => {
+  const h=await fixture(t); let resolveA; const trackA={stops:0,stop(){this.stops++}},trackB={stops:0,stop(){this.stops++}};
+  const a={getTracks:()=>[trackA],getAudioTracks:()=>[trackA]},b={getTracks:()=>[trackB],getAudioTracks:()=>[trackB]}; let count=0;
+  h.w.navigator.mediaDevices.getUserMedia=()=>++count===1?new Promise(resolve=>{resolveA=resolve}):Promise.resolve(b);
+  await h.click('[data-action="record"]'); h.emit('recording-control',{action:'cancel'}); await flush(); await h.click('[data-action="record"]'); assert.equal(h.recorders[0].state,'recording');
+  resolveA(a); await flush(); assert.equal(trackA.stops,1); assert.equal(trackB.stops,0); assert.equal(h.recorders[0].state,'recording');
+  await h.click('[data-action="stop-record"]'); assert.equal(trackB.stops,1); assert.equal(h.calls.filter(call=>call.action==='save-recording').length,1);
+});
+
+test('recorder error then data and stop never uploads partial audio while cancellation IPC is pending', options, async t => {
+  const h=await fixture(t); await h.click('[data-action="record"]'); const original=h.w.scribble.request; let resolveCancel;
+  h.w.scribble.request=(action,args)=>action==='cancel-recording'?new Promise(resolve=>{resolveCancel=resolve}):original(action,args);
+  const recorder=h.recorders[0]; recorder.ondataavailable({data:new Blob(['partial'])}); recorder.onerror({error:Error('Device failed')}); recorder.stop(); await flush();
+  assert.equal(h.calls.filter(call=>call.action==='save-recording').length,0); assert.equal(h.tracks[0].stops,1); assert.equal(h.w.document.querySelector('#record-bar').hidden,true);
+  resolveCancel(true); await flush(); assert.equal(h.calls.filter(call=>call.action==='save-recording').length,0);
+});
+
+test('ranked busy microphone falls through but permission errors never try another device', options, async t => {
+  for(const name of ['NotReadableError','NotAllowedError']) {
+    const h=await fixture(t); h.data.settings.microphonePriority=['busy','available']; h.emit('state',h.data); const requested=[];
+    h.w.navigator.mediaDevices.getUserMedia=async opts=>{requested.push(opts.audio.deviceId?.exact||'default'); if(requested.length===1){const error=Error(name==='NotReadableError'?'Device is busy':'Permission denied'); error.name=name; throw error;} return {getTracks:()=>h.tracks,getAudioTracks:()=>h.tracks};};
+    await h.click('[data-action="record"]'); assert.deepEqual(requested,name==='NotReadableError'?['busy','available']:['busy']); assert.equal(h.recorders.length,name==='NotReadableError'?1:0);
+    if(h.recorders.length) h.emit('recording-control',{action:'cancel'});
+  }
+});
+
+test('stale system-audio rejection cannot clear a newer microphone recorder or report its failure', options, async t => {
+  const h=await fixture(t); const original=h.w.scribble.request; let rejectSystem;
+  h.w.scribble.request=(action,args)=>action==='start-system-audio'?new Promise((_resolve,reject)=>{rejectSystem=reject}):original(action,args);
+  await h.click('[data-page="notes"]'); await h.click('[data-action="new-note"]'); h.w.document.querySelector('[name="systemAudio"]').checked=true; await h.submit();
+  assert.equal(typeof rejectSystem,'function'); h.emit('recording-control',{action:'cancel'}); await flush(); await h.click('[data-action="record"]'); assert.equal(h.recorders.length,1);
+  rejectSystem(Object.assign(Error('Old native capture cancelled'),{name:'AbortError'})); await flush(); assert.equal(h.recorders[0].state,'recording'); assert.equal(h.calls.filter(call=>call.action==='recording-failed').length,0);
+  h.emit('recording-control',{action:'cancel'}); await flush(); assert.equal(h.calls.filter(call=>call.action==='save-recording').length,0);
+});
+
+test('microphone ranking edits are draft-only with arrows, drag, and individual disconnected removal', options, async t => {
+  const h=await fixture(t); h.data.settings.microphonePriority=['a','gone1','gone2','b','default']; h.emit('state',h.data);
+  h.w.navigator.mediaDevices.enumerateDevices=async()=>[{kind:'audioinput',deviceId:'a',label:'<img src=x> Studio'},{kind:'audioinput',deviceId:'b',label:'USB'}];
+  await h.click('[data-page="settings"]'); await h.click('[data-tab="audio"]'); await h.click('[data-action="refresh-mics"]');
+  await h.click('[data-action="open-mic-picker"]'); assert.equal(h.w.document.querySelector('#modal img'),null); await h.click('[data-action="mic-reorder"]');
+  assert.equal(h.w.document.querySelector('[data-action="mic-remove"][data-device="a"]'),null); assert.equal(h.w.document.querySelector('[data-action="mic-remove"][data-device="default"]'),null);
+  await h.click('[data-action="mic-up"][data-index="3"]'); await h.click('[data-action="mic-remove"][data-device="gone1"]');
+  assert.ok([...h.w.document.querySelectorAll('.mic-rank')].some(row=>row.textContent.includes('gone2'))); assert.deepEqual(clone(h.data.settings.microphonePriority),['a','gone1','gone2','b','default']);
+  await h.click('#modal [data-action="close-modal"]'); assert.deepEqual(clone(h.data.settings.microphonePriority),['a','gone1','gone2','b','default']);
+  await h.click('[data-action="open-mic-picker"]'); await h.click('[data-action="mic-reorder"]');
+  const rows=h.w.document.querySelectorAll('[data-mic-rank]'); rows[0].dispatchEvent(new h.w.Event('dragstart',{bubbles:true})); rows[4].dispatchEvent(new h.w.Event('drop',{bubbles:true,cancelable:true}));
+  assert.deepEqual(clone(h.data.settings.microphonePriority),['a','gone1','gone2','b','default']); await h.submit();
+  assert.deepEqual(clone(h.data.settings.microphonePriority),['gone1','gone2','b','default','a']);
+  assert.equal(h.w.document.querySelector('#modal').open,false); assert.match(h.w.document.querySelector('#settings-body').textContent,/USB/);
+});
+
+test('meeting microphone inheritance, copied order, empty override and confirmed global reset stay distinct', options, async t => {
+  const h=await fixture(t); h.data.settings.microphonePriority=['a','default']; h.data.settings.meetingMicrophonePriority=null; h.emit('state',h.data);
+  h.w.navigator.mediaDevices.enumerateDevices=async()=>[{kind:'audioinput',deviceId:'a',label:'Studio'},{kind:'audioinput',deviceId:'b',label:'USB'}];
+  await h.click('[data-page="notes"]'); assert.equal(h.w.document.querySelector('[data-action="meeting-mic-customize"]').disabled,true);
+  await h.click('[data-action="refresh-mics"]'); await h.click('[data-action="meeting-mic-customize"]');
+  const own=clone(h.data.settings.meetingMicrophonePriority); assert.ok(own.length); assert.match(h.w.document.querySelector('#modal').textContent,/Copied from global/); await h.click('#modal [data-action="close-modal"]');
+  h.data.settings.microphonePriority=['b','default']; h.emit('state',h.data); assert.deepEqual(clone(h.data.settings.meetingMicrophonePriority),own);
+  await h.click('[data-action="meeting-mic-edit"]'); await h.click('[data-action="meeting-mic-system"]'); assert.deepEqual(clone(h.data.settings.meetingMicrophonePriority),[]);
+  await h.click('[data-action="meeting-mic-global"]'); await h.click('#modal [data-action="close-modal"]'); assert.deepEqual(clone(h.data.settings.meetingMicrophonePriority),[]);
+  await h.click('[data-action="meeting-mic-global"]'); await h.submit(); assert.equal(h.data.settings.meetingMicrophonePriority,null); assert.match(h.w.document.querySelector('.meeting-microphones').textContent,/USB.*Global default/);
+});
+
+test('microphone preview switches safely, releases late streams and closes its meter context/timer', options, async t => {
+  const h=await fixture(t); h.data.settings.microphonePriority=['a','b','default']; h.emit('state',h.data);
+  h.w.navigator.mediaDevices.enumerateDevices=async()=>[{kind:'audioinput',deviceId:'a',label:'Studio'},{kind:'audioinput',deviceId:'b',label:'USB'}];
+  await h.click('[data-page="settings"]'); await h.click('[data-tab="audio"]'); assert.equal(h.tracks[0].stops,0); await h.click('[data-action="refresh-mics"]');
+  const pending=[]; h.w.navigator.mediaDevices.getUserMedia=opts=>new Promise(resolve=>pending.push({resolve,opts}));
+  const callbacks=new Map(); let next=0; h.w.setInterval=fn=>{const id=++next;callbacks.set(id,fn);return id;}; h.w.clearInterval=id=>callbacks.delete(id);
+  const contexts=[]; h.w.AudioContext=class{constructor(){this.closed=0;contexts.push(this)} createAnalyser(){return {fftSize:256,getFloatTimeDomainData(samples){samples.fill(.1)}}} createMediaStreamSource(){return {connect(){}}} resume(){return Promise.resolve()} close(){this.closed++;return Promise.resolve()}};
+  const make=()=>{const track={stops:0,stop(){this.stops++}};return {track,getTracks:()=>[track],getAudioTracks:()=>[track]}};
+  await h.click('[data-action="open-mic-picker"]'); await h.click('[data-action="mic-select"][data-device="b"]'); const a=make(),b=make(); pending[1].resolve(b); await flush();
+  assert.equal(h.data.settings.microphonePriority[0],'b'); [...callbacks.values()][0](); assert.ok(h.w.document.querySelector('#mic-input-meter').value>0);
+  pending[0].resolve(a); await flush(); assert.equal(a.track.stops,1); assert.equal(b.track.stops,0); await h.click('#modal [data-action="close-modal"]');
+  assert.equal(b.track.stops,1); assert.equal(contexts[0].closed,1); assert.equal(callbacks.size,0);
+});
+
+test('note capture uses meeting-only candidates and echoes the backend owner token', options, async t => {
+  const h=await fixture(t); h.data.settings.microphonePriority=['global']; h.data.settings.microphoneId='legacy'; h.data.settings.meetingMicrophonePriority=['meeting']; h.emit('state',h.data);
+  const requested=[]; h.w.navigator.mediaDevices.getUserMedia=async opts=>{requested.push(opts.audio.deviceId?.exact||'default');return {getTracks:()=>h.tracks,getAudioTracks:()=>h.tracks}};
+  await h.click('[data-page="notes"]'); await h.click('[data-action="new-note"]'); h.w.document.querySelector('[name="systemAudio"]').checked=true; await h.submit();
+  assert.deepEqual(requested,['meeting']); assert.equal(h.calls.find(call=>call.action==='start-system-audio').args.recordingToken,'fixture-capture-token'); h.emit('recording-control',{action:'cancel'});
+});
+
+test('late microphone picker permission releases tracks without opening on another page', options, async t => {
+  const h=await fixture(t); let resolve; h.w.navigator.mediaDevices.getUserMedia=()=>new Promise(done=>{resolve=done});
+  await h.click('[data-page="settings"]'); await h.click('[data-tab="audio"]'); h.w.document.querySelector('[data-action="open-mic-picker"]').click(); await flush();
+  await h.click('[data-page="home"]'); const track={stops:0,stop(){this.stops++}}; resolve({getTracks:()=>[track],getAudioTracks:()=>[track]}); await flush();
+  assert.equal(track.stops,1); assert.equal(h.w.document.querySelector('#modal').open,false); assert.equal(h.w.document.querySelector('[data-action="mic-reorder"]'),null);
+});
+
+test('device changes stop preview, preserve unknown enumeration and keep saved disconnected labels/ranks', options, async t => {
+  const h=await fixture(t); h.data.settings.microphonePriority=['a','b','default']; h.emit('state',h.data); let devices=[{kind:'audioinput',deviceId:'a',label:'Studio'},{kind:'audioinput',deviceId:'b',label:'USB'}], listener;
+  h.w.navigator.mediaDevices.enumerateDevices=async()=>devices; h.w.navigator.mediaDevices.addEventListener=(_name,fn)=>{listener=fn}; h.w.navigator.mediaDevices.removeEventListener=()=>{listener=null};
+  await h.click('[data-page="settings"]'); await h.click('[data-tab="audio"]'); await h.click('[data-action="refresh-mics"]'); await h.click('[data-action="open-mic-picker"]');
+  devices=[]; await listener(); await flush(); assert.match(h.w.document.querySelector('#modal').textContent,/Studio/); assert.deepEqual(clone(h.data.settings.microphonePriority),['a','b','default']);
+  devices=[{kind:'audioinput',deviceId:'b',label:'USB'}]; await listener(); await flush(); assert.equal(h.w.document.querySelector('[data-action="mic-select"][data-device="a"]'),null);
+  await h.click('[data-action="mic-reorder"]'); const disconnected=[...h.w.document.querySelectorAll('.mic-rank.disconnected')]; assert.equal(disconnected.length,1); assert.match(disconnected[0].textContent,/Studio/);
+  await h.click('#modal [data-action="close-modal"]'); assert.equal(listener,null); assert.deepEqual(clone(h.data.settings.microphonePriority),['a','b','default']);
+});
+
+test('meeting Customize copies the real global chain without adding connected/default fallback', options, async t => {
+  const h=await fixture(t); h.data.settings.microphonePriority=['missing']; h.data.settings.microphoneId='old-missing'; h.data.settings.meetingMicrophonePriority=null; h.emit('state',h.data);
+  h.w.navigator.mediaDevices.enumerateDevices=async()=>[{kind:'audioinput',deviceId:'available',label:'USB'}];
+  await h.click('[data-page="notes"]'); await h.click('[data-action="refresh-mics"]'); await h.click('[data-action="meeting-mic-customize"]');
+  assert.deepEqual(clone(h.data.settings.meetingMicrophonePriority),['missing','old-missing']); await h.submit(); assert.deepEqual(clone(h.data.settings.meetingMicrophonePriority),['missing','old-missing']);
+});
+
+test('shutdown stops active and pending microphone captures without saving audio', options, async t => {
+  const active=await fixture(t); await active.click('[data-action="record"]'); active.emit('recording-control',{action:'shutdown'}); await flush(); assert.equal(active.recorders[0].state,'inactive'); assert.equal(active.tracks[0].stops,1); assert.equal(active.calls.filter(call=>call.action==='save-recording').length,0);
+  const pending=await fixture(t); let resolve; pending.w.navigator.mediaDevices.getUserMedia=()=>new Promise(done=>{resolve=done}); await pending.click('[data-action="record"]'); pending.emit('recording-control',{action:'shutdown'});
+  const track={stops:0,stop(){this.stops++}}; resolve({getTracks:()=>[track],getAudioTracks:()=>[track]}); await flush(); assert.equal(track.stops,1); assert.equal(pending.recorders.length,0); assert.equal(pending.calls.filter(call=>call.action==='save-recording').length,0);
+});
+
+test('shutdown closes microphone picker and releases its late pending preview stream', options, async t => {
+  const h=await fixture(t); h.w.navigator.mediaDevices.enumerateDevices=async()=>[{kind:'audioinput',deviceId:'a',label:'Studio'}];
+  await h.click('[data-page="settings"]'); await h.click('[data-tab="audio"]'); await h.click('[data-action="refresh-mics"]');
+  let resolve; h.w.navigator.mediaDevices.getUserMedia=()=>new Promise(done=>{resolve=done}); await h.click('[data-action="open-mic-picker"]'); h.emit('recording-control',{action:'shutdown'});
+  const track={stops:0,stop(){this.stops++}}; resolve({getTracks:()=>[track],getAudioTracks:()=>[track]}); await flush(); assert.equal(track.stops,1); assert.equal(h.w.document.querySelector('#modal').open,false); assert.equal(h.calls.filter(call=>call.action==='save-recording').length,0);
+});
+
+test('33-candidate microphone copy, arrows and global promotion preserve the complete order', options, async t => {
+  const h=await fixture(t); const original=Array.from({length:32},(_v,index)=>`device-${index}`); h.data.settings.microphonePriority=original.slice(); h.data.settings.microphoneId='default'; h.data.settings.meetingMicrophonePriority=null; h.emit('state',h.data);
+  h.w.navigator.mediaDevices.enumerateDevices=async()=>original.map(deviceId=>({kind:'audioinput',deviceId,label:deviceId}));
+  await h.click('[data-page="notes"]'); await h.click('[data-action="refresh-mics"]'); await h.click('[data-action="meeting-mic-customize"]');
+  assert.deepEqual(clone(h.data.settings.meetingMicrophonePriority),[...original,'default']); assert.equal(h.w.document.querySelectorAll('[data-mic-rank]').length,33);
+  await h.click('[data-action="mic-up"][data-index="32"]'); await h.click('[data-action="mic-down"][data-index="31"]'); await h.submit(); assert.deepEqual(clone(h.data.settings.meetingMicrophonePriority),[...original,'default']);
+  await h.click('[data-page="settings"]'); await h.click('[data-tab="audio"]'); await h.click('[data-action="open-mic-picker"]'); assert.ok(h.w.document.querySelector('[data-action="mic-select"][data-device="default"]'));
+  await h.click('[data-action="mic-select"][data-device="device-31"]'); assert.deepEqual(clone(h.data.settings.microphonePriority),['device-31',...original.slice(0,31)]); assert.equal(h.data.settings.microphoneId,'default');
+  await h.click('[data-action="mic-reorder"]'); await h.click('[data-action="mic-up"][data-index="1"]'); await h.submit();
+  assert.deepEqual(clone(h.data.settings.microphonePriority),['device-0','device-31',...original.slice(1,31)]); assert.equal(h.data.settings.microphoneId,'default');
+  assert.deepEqual(clone(h.w.ScribbleMicrophonePreferences.captureCandidates(h.data.settings)),clone(h.data.settings.microphonePriority).concat('default'));
+});
+
+test('promotion beyond 33 refuses explicitly and retains every saved rank and legacy pick', options, async t => {
+  const h=await fixture(t); const original=Array.from({length:32},(_v,index)=>`device-${index}`); h.data.settings.microphonePriority=original.slice(); h.data.settings.microphoneId='legacy'; h.emit('state',h.data);
+  h.w.navigator.mediaDevices.enumerateDevices=async()=>[{kind:'audioinput',deviceId:'new-device',label:'New mic'}]; await h.click('[data-page="settings"]'); await h.click('[data-tab="audio"]'); await h.click('[data-action="refresh-mics"]'); await h.click('[data-action="open-mic-picker"]');
+  const before=h.calls.filter(call=>call.action==='preferences').length; await h.click('[data-action="mic-select"][data-device="new-device"]');
+  assert.equal(h.calls.filter(call=>call.action==='preferences').length,before); assert.deepEqual(clone(h.data.settings.microphonePriority),original); assert.equal(h.data.settings.microphoneId,'legacy'); assert.match(h.w.document.querySelector('#toast').textContent,/exceeds 33/);
+  await h.click('#modal [data-action="close-modal"]');
 });

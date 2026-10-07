@@ -62,6 +62,8 @@ let window,
   activeProcess = null,
   activeMode = "dictation",
   systemRecording = null,
+  systemCaptureSession = null,
+  recordingGeneration = 0,
   memoryIndex,
   memoryTasks = new Map(),
   quitting = false;
@@ -369,7 +371,7 @@ function updateNative() {
     .catch((e) => emit("native-error", e.message));
   native
     .request("setExpansions", {
-      allowClipboardHistory: store.data.settings.clipboardHistory,
+      allowClipboardHistory: store.data.settings.allowDictationsInClipboardHistory,
       expansions: store.data.settings.expansionsEnabled
         ? store.data.expansions
             .filter((x) => x.enabled !== false)
@@ -390,15 +392,39 @@ function updateNative() {
     })
     .catch(() => {});
 }
+function cancelledRecording() { return new DOMException("Recording cancelled", "AbortError"); }
+async function finishSystemCapture(session = systemCaptureSession, discard = true) {
+  if (!session) return;
+  session.cancelled = true;
+  session.discard = session.discard || discard;
+  if (!session.stopPromise) {
+    session.stopPromise = (async () => {
+      // A native start can finish after cancellation. Keep this owner until it is stopped.
+      await session.startPromise.catch(() => {});
+      if (session.bridgeClosing) return;
+      if (session.nativeRequested) await native.request("recordSystemStop");
+      if (session.discard) await fsp.rm(session.file, {force:true}).catch(() => {});
+      if (systemCaptureSession === session) systemCaptureSession = null;
+      if (systemRecording === session.file) systemRecording = null;
+    })();
+  }
+  try { await session.stopPromise; } catch (error) {
+    // Retain ownership after a stop failure so a retry cannot stop a newer stream.
+    session.stopPromise = null;
+    throw error;
+  }
+}
 async function beginRecording(mode = "dictation", toneId) {
-  if (recordTarget || activeProcess || speech.status().busy) {
+  if (quitting || recordTarget || systemCaptureSession || systemRecording || activeProcess || speech.status().busy) {
     emit("notice", {
       title: "Scribble is busy",
       body: "Finish the current recording or transcription first.",
     });
     return;
   }
-  const reservation = { starting: true };
+  recordingGeneration++;
+  const recordingToken = crypto.randomUUID();
+  const reservation = { starting: true, recordingToken };
   recordTarget = reservation;
   const front = await native.request("frontmost").catch(() => ({}));
   if (recordTarget !== reservation) return;
@@ -408,10 +434,11 @@ async function beginRecording(mode = "dictation", toneId) {
   }
   const commandTarget = mode === "command" ? await captureCommandTarget() : null;
   if (recordTarget !== reservation) return;
-  recordTarget = { ...front, toneId, commandTarget };
+  recordTarget = { ...front, toneId, commandTarget, recordingToken };
   activeMode = mode;
-  emit("recording-control", { action: "start", mode });
+  emit("recording-control", { action: "start", mode, recordingToken });
   indicator("starting", "Starting microphone…");
+  return { recordingToken };
 }
 const { launchWebsites } = require("./browser-launch");
 async function openUrl(url) {
@@ -438,7 +465,7 @@ async function pasteText(text, html) {
     return native.request("paste", {
       text,
       expectedPid: recordTarget?.pid,
-      allowClipboardHistory: store.data.settings.clipboardHistory,
+      allowClipboardHistory: store.data.settings.allowDictationsInClipboardHistory,
       html: html ? domain.sanitizeRichHTML(html) : undefined,
       restoreClipboard: store.data.settings.restoreClipboard,
       autoEnter: store.data.settings.autoEnter,
@@ -537,7 +564,7 @@ Use ${settings.spelling === "uk" ? "British" : "American"} English spelling for 
 async function runAIUtility(id) {
   const utility = store.data.settings.aiUtilities.find((item) => item.id === id);
   if (!utility || !utility.enabled) throw Error("AI utility is disabled or unavailable");
-  if (activeProcess || recordTarget || systemRecording || speech.status().busy)
+  if (quitting || activeProcess || recordTarget || systemCaptureSession || systemRecording || speech.status().busy)
     throw Error("Finish the current recording or processing first");
   const job = { controller: new AbortController(), kind: "ai-utility", utilityId: id };
   activeProcess = job;
@@ -580,7 +607,7 @@ async function pasteAIUtility(id) {
   try {
     const pasted = await native.request("paste", { text: result.text, targetToken: result.targetToken,
       activateTarget: true, restoreClipboard: store.data.settings.restoreClipboard, autoEnter: false,
-      allowClipboardHistory: store.data.settings.clipboardHistory });
+      allowClipboardHistory: store.data.settings.allowDictationsInClipboardHistory });
     if (!pasted.inserted && !pasted.dispatched) throw Error(pasted.reason || "The result could not be inserted");
     utilityResults.delete(id);
     return pasted;
@@ -620,7 +647,7 @@ async function pasteCommandReview(id) {
     const pasted = await native.request("paste", { text: review.result.text,
       targetToken: review.target.token, activateTarget: true,
       restoreClipboard: store.data.settings.restoreClipboard, autoEnter: false,
-      allowClipboardHistory: store.data.settings.clipboardHistory });
+      allowClipboardHistory: store.data.settings.allowDictationsInClipboardHistory });
     if (!pasted.inserted && !pasted.dispatched) throw Error(pasted.reason || "The result could not be inserted");
     commandReviews.delete(id);
     return pasted;
@@ -1242,18 +1269,18 @@ const actions = {
     return true;
   },
   "recording-failed": async ({ message }) => {
-    if (systemRecording) {
-      await native.request("recordSystemStop").catch(() => {});
-      await fsp.rm(systemRecording, { force: true }).catch(() => {});
-      systemRecording = null;
+    const target = recordTarget, generation = ++recordingGeneration;
+    await finishSystemCapture();
+    if (recordingGeneration === generation && recordTarget === target) {
+      recordTarget = null;
+      indicator("idle", "");
+      emit("notice", { title: "Recording could not start", body: message });
     }
-    recordTarget = null;
-    indicator("idle", "");
-    emit("notice", { title: "Recording could not start", body: message });
     return true;
   },
   "stop-recording": () => {
     if (recordTarget?.starting) {
+      recordingGeneration++;
       recordTarget = null;
       indicator("idle", "");
       return true;
@@ -1262,16 +1289,15 @@ const actions = {
     return true;
   },
   "cancel-recording": async () => {
+    const target = recordTarget, generation = ++recordingGeneration;
     activeProcess?.controller.abort();
     speech.cancelTranscription();
     emit("recording-control", { action: "cancel" });
-    if (systemRecording) {
-      await native.request("recordSystemStop").catch(() => {});
-      await fsp.rm(systemRecording, { force: true }).catch(() => {});
-      systemRecording = null;
+    await finishSystemCapture();
+    if (recordingGeneration === generation && recordTarget === target) {
+      recordTarget = null;
+      indicator("idle", "");
     }
-    recordTarget = null;
-    indicator("idle", "");
     return true;
   },
   "save-recording": async ({
@@ -1286,6 +1312,9 @@ const actions = {
   }) => {
     if (!bytes || bytes.byteLength > 500e6)
       throw Error("Recording is too large");
+    const generation = recordingGeneration, target = recordTarget;
+    let wasCancelled = false;
+    const assertCurrent = () => { if (recordingGeneration !== generation) { wasCancelled = true; throw cancelledRecording(); } };
     const dir =
       store.data.settings.recordingsDir || path.join(dataDir, "recordings");
     await fsp.mkdir(dir, { recursive: true });
@@ -1301,15 +1330,18 @@ const actions = {
     const created = [file];
     let input = file;
     try {
+      assertCurrent();
       await fsp.writeFile(file, Buffer.from(bytes), { mode: 0o600 });
+      assertCurrent();
       if (systemRecording) {
         const system = systemRecording;
-        systemRecording = null;
         created.push(system);
-        await native.request("recordSystemStop");
+        await finishSystemCapture(systemCaptureSession, false);
+        assertCurrent();
         input = await mixAudio(file, system);
         created.push(input);
       }
+      assertCurrent();
       return await processFile(input, {
         kind: mode,
         title,
@@ -1318,22 +1350,41 @@ const actions = {
         flags,
         attachments,
       });
+    } catch (error) {
+      wasCancelled = wasCancelled || error.name === "AbortError" || recordingGeneration !== generation;
+      throw error;
     } finally {
       for (const item of created)
-        if (!store.data.settings.saveAudio || item !== input)
+        if (wasCancelled || !store.data.settings.saveAudio || item !== input)
           await fsp.rm(item, { force: true }).catch(() => {});
-      recordTarget = null;
-      indicator("idle", "");
+      if (recordingGeneration === generation && recordTarget === target) {
+        recordTarget = null;
+        indicator("idle", "");
+      }
     }
   },
   "pause-system-audio": () => native.request("recordSystemPause"),
   "resume-system-audio": () => native.request("recordSystemResume"),
-  "start-system-audio": async () => {
-    const file = path.join(dataDir, "recordings", crypto.randomUUID() + ".wav");
-    await fsp.mkdir(path.dirname(file), { recursive: true });
-    await native.request("recordSystemStart", { path: file });
-    systemRecording = file;
-    return true;
+  "start-system-audio": async ({ recordingToken } = {}) => {
+    if (systemCaptureSession || systemRecording) throw Error("System audio is already starting or recording");
+    if (quitting || !recordTarget || recordTarget.starting || activeMode !== "note" || activeProcess || !recordingToken || recordingToken !== recordTarget.recordingToken) throw Error("An active matching note session is required for system audio");
+    const session = { file: path.join(dataDir, "recordings", crypto.randomUUID() + ".wav"), generation: recordingGeneration, cancelled:false, discard:false, nativeRequested:false };
+    systemCaptureSession = session;
+    session.startPromise = (async () => {
+      await fsp.mkdir(path.dirname(session.file), { recursive:true });
+      if (session.cancelled || session.generation !== recordingGeneration) throw cancelledRecording();
+      session.nativeRequested = true;
+      await native.request("recordSystemStart", {path:session.file});
+    })();
+    try {
+      await session.startPromise;
+      if (session.cancelled || session.generation !== recordingGeneration) throw cancelledRecording();
+      systemRecording = session.file;
+      return true;
+    } catch (error) {
+      await finishSystemCapture(session);
+      throw error;
+    }
   },
   "choose-files": async () => {
     const r = await dialog.showOpenDialog(window, {
@@ -2010,25 +2061,58 @@ app.on("second-instance", (_event, argv) => {
 });
 let shutdownInProgress = false,
   quitAllowed = false;
+function boundedShutdownWait(promise, timeoutMs) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+    Promise.resolve(promise).then(value => {clearTimeout(timer);resolve(value);}, error => {clearTimeout(timer);resolve({error});});
+  });
+}
+async function shutdownRuntime() {
+  const session = systemCaptureSession;
+  recordingGeneration++;
+  recordTarget = null;
+  if (session) session.cancelled = true;
+  // First try the owner-aware stop. Pending native starts must not delay quit forever.
+  const captureCleanup = finishSystemCapture(session).catch(error => ({error}));
+  await boundedShutdownWait(captureCleanup, 2000);
+  if (session) session.bridgeClosing = true;
+  const [nativeExit, aiExit] = await Promise.all([
+    Promise.resolve().then(() => native?.close()).catch(error => ({error, exited:false})),
+    Promise.resolve().then(() => require("./ai-runtime").closeLocalAI()).catch(error => ({error})),
+  ]);
+  // close rejects pending requests and waits for EOF flush or confirmed forced exit.
+  await boundedShutdownWait(captureCleanup, 100);
+  if (session && nativeExit?.exited) {
+    await fsp.rm(session.file, {force:true}).catch(() => {});
+    if (systemCaptureSession === session) systemCaptureSession = null;
+    if (systemRecording === session.file) systemRecording = null;
+  }
+  if (nativeExit?.exited === false || nativeExit?.error) throw Error("Scribble could not confirm that its recording helper stopped. Partial audio is preserved. Scribble is shutting down and recording is unavailable. Try quitting again.");
+  if (aiExit?.error || (aiExit?.owned && aiExit.stopped === false)) throw Error("Scribble could not confirm that its own local AI process stopped. Scribble is shutting down and recording is unavailable. Try quitting again.");
+}
 app.on("before-quit", (event) => {
   if (quitAllowed) return;
   event.preventDefault();
   if (shutdownInProgress) return;
   shutdownInProgress = true;
   quitting = true;
+  emit("recording-control", { action: "shutdown" });
   activeProcess?.controller.abort();
   overlayPlacement?.dispose();
   nativeIndicator?.dispose();
   utilityResults.clear();
   commandReviews.clear();
-  native?.close();
   server?.close();
   for (const timer of timers.values()) clearTimeout(timer);
-  require("./ai-runtime")
-    .closeLocalAI()
-    .finally(() => {
-      quitAllowed = true;
-      app.exit(0);
-    });
+  shutdownRuntime().then(() => {
+    quitAllowed = true;
+    app.exit(0);
+  }).catch(error => {
+    shutdownInProgress = false;
+    console.error("Shutdown cleanup failed", error);
+    const body = error.message || "Shutdown could not be confirmed. Try quitting again.";
+    notify("Scribble could not quit", body);
+    if (window && !window.isDestroyed()) window.show();
+  });
 });
 app.on("window-all-closed", () => {});

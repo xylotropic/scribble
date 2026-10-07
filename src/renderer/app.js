@@ -115,6 +115,7 @@ let state = null,
   historyRevision = new Map();
 let recordingToken = 0,
   startingRecording = false,
+  activeCapture = null,
   recorder = null,
   stream = null,
   chunks = [],
@@ -281,6 +282,7 @@ function empty(ico, title, description, action = "") {
 }
 function showModal(title, html, onSubmit) {
   void stopHotkeyCapture();
+  closeMicrophonePicker();
   const dialog = $("#modal");
   dialog.innerHTML = `<form method="dialog"><div class="row between"><h2>${esc(interfaceLabel(title))}</h2>${button("", "close-modal", "close", "ghost icon")}</div>${html}<div class="dialog-footer">${button("Cancel", "close-modal", "", "ghost")}<button type="submit" class="primary">${esc(interfaceLabel("Save"))}</button></div></form>`;
   dialog.querySelector("form").addEventListener("submit", async (e) => {
@@ -364,9 +366,11 @@ window.addEventListener('pagehide', () => { rendererClosing = true; syncTimerTic
 window.addEventListener('pageshow', () => { rendererClosing = false; syncTimerTick(); });
 function render() {
   if (!state) return;
+  if (micPicker && (page !== micPicker.page || (page === "settings" && settingsTab !== micPicker.section) || document.hidden)) { $("#modal").close(); closeMicrophonePicker(); }
   const active = document.activeElement,
     focus = active?.dataset?.focus,
-    selection = active?.selectionStart;
+    selection = active?.selectionStart,
+    selectionEnd = active?.selectionEnd;
   document.documentElement.lang = ScribbleI18n.resolveLocale(state.settings.locale);
   document.documentElement.dir = "ltr";
   document.body.classList.toggle("dark", state.settings.theme === "dark");
@@ -400,7 +404,7 @@ function render() {
     const input = $(`[data-focus="${focus}"]`);
     input?.focus();
     if (selection !== undefined)
-      input?.setSelectionRange?.(selection, selection);
+      input?.setSelectionRange?.(selection, selectionEnd ?? selection);
   }
   if (page === "transcribe") setupDrop();
   syncTimerTick();
@@ -597,7 +601,7 @@ function renderNotes() {
   );
   const note = notes.find((n) => n.id === selectedNote) || notes[0];
   if (note) selectedNote = note.id;
-  return `${heading("Keep the conversation", "Notes, without the busywork.", "Record a meeting, capture ideas, or import a recording. Keep the audio, transcript, and notes together.", button("Import", "import-note", "upload") + button("Take notes", "new-note", "mic", "primary"))}${!notes.length ? `<div class="card">${empty("notes", "Nothing lost. Everything remembered.", "Capture microphone and meeting audio, then get a local summary and editable notes.", button("Start a note", "new-note", "plus", "primary"))}</div>` : `<div class="split"><div><input id="search" class="search" data-focus="search" value="${esc(search)}" placeholder="Search notes…">${notes.map((n) => `<button class="note-item ${n.id === selectedNote ? "active" : ""}" data-action="select-note" data-id="${n.id}"><strong class="truncate">${esc(n.title)}</strong><small>${date(n.createdAt)} · ${clock(n.duration || 0)}</small></button>`).join("")}</div><div class="card"><div class="row between"><h2>${esc(note.title)}</h2>${button("", "edit-note-title", "edit", "ghost icon", `data-id="${note.id}"`)}</div><div class="row wrap"><span class="badge">${esc(note.template || "Meeting")}</span>${button("Regenerate", "summarize-note", "spark", "small", `data-id="${note.id}"`)}${button("Export", "export-note", "download", "small", `data-id="${note.id}"`)}${button("Delete", "delete", "trash", "danger small", `data-id="${note.id}" data-kind="notes"`)}</div>${note.summaryDraft ? '<p class="smallprint">AI summary draft. Review its wording against the quoted transcript evidence.</p>' : ""}${note.summaryFallback ? `<p class="notice" role="status">Local extractive notes used because the selected summary provider failed: ${esc(note.summaryError || "Provider unavailable")}</p>` : note.summaryProvider ? `<p class="smallprint">Summary provider: ${esc(note.summaryProvider)}</p>` : ""}${note.audioPath ? `<audio controls preload="none" src="scribble-audio://recording/${note.id}"></audio>` : ""}<div class="tabs">${["summary", "transcript", "personal"].map((t) => button(t === "personal" ? "My notes" : t[0].toUpperCase() + t.slice(1), "note-tab", "", noteTab === t ? "active" : "", `data-tab="${t}"`)).join("")}</div><textarea class="editor" id="note-editor" data-focus="note-editor" data-id="${note.id}" data-field="${noteTab === "summary" ? "summary" : noteTab === "transcript" ? "transcript" : "personalNotes"}" placeholder="Your own notes, decisions, or follow-ups…">${esc(noteTab === "summary" ? note.summary : noteTab === "transcript" ? note.transcript : note.personalNotes || "")}</textarea><div class="smallprint">Edits save automatically on this Mac.</div></div></div>`}`;
+  return `${heading("Keep the conversation", "Notes, without the busywork.", "Record a meeting, capture ideas, or import a recording. Keep the audio, transcript, and notes together.", button("Import", "import-note", "upload") + button("Take notes", "new-note", "mic", "primary"))}${renderMeetingMicrophones()}${!notes.length ? `<div class="card">${empty("notes", "Nothing lost. Everything remembered.", "Capture microphone and meeting audio, then get a local summary and editable notes.", button("Start a note", "new-note", "plus", "primary"))}</div>` : `<div class="split"><div><input id="search" class="search" data-focus="search" value="${esc(search)}" placeholder="Search notes…">${notes.map((n) => `<button class="note-item ${n.id === selectedNote ? "active" : ""}" data-action="select-note" data-id="${n.id}"><strong class="truncate">${esc(n.title)}</strong><small>${date(n.createdAt)} · ${clock(n.duration || 0)}</small></button>`).join("")}</div><div class="card"><div class="row between"><h2>${esc(note.title)}</h2>${button("", "edit-note-title", "edit", "ghost icon", `data-id="${note.id}"`)}</div><div class="row wrap"><span class="badge">${esc(note.template || "Meeting")}</span>${button("Regenerate", "summarize-note", "spark", "small", `data-id="${note.id}"`)}${button("Export", "export-note", "download", "small", `data-id="${note.id}"`)}${button("Delete", "delete", "trash", "danger small", `data-id="${note.id}" data-kind="notes"`)}</div>${note.summaryDraft ? '<p class="smallprint">AI summary draft. Review its wording against the quoted transcript evidence.</p>' : ""}${note.summaryFallback ? `<p class="notice" role="status">Local extractive notes used because the selected summary provider failed: ${esc(note.summaryError || "Provider unavailable")}</p>` : note.summaryProvider ? `<p class="smallprint">Summary provider: ${esc(note.summaryProvider)}</p>` : ""}${note.audioPath ? `<audio controls preload="none" src="scribble-audio://recording/${note.id}"></audio>` : ""}<div class="tabs">${["summary", "transcript", "personal"].map((t) => button(t === "personal" ? "My notes" : t[0].toUpperCase() + t.slice(1), "note-tab", "", noteTab === t ? "active" : "", `data-tab="${t}"`)).join("")}</div><textarea class="editor" id="note-editor" data-focus="note-editor" data-id="${note.id}" data-field="${noteTab === "summary" ? "summary" : noteTab === "transcript" ? "transcript" : "personalNotes"}" placeholder="Your own notes, decisions, or follow-ups…">${esc(noteTab === "summary" ? note.summary : noteTab === "transcript" ? note.transcript : note.personalNotes || "")}</textarea><div class="smallprint">Edits save automatically on this Mac.</div></div></div>`}`;
 }
 function renderShortcuts() {
   return `${heading("A phrase. An action.", "Your voice is a shortcut.", "Search the web, launch an app, or open a folder. Built-in shortcuts work without an AI provider.", button("Add shortcut", "add-item", "plus", "primary", 'data-kind="shortcuts"'))}<div class="banner">Say “google best coffee near me” while dictating. Scribble routes the phrase instead of typing it.</div><div class="card">${state.shortcuts.map((s) => `<div class="list-row"><span class="list-icon">${icon(s.type === "folder" ? "folder" : "shortcut")}</span><div class="body"><strong>${esc(s.name || s.trigger)}</strong><p><span class="shortcut-trigger">${esc(s.trigger)}</span> ${esc(shortcutDescription(s))}</p></div>${s.builtin ? '<span class="badge">BUILT-IN</span>' : ""}<input type="checkbox" data-toggle-kind="shortcuts" data-id="${s.id}" ${s.enabled !== false ? "checked" : ""} aria-label="Enable ${esc(s.name)}">${!s.builtin ? button("", "edit-item", "edit", "ghost icon", `data-kind="shortcuts" data-id="${s.id}"`) + button("", "delete", "trash", "ghost icon danger", `data-kind="shortcuts" data-id="${s.id}"`) : ""}</div>`).join("")}</div><div class="card"><h3>Try a shortcut</h3><div class="row"><input class="inline-input" id="shortcut-test" placeholder="google public hiking trails">${button("Run", "test-shortcut", "play")}</div><p class="tip">Running a shortcut opens the selected app, folder, or browser destination.</p></div>`;
@@ -746,7 +750,150 @@ function renderSpeechLanguageSetting() {
   const label = langList.find(([code]) => code === fixed)?.[1] || fixed;
   return `<div class="setting-row"><div><h3>Dictation language</h3><p>${esc(model.name)} transcribes ${esc(label)}. Choose a multilingual model to change languages.</p></div><select data-setting="language" aria-label="Dictation language" disabled><option value="${esc(fixed)}">${esc(label)}</option></select></div>`;
 }
-function renderSettings() {
+let microphonesKnown = false;
+const microphoneNames = new Map();
+let micPicker = null, micPreview = null, micPreviewGeneration = 0;
+function microphoneConnected(id) { return id === 'default' || microphoneDevices.some(device => device.deviceId === id); }
+function microphoneName(id) { return id === 'default' ? interfaceLabel('System default') : microphoneNames.get(id) || id; }
+function microphoneOrder(scope) {
+  const base = scope === 'meeting' ? state.settings.meetingMicrophonePriority : state.settings.microphonePriority;
+  const chain = Array.isArray(base) ? base : ScribbleMicrophonePreferences.captureCandidates(state.settings);
+  return [...new Set([...chain, ...(scope === 'global' ? [state.settings.microphoneId || 'default'] : []), ...microphoneDevices.map(device => device.deviceId), 'default'])];
+}
+function microphoneDraft(scope) {
+  if (scope === 'meeting') return (state.settings.meetingMicrophonePriority || []).slice();
+  return [...new Set([...(state.settings.microphonePriority || []), state.settings.microphoneId || 'default'])];
+}
+function microphonePreferencePayload(scope, order) {
+  if (!Array.isArray(order) || order.length > 33) throw Error('This microphone order exceeds 33 entries. Remove a disconnected microphone before adding another.');
+  if (scope === 'meeting') return {meetingMicrophonePriority: order.slice()};
+  if (order.length === 33) return {microphonePriority: order.slice(0,32), microphoneId: order[32]};
+  return {microphonePriority: order.slice()};
+}
+function effectiveMicrophone(scope) {
+  if (!microphonesKnown) return interfaceLabel('Refresh microphones');
+  const candidates = ScribbleMicrophonePreferences.captureCandidates(state.settings, scope === 'meeting' ? 'meeting' : 'dictation');
+  const id = candidates.find(microphoneConnected);
+  return id ? (id === 'default' ? microphoneNames.get('default') || microphoneName(id) : microphoneName(id)) : interfaceLabel('Unavailable');
+}
+function renderAudioMicrophones() {
+  return `<h2>${esc(interfaceLabel('Microphone'))}</h2><div class="setting-row"><div><h3>${esc(interfaceLabel('Microphone'))}</h3><p>${esc(effectiveMicrophone('global'))}</p></div>${button('Change', 'open-mic-picker', 'mic')}</div>${button('Refresh microphones','refresh-mics','refresh')}<p class="tip">${esc(interfaceLabel('Changes apply to the next recording. System default ends the fallback chain.'))}</p>`;
+}
+function renderMeetingMicrophones() {
+  const inherit = state.settings.meetingMicrophonePriority == null;
+  return `<section class="card meeting-microphones"><h3>${esc(interfaceLabel('Meeting microphone order'))}</h3><p>${esc(effectiveMicrophone('meeting'))}${inherit ? ' · ' + esc(interfaceLabel('Global default')) : ''}</p><div class="row">${inherit ? button('Customize','meeting-mic-customize','', 'small', microphonesKnown ? '' : 'disabled') : button('Edit order','meeting-mic-edit','', 'small') + button('Use global','meeting-mic-global','', 'small')}${button('Refresh microphones','refresh-mics','refresh','small')}</div></section>`;
+}
+async function scanMicrophones(ask = false) {
+  if (ask) { const acquired = await navigator.mediaDevices.getUserMedia({audio:true}); acquired.getTracks().forEach(track => track.stop()); }
+  const devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput');
+  if (devices.length) { microphonesKnown = true; microphoneDevices = devices.filter(device => device.deviceId !== 'default'); for (const device of devices) if (device.label) { microphoneNames.set(device.deviceId, String(device.label).slice(0,200)); if(microphoneNames.size>128)microphoneNames.delete(microphoneNames.keys().next().value); } }
+}
+function stopMicrophonePreview() {
+  micPreviewGeneration++;
+  const preview = micPreview; micPreview = null;
+  if (preview) { clearInterval(preview.timer); preview.stream?.getTracks().forEach(track => track.stop()); preview.context?.close().catch(() => {}); }
+}
+function closeMicrophonePicker() {
+  stopMicrophonePreview();
+  if (micPicker?.deviceChange) navigator.mediaDevices.removeEventListener?.('devicechange',micPicker.deviceChange);
+  micPicker = null;
+}
+async function previewMicrophone(id) {
+  stopMicrophonePreview();
+  const generation = micPreviewGeneration, picker = micPicker;
+  if (!picker || picker.editing || startingRecording || (recorder && recorder.state !== 'inactive')) return;
+  try {
+    const acquired = await navigator.mediaDevices.getUserMedia({audio:id === 'default' ? true : {deviceId:{exact:id}}});
+    if (generation !== micPreviewGeneration || micPicker !== picker || !$('#modal').open || document.hidden) { acquired.getTracks().forEach(track => track.stop()); return; }
+    const preview = {stream:acquired}; micPreview = preview;
+    for (const track of acquired.getTracks()) track.addEventListener?.('ended', () => { if (micPreview === preview) { stopMicrophonePreview(); void picker.deviceChange(); } }, {once:true});
+    if (typeof AudioContext !== 'undefined') {
+      const context = new AudioContext(), analyser = context.createAnalyser(); preview.context = context;
+      analyser.fftSize = 256; context.createMediaStreamSource(acquired).connect(analyser);
+      const samples = new Float32Array(analyser.fftSize);
+      preview.timer = setInterval(() => { analyser.getFloatTimeDomainData(samples); let sum=0; for(const value of samples) sum+=value*value; const meter=$('#mic-input-meter'); if(meter) meter.value=Math.min(1,Math.sqrt(sum/samples.length)*4); },100);
+      await context.resume();
+    }
+  } catch (error) { if (micPicker === picker && generation === micPreviewGeneration) { stopMicrophonePreview(); toast(error.message || 'Microphone unavailable'); } }
+}
+function renderMicrophonePicker() {
+  const picker = micPicker; if (!picker) return;
+  const order = picker.editing ? picker.draft : microphoneOrder(picker.scope).filter(microphoneConnected);
+  const effective = ScribbleMicrophonePreferences.captureCandidates(state.settings,picker.scope === 'meeting' ? 'meeting' : 'dictation').find(microphoneConnected);
+  picker.selected = picker.selected || effective;
+  const dialog=$('#modal');
+  dialog.innerHTML=`<form method="dialog"><div class="row between"><h2>${esc(interfaceLabel(picker.scope === 'meeting' ? 'Meeting microphone order' : 'Microphone'))}</h2>${button('','close-modal','close','ghost icon')}</div>${picker.copied ? `<p class="tip">${esc(interfaceLabel('Copied from global order. Later global changes do not affect meetings.'))}</p>` : ''}<div class="stack">${order.map((id,index)=>`<div class="list-row mic-rank ${microphoneConnected(id) ? '' : 'disconnected'}" data-mic-rank="${index}" ${picker.editing ? 'draggable="true"' : ''}><div class="body">${picker.editing ? `<span aria-hidden="true">↕ </span>${esc(microphoneName(id))}` : `<button type="button" class="ghost" data-action="mic-select" data-device="${esc(id)}">${esc(microphoneName(id))}</button>`}${id===effective ? `<span class="badge">${esc(interfaceLabel('Current input'))}</span>` : ''}${id==='default' && picker.editing ? `<p class="smallprint">${esc(interfaceLabel('System default ends the fallback chain.'))}</p>` : ''}${!microphoneConnected(id) ? `<small>${esc(interfaceLabel('Disconnected'))}</small>` : ''}</div>${picker.editing ? button('Move up','mic-up','arrow','small',`data-index="${index}" ${index===0?'disabled':''}`)+button('Move down','mic-down','arrow','small',`data-index="${index}" ${index===order.length-1?'disabled':''}`)+(microphonesKnown && !microphoneConnected(id) ? button('Remove','mic-remove','trash','small',`data-device="${esc(id)}"`) : '') : id===picker.selected ? `<meter id="mic-input-meter" min="0" max="1" value="0" aria-label="${esc(interfaceLabel('Input level'))}"></meter>` : ''}</div>`).join('')}</div><div class="dialog-footer">${button('Cancel','close-modal','','ghost')}${picker.editing ? `<button type="submit" class="primary">${esc(interfaceLabel('Done editing'))}</button>` : button('Reorder ranking','mic-reorder','','primary',order.length<2?'disabled':'')}${picker.scope==='meeting' ? button('Use system default','meeting-mic-system','','ghost') : ''}</div></form>`;
+  dialog.querySelector('form').addEventListener('submit',async event=>{event.preventDefault(); if(!micPicker?.editing)return; try { await request('preferences',microphonePreferencePayload(picker.scope, picker.draft)); dialog.close(); } catch(error) { toast(error.message || interfaceLabel("Unable to save")); } });
+  for(const row of dialog.querySelectorAll('[draggable]')) {
+    row.addEventListener('dragstart',event=>{picker.dragIndex=Number(row.dataset.micRank); event.dataTransfer?.setData('text/plain',String(picker.dragIndex));});
+    row.addEventListener('dragover',event=>event.preventDefault());
+    row.addEventListener('drop',event=>{event.preventDefault(); if(!Number.isInteger(picker.dragIndex))return; picker.draft=ScribbleMicrophonePreferences.moveRank(picker.draft,picker.dragIndex,Number(row.dataset.micRank)); picker.dragIndex=null; renderMicrophonePicker();});
+  }
+}
+async function openMicrophonePicker(scope, editing = false, copied = false) {
+  closeMicrophonePicker();
+  const picker={scope,page,section:settingsTab,editing,copied,draft:[],selected:null}; micPicker=picker;
+  if(!microphonesKnown) { try { await scanMicrophones(true); } catch(error) { if(micPicker===picker)closeMicrophonePicker(); throw error; } }
+  if(micPicker!==picker)return;
+  picker.draft=microphoneDraft(scope); renderMicrophonePicker(); $('#modal').showModal();
+  picker.deviceChange=async()=>{stopMicrophonePreview(); try { await scanMicrophones(false); } catch(error) { if(micPicker===picker)toast(error.message || 'Microphone unavailable'); return; } if(micPicker!==picker)return; picker.selected=null; renderMicrophonePicker(); if(!picker.editing) void previewMicrophone(ScribbleMicrophonePreferences.captureCandidates(state.settings,scope==='meeting'?'meeting':'dictation').find(microphoneConnected)||'default');};
+  navigator.mediaDevices.addEventListener?.('devicechange',picker.deviceChange);
+  if(!editing) void previewMicrophone(picker.selected || 'default');
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden && micPicker){$('#modal').close(); closeMicrophonePicker();}});
+window.addEventListener('pagehide',closeMicrophonePicker);
+
+let settingsQuery = "";
+const settingsSynonyms = {
+  autoPaste: "clipboard insert paste transcription", insertionMethod: "clipboard direct typing paste",
+  restoreClipboard: "clipboard copy restore", clipboardHistory: "clipboard local monitoring history privacy",
+  allowDictationsInClipboardHistory: "clipboard dictations privacy history transient",
+  sounds: "sound audio recording effects", microphonePriority: "microphone audio input ranking device",
+  microphoneId: "microphone audio input device", saveHistory: "history voice log transcripts transcription",
+  saveAudio: "audio recordings files", aiEnhance: "ai cleanup enhance language model",
+  indicatorStyle: "recording pill notch overlay", indicatorPosition: "recording overlay top bottom hidden",
+  idleIndicator: "recording idle pill overlay", preferIPv4: "network connection ipv4 ipv6",
+  enhancedSilenceDetection: "cloud silence noise audio detection", silenceSensitivity: "cloud silence sensitivity quiet audio",
+};
+const settingsWords = text => String(text).toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+function settingsAllWords(words, text) {
+  const candidates = String(text).toLowerCase();
+  return words.every(word => candidates.includes(word));
+}
+function settingsEnglishText(element) {
+  const reverse = new Map(Object.entries(ScribbleFormTranslations.catalogues[ScribbleFormTranslations.resolveLocale(state.settings.locale)]).map(([english, translated]) => [translated, english]));
+  for (const [key, english] of Object.entries(ScribbleI18n.catalogues.en)) reverse.set(ScribbleI18n.t(state.settings.locale, key), english);
+  const text = [];
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) { const value = walker.currentNode.textContent.trim(); if (value) text.push(reverse.get(value) || value); }
+  for (const control of element.querySelectorAll('[data-setting]')) text.push(control.dataset.setting, settingsSynonyms[control.dataset.setting] || "");
+  return text.join(" ");
+}
+function updateSettingsSearchBody() {
+  const template = document.createElement("div"); template.innerHTML = renderSettings();
+  $("#settings-body").innerHTML = template.querySelector("#settings-body").innerHTML;
+}
+function renderSettingsMatches(query, tabs) {
+  const words = settingsWords(query.slice(0, 200));
+  if (!words.length) return `<p>${esc(interfaceLabel("No matching settings"))}</p>`;
+  const groups = [];
+  for (const [id, title] of Object.entries(tabs)) {
+    if (id === "permissions") continue;
+    const body = renderSettings(id);
+    let matched = body;
+    if (!settingsAllWords(words, id + " " + title + (id === "audio" ? " audio microphones" : id === "developer" ? " cli command line terminal agent" : ""))) {
+      const container = document.createElement('div'); container.innerHTML = body;
+      const rows = [...container.children].filter(child => child.matches('.setting-row, .list-row, .field, form'));
+      // Audio controls live together, so searching the device terms retains that functional section.
+      if (!rows.length && id === "audio") matched = settingsAllWords(words, "microphone audio input ranking device") ? body : "";
+      else matched = rows.filter(row => settingsAllWords(words, settingsEnglishText(row))).map(row => row.outerHTML).join("");
+    }
+    if (matched) groups.push(`<section class="settings-search-group">${button(title, "settings-tab", "arrow", "ghost", `data-tab="${id}"`)}${matched}</section>`);
+  }
+  return groups.join("") || `<p>${esc(interfaceLabel("No matching settings"))}</p>`;
+}
+function renderSettings(sectionOnly = null) {
+  const activeTab = sectionOnly || settingsTab;
   const s = state.settings;
   const tabs = {
     general: "General",
@@ -760,7 +907,7 @@ function renderSettings() {
     experimental: "Experimental",
   };
   let body = "";
-  if (settingsTab === "general")
+  if (activeTab === "general")
     body = `<h2>A workspace that fits.</h2>${setting("Interface language", "Choose the language for navigation, common actions and dates.", "locale", "select", ScribbleI18n.locales.map((locale) => [locale.id, locale.name]))}${setting("Your name", "Used only for your dashboard greeting.", "name", "text")}${setting(
       "Appearance",
       "Choose the look of your workspace.",
@@ -780,9 +927,9 @@ function renderSettings() {
         ["default", "System browser"],
       ],
     )}`;
-  if (settingsTab === "audio")
-    body = `<h2>Your microphone.</h2><p class="muted">Choose a connected input. Refreshing devices asks the browser for microphone access so labels are available.</p>${button("Refresh microphones", "refresh-mics", "refresh")}<div id="microphone-list" class="stack"></div><p class="tip">The system default follows your Mac’s selected microphone. Unavailable preferred inputs fall through to the next choice and then the system default.</p><h3>Preferred order</h3><ol>${(s.microphonePriority || []).map((id) => `<li>${esc(id === "default" ? "System default" : microphoneDevices.find((device) => device.deviceId === id)?.label || "Saved microphone (refresh for name)")}</li>`).join("")}</ol>${button("Clear preferred order", "clear-mic-priority", "close", "ghost")}`;
-  if (settingsTab === "language")
+  if (activeTab === "audio")
+    body = renderAudioMicrophones();
+  if (activeTab === "language")
     body = `<h2>Every word, understood.</h2>${setting(
       "Whisper resource mode",
       "Automatic uses available acceleration. CPU mode disables GPU use and limits Whisper to two CPU threads. CoreML and cloud engines manage their own resources.",
@@ -808,7 +955,7 @@ function renderSettings() {
         ["uk", "British English"],
       ],
     )}<p class="tip">Whisper .en models transcribe English only. Select Base or a larger multilingual model for other languages.</p>`;
-  if (settingsTab === "recording")
+  if (activeTab === "recording")
     body = `<h2>Stay in the flow.</h2>${setting("Auto-paste dictation", "Insert the result in the active application after speech ends.", "autoPaste")}${setting("Keep audio recordings", "Retain audio for playback and retry.", "saveAudio")}${setting("Keep voice log", "Store dictations in searchable history. Files and notes stay in the workspace.", "saveHistory")}${setting("Indicator style", "Native notch uses the display cutout. Displays without a notch use the pill. Hidden removes the recording indicator.", "indicatorStyle", "select", [["pill", interfaceLabel("Pill")], ["notch", interfaceLabel("Native notch")], ["hidden", interfaceLabel("Hidden")]])}${setting(
       "Indicator position",
       "A small recording indicator follows the current display.",
@@ -820,9 +967,9 @@ function renderSettings() {
         ["hidden", "Hidden"],
       ],
     )}${setting("Idle indicator", "Keep a small ready indicator visible.", "idleIndicator")}${setting("Enhance with AI", "Clean up words using your configured language model.", "aiEnhance")}<div class="setting-row"><div><h3>Recordings folder</h3><p>${esc(s.recordingsDir || state.dataDir + "/recordings")}</p></div>${button("Choose folder", "recordings-folder", "folder")}</div><p class="tip">Changing folders applies to new recordings. Existing audio keeps its original path so playback and retries still work.</p>`;
-  if (settingsTab === "hotkeys")
+  if (activeTab === "hotkeys")
     body = `<h2>A shortcut for every thought.</h2><p class="muted">Bindings are global when Accessibility access is enabled. Use hold for push-to-talk, or toggle for hands-free recording.</p>${s.hotkeys.map((h, i) => `<div class="list-row"><div class="body"><strong>${esc(h.mode === "utility" ? workflowText("AI utility · {name}", {name: (s.aiUtilities || []).find(u => u.id === h.utilityId)?.name || h.utilityId}) : h.mode)}</strong><p>${h.mode === "utility" ? esc(interfaceLabel("Tap to transform text")) : h.toggle ? "Tap to start / tap to stop" : "Hold to speak"}</p></div><kbd>${esc(h.modifiers.join(" + "))} + ${h.keyCode === 49 ? "Space" : h.keyCode === 37 ? "L" : h.keyCode === -1 ? "modifier" : h.keyCode >= 130 ? `M${h.keyCode - 127}` : h.keyCode}</kbd>${button("Edit", "edit-hotkey", "edit", "small", `data-index="${i}"`)}${button("Remove", "remove-hotkey", "trash", "small danger", `data-index="${i}"`)}</div>`).join("")}<div class="row">${button("Add binding", "add-hotkey", "plus")}${button("Restore defaults", "reset-hotkeys", "refresh")}</div><p class="tip">Escape cancels an active recording. Cmd+Shift+L can be configured to paste the last dictation.</p>${area("suppressed-apps", "Pause shortcuts in these applications", s.suppressedApps.join("\n"), "One bundle identifier per line.")} ${button("Save exclusions", "save-suppressed", "check")}`;
-  if (settingsTab === "permissions")
+  if (activeTab === "permissions")
     body = `<h2>Only what’s needed.</h2><p class="muted">Scribble needs microphone access for recording and Accessibility access for shortcuts, insertion, and expansions. Screen recording is optional for meeting audio.</p>${[
       ["microphone", "Microphone", "Record your voice."],
       [
@@ -841,7 +988,7 @@ function renderSettings() {
           `<div class="setting-row"><div><h3>${l}</h3><p>${d}</p><span class="permission-state">${k === "microphone" ? (permissions.microphone === 3 || permissions.microphone === true ? "Allowed" : { denied: "Denied — enable in System Settings", restricted: "Restricted by macOS", "not-determined": "Not yet requested", unknown: "Status unavailable" }[permissions.microphoneStatus] || "Not verified") : permissions[k === "screen" ? "screenRecording" : k] ? "Allowed" : "Not yet allowed"}</span></div><div class="row">${button("Request", "request-permission", "shield", "small", `data-kind="${k}"`)}${button("Open settings", "permission-settings", "arrow", "small", `data-kind="${k}"`)}</div></div>`,
       )
       .join("")}${button("Refresh status", "check-permissions", "refresh")}`;
-  if (settingsTab === "privacy")
+  if (activeTab === "privacy")
     body = `<h2>Your workspace belongs to you.</h2>${setting("Typed expansions", "Observe typed trigger text for system-wide expansions. Password fields are skipped.", "expansionsEnabled")}${setting("Clipboard history", "Opt in to saving up to 100 clipboard text entries locally.", "clipboardHistory")}${setting("Memory in commands", "Include enabled memory items in language-model command requests.", "memoryEnabled")}<div class="setting-row"><div><h3>Export backup</h3><p>Settings, vocabulary, transcripts, notes, and history. API keys are excluded.</p></div>${button("Export", "backup", "download")}</div><div class="setting-row"><div><h3>Restore backup</h3><p>Your current workspace is backed up before replacement.</p></div>${button("Restore", "restore", "upload")}</div><div class="setting-row"><div><h3>Data folder</h3><p>${esc(state.dataDir)}</p></div>${button("Open", "open-data", "folder")}</div>${
       state.clipboard.length
         ? `<h3>Recent clipboard</h3>${state.clipboard
@@ -853,13 +1000,15 @@ function renderSettings() {
             .join("")}`
         : ""
     }`;
-  if (settingsTab === "experimental") {
+  if (activeTab === "experimental") {
     const sensitivity = Number.isFinite(s.silenceSensitivity) && s.silenceSensitivity >= 1 && s.silenceSensitivity <= 5 ? s.silenceSensitivity : 2;
     body = `<h2>${esc(interfaceLabel("Experimental"))}</h2>${setting("Enhanced cloud silence detection", "Compare recorded audio with a measured noise baseline before cloud upload. Skip audio classified as silence.", "enhancedSilenceDetection")}${s.enhancedSilenceDetection ? `<div class="setting-row"><div><h3>${esc(interfaceLabel("Silence sensitivity"))}</h3><p>${esc(interfaceLabel("Higher values can skip quiet speech. This applies only to cloud speech; local transcription is unchanged."))}</p></div><label><input type="range" min="1" max="5" step="0.1" value="${sensitivity}" data-setting="silenceSensitivity" data-type="number" aria-label="${esc(interfaceLabel("Silence sensitivity"))}"><output id="silence-sensitivity-value">${sensitivity.toFixed(1)}×</output></label></div>` : ""}`;
   }
-  if (settingsTab === "developer")
-    body = `<h2>A voice workspace you can build on.</h2>${setting("Prefer IPv4", "Try IPv4 addresses first for new provider and model-download connections. IPv6 fallback remains available; existing connections keep their current address.", "preferIPv4")}<p class="muted">Use the CLI to search your history, transcribe a file, manage vocabulary, or expose an MCP server to your coding agent.</p><div class="code">node scripts/scribble.cjs status\nnode scripts/scribble.cjs transcribe /path/to/audio.wav\nnode scripts/scribble.cjs search "meeting"\nnode scripts/scribble.cjs --mcp</div><h3>Speech runtime</h3><div class="code">${esc(state.speechStatus.runtime)}</div><p class="tip">Communication uses a local Unix socket with owner-only permissions. Scribble does not expose a public HTTP server.</p><p>Version ${esc(state.version)} · MIT licensed original source</p>`;
-  return `${heading("Make it yours", "Small details. Better flow.", "Your preferences are saved locally and take effect immediately.")}<div class="settings-layout"><div class="settings-nav">${Object.entries(
+  if (activeTab === "developer")
+    body = `<h2>A voice workspace you can build on.</h2>${setting("Allow dictations in clipboard history", "Allow clipboard managers to retain inserted dictation. Off keeps transient insertion out of compatible clipboard histories.", "allowDictationsInClipboardHistory")}${setting("Prefer IPv4", "Try IPv4 addresses first for new provider and model-download connections. IPv6 fallback remains available; existing connections keep their current address.", "preferIPv4")}<p class="muted">Use the CLI to search your history, transcribe a file, manage vocabulary, or expose an MCP server to your coding agent.</p><div class="code">node scripts/scribble.cjs status\nnode scripts/scribble.cjs transcribe /path/to/audio.wav\nnode scripts/scribble.cjs search "meeting"\nnode scripts/scribble.cjs --mcp</div><h3>Speech runtime</h3><div class="code">${esc(state.speechStatus.runtime)}</div><p class="tip">Communication uses a local Unix socket with owner-only permissions. Scribble does not expose a public HTTP server.</p><p>Version ${esc(state.version)} · MIT licensed original source</p>`;
+  if (sectionOnly) return body;
+  const displayedBody = settingsQuery.trim() ? renderSettingsMatches(settingsQuery, tabs) : body;
+  return `${heading("Make it yours", "Small details. Better flow.", "Your preferences are saved locally and take effect immediately.")}<div class="settings-layout"><div class="settings-nav"><label class="field">${esc(interfaceLabel("Search settings"))}<input id="settings-search" data-focus="settings-search" value="${esc(settingsQuery)}" autocomplete="off"></label>${Object.entries(
     tabs,
   )
     .map(([k, l]) =>
@@ -871,7 +1020,7 @@ function renderSettings() {
         `data-tab="${k}"`,
       ),
     )
-    .join("")}</div><div class="card">${body}</div></div>`;
+    .join("")}</div><div class="card" id="settings-body">${displayedBody}</div></div>`;
 }
 function renderHelp() {
   return `${heading("A voice worth keeping", "Meet Scribble.", "An independent, open-source voice workspace. Local speech, useful tools, and no account required.")}<div class="grid two"><div class="card"><h2>Start with one sentence.</h2><ol><li>Download a speech model in Speech models.</li><li>Allow microphone and Accessibility access.</li><li>Hold Option+Space in the app where you want to write.</li><li>Release. Your words appear at the cursor.</li></ol>${button("Check permissions", "navigate", "shield", "primary", 'data-page="settings"')}${button("Run setup again", "restart-setup", "refresh", "ghost")}</div><div class="card"><h2>Free, local components.</h2><p>Speech recognition uses Whisper.cpp and optional Parakeet. Language-model features use Ollama or your explicitly configured provider.</p><p class="muted">Scribble’s source is original. Vowen’s public behavior informed the feature checklist. No Vowen application code or artwork ships with Scribble.</p><span class="badge">MICROPHONE ICON · SCRIBBLE</span></div></div><div class="section-heading"><h2>Useful shortcuts</h2></div><div class="card">${[
@@ -1331,141 +1480,96 @@ function startLevels(media) {
     stopLevels();
   }
 }
-async function recordingStart(mode) {
+async function recordingStart(mode, ownerToken) {
   if (startingRecording || (recorder && recorder.state !== "inactive")) return;
+  if (micPicker) { closeMicrophonePicker(); $("#modal").close(); }
   const token = ++recordingToken;
+  const session = { token, ownerToken, mode: mode || "dictation", stream: null, recorder: null,
+    chunks: [], cancelled: false, failed: false, noteSpec: {...noteSpec},
+    noteDraft, flags, attachments: commandAttachments };
+  activeCapture = session;
   startingRecording = true;
   recorder = null;
-  recordMode = mode || "dictation";
+  recordMode = session.mode;
   cancelled = false;
   paused = false;
-  chunks = [];
+  const current = () => token === recordingToken && activeCapture === session;
+  const releaseStream = () => { session.stream?.getTracks().forEach(track => track.stop()); session.stream = null; };
   try {
-    const candidates = [
-      ...new Set([
-        ...(state.settings.microphonePriority || []),
-        state.settings.microphoneId,
-        "default",
-      ]),
-    ];
+    const candidates = ScribbleMicrophonePreferences.captureCandidates(state.settings, session.mode === "note" ? "meeting" : session.mode);
     for (const [index, device] of candidates.entries()) {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: device === "default" ? true : { deviceId: { exact: device } },
-        });
-        if (index > 0)
-          toast(
-            "Preferred microphone unavailable. Using the next available input.",
-          );
+        const acquired = await navigator.mediaDevices.getUserMedia({ audio: device === "default" ? true : {deviceId: {exact: device}} });
+        session.stream = acquired;
+        if (!current()) { releaseStream(); return; }
+        if (index > 0) toast("Preferred microphone unavailable. Using the next available input.");
         break;
       } catch (error) {
-        if (token !== recordingToken) return;
-        if (
-          !["NotFoundError", "OverconstrainedError"].includes(error.name) ||
-          index === candidates.length - 1
-        )
-          throw error;
+        if (!current()) return;
+        const busy = error.name === "NotReadableError" && /busy|in use|unavailable|disconnected/i.test(error.message || "");
+        if ((!['NotFoundError','OverconstrainedError'].includes(error.name) && !busy) || index === candidates.length - 1) throw error;
       }
     }
-    if (token !== recordingToken) {
-      stream.getTracks().forEach((t) => t.stop());
-      stream = null;
-      startingRecording = false;
-      return;
-    }
-    if (recordMode === "note" && noteSpec.systemAudio) {
-      try {
-        await request("start-system-audio");
-      } catch (e) {
-        stream.getTracks().forEach((t) => t.stop());
-        stream = null;
-        throw e;
-      }
-    }
-    const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus"
-      : "audio/webm";
-    if (token !== recordingToken) {
-      stream.getTracks().forEach((t) => t.stop());
-      stream = null;
-      startingRecording = false;
-      return;
-    }
-    recorder = new MediaRecorder(stream, {
-      mimeType: mime,
-      audioBitsPerSecond: 128000,
-    });
+    if (!current()) { releaseStream(); return; }
+    if (session.mode === "note" && session.noteSpec.systemAudio) await request("start-system-audio", {recordingToken: session.ownerToken});
+    if (!current()) { releaseStream(); return; }
+    const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+    const captureRecorder = new MediaRecorder(session.stream, {mimeType: mime, audioBitsPerSecond: 128000});
+    session.recorder = captureRecorder;
+    recorder = captureRecorder;
+    stream = session.stream;
     startingRecording = false;
-    recorder.ondataavailable = (e) => {
-      if (e.data.size) chunks.push(e.data);
-    };
-    recorder.onstop = async () => {
-      clearInterval(recordInterval);
-      stopLevels();
-      stream?.getTracks().forEach((t) => t.stop());
-      stream = null;
-      $("#record-bar").hidden = true;
-      const blob = new Blob(chunks, { type: mime });
-      chunks = [];
-      if (cancelled) return;
-      toast(
-        state.settings.speechProvider === "local"
-          ? "Transcribing on this Mac…"
-          : "Transcribing with " + state.settings.speechProvider + "…",
-      );
+    captureRecorder.ondataavailable = event => { if (event.data.size && !session.failed && !session.cancelled) session.chunks.push(event.data); };
+    captureRecorder.onstop = async () => {
+      clearInterval(session.interval);
+      releaseStream();
+      if (current()) {
+        clearInterval(recordInterval); stopLevels(); stream = null;
+        $("#record-bar").hidden = true;
+      }
+      const blob = new Blob(session.chunks, {type: mime}); session.chunks = [];
+      if (session.cancelled || session.failed) return;
+      toast(state.settings.speechProvider === "local" ? "Transcribing on this Mac…" : "Transcribing with " + state.settings.speechProvider + "…");
       try {
-        const entry = await request("save-recording", {
-          bytes: await blob.arrayBuffer(),
-          mime,
-          mode: recordMode,
-          title: noteSpec.title,
-          template: noteSpec.template,
-          personalNotes: noteDraft,
-          flags,
-          attachments:
-            recordMode === "command" ? commandAttachments : undefined,
-        });
-        if (recordMode === "note" && entry.noteId) {
-          page = "notes";
-          selectedNote = entry.noteId;
-          noteTab = "summary";
+        const bytes = await blob.arrayBuffer();
+        if (session.cancelled || session.failed) return;
+        const entry = await request("save-recording", {bytes, mime, mode: session.mode,
+          title: session.noteSpec.title, template: session.noteSpec.template,
+          personalNotes: session.noteDraft, flags: session.flags,
+          attachments: session.mode === "command" ? session.attachments : undefined});
+        if (current()) {
+          if (session.mode === "note" && entry.noteId) { page = "notes"; selectedNote = entry.noteId; noteTab = "summary"; }
+          render(); noteSpec = {};
         }
-        render();
       } catch {}
-      noteSpec = {};
     };
-    recorder.onerror = (e) => {
-      toast("Recording failed: " + e.error.message);
+    captureRecorder.onerror = event => {
+      session.failed = true; session.cancelled = true; session.chunks = [];
+      if (!current()) return;
+      cancelled = true;
+      toast("Recording failed: " + (event.error?.message || "Audio recorder error"));
       request("cancel-recording").catch(() => {});
     };
-    recorder.start(1000);
-    for (const track of stream.getAudioTracks())
-      track.addEventListener?.(
-        "ended",
-        () => {
-          if (recorder && recorder.state !== "inactive") {
-            toast("Microphone disconnected. Finishing the captured audio.");
-            recorder.stop();
-          }
-        },
-        { once: true },
-      );
-    startLevels(stream);
-    recordStart = Date.now();
-    pausedDuration = 0;
-    pauseStarted = 0;
-    renderRecordBar();
-    recordInterval = setInterval(renderRecordBar, 500);
-    playCue(600);
+    captureRecorder.start(1000);
+    for (const track of session.stream.getAudioTracks?.() || []) track.addEventListener?.("ended", () => {
+      if (current() && captureRecorder.state !== "inactive" && !session.cancelled && !session.failed) {
+        toast("Microphone disconnected. Finishing the captured audio."); captureRecorder.stop();
+      }
+    }, {once: true});
+    startLevels(session.stream);
+    recordStart = Date.now(); pausedDuration = 0; pauseStarted = 0;
+    renderRecordBar(); session.interval = setInterval(renderRecordBar, 500); recordInterval = session.interval; playCue(600);
     await request("recording-started");
-  } catch (e) {
+  } catch (error) {
+    session.failed = true; session.cancelled = true; clearInterval(session.interval); releaseStream();
+    if (!current()) return;
     startingRecording = false;
-    recorder = null;
-    stopLevels();
-    stream?.getTracks().forEach((t) => t.stop());
-    await request("recording-failed", { message: e.message }).catch(() => {});
+    if (recorder && recorder.state !== "inactive") { try { recorder.stop(); } catch {} }
+    recorder = null; stream = null; clearInterval(recordInterval); stopLevels();
+    await request("recording-failed", {message: error.message}).catch(() => {});
   }
 }
+
 function playCue(freq) {
   if (!state.settings.sounds) return;
   try {
@@ -1483,9 +1587,11 @@ function playCue(freq) {
   } catch {}
 }
 function recordingStop(cancel = false) {
+  if (cancel && activeCapture) activeCapture.cancelled = true;
   if (startingRecording) {
     recordingToken++;
     startingRecording = false;
+    if (activeCapture) { activeCapture.cancelled = true; activeCapture.stream?.getTracks().forEach(track => track.stop()); activeCapture.stream = null; }
     api.request("cancel-recording").catch(() => {});
     return;
   }
@@ -1627,6 +1733,7 @@ document.addEventListener("click", async (e) => {
       return;
     }
     if (a === "close-modal") {
+      closeMicrophonePicker();
       await stopHotkeyCapture();
       $("#modal").close();
       return;
@@ -1653,6 +1760,7 @@ document.addEventListener("click", async (e) => {
     }
     if (a === "cancel-record") {
       cancelled = true;
+      if (activeCapture) activeCapture.cancelled = true;
       await request("cancel-recording");
       return;
     }
@@ -1723,6 +1831,7 @@ document.addEventListener("click", async (e) => {
     }
     if (a === "settings-tab") {
       settingsTab = b.dataset.tab;
+      settingsQuery = "";
       render();
       if (settingsTab === "permissions") await refreshPermissions();
       return;
@@ -2097,43 +2206,33 @@ document.addEventListener("click", async (e) => {
       await request("open-permissions", { kind });
       return;
     }
-    if (a === "refresh-mics") {
-      const media = await navigator.mediaDevices.getUserMedia({ audio: true });
-      media.getTracks().forEach((t) => t.stop());
-      const inputs = (await navigator.mediaDevices.enumerateDevices()).filter(
-        (d) => d.kind === "audioinput",
-      );
-      microphoneDevices = inputs;
-      $("#microphone-list").innerHTML =
-        `<label class="field">Input device<select data-setting="microphoneId"><option value="default">System default</option>${inputs
-          .filter((d) => d.deviceId !== "default")
-          .map(
-            (d) =>
-              `<option value="${esc(d.deviceId)}" ${d.deviceId === state.settings.microphoneId ? "selected" : ""}>${esc(d.label || "Microphone")}</option>`,
-          )
-          .join(
-            "",
-          )}</select></label>${button("Prefer selected input", "prefer-mic", "mic")}`;
-      return;
+    if (a === "refresh-mics") { await scanMicrophones(true); render(); return; }
+    if (a === "open-mic-picker") { await openMicrophonePicker("global"); return; }
+    if (a === "meeting-mic-customize") {
+      if (!microphonesKnown) return;
+      await request("preferences", {meetingMicrophonePriority: microphoneDraft("global")});
+      await openMicrophonePicker("meeting", true, true); return;
     }
-    if (a === "prefer-mic") {
-      const selected = $("[data-setting=microphoneId]")?.value;
-      if (!selected) return;
-      await request("preferences", {
-        microphonePriority: [
-          selected,
-          ...(state.settings.microphonePriority || []).filter(
-            (id) => id !== selected,
-          ),
-        ],
-      });
-      toast("Selected input moved to the top of microphone priorities.");
-      return;
+    if (a === "meeting-mic-edit") { await openMicrophonePicker("meeting", true); return; }
+    if (a === "meeting-mic-global") {
+      showModal("Use global microphone order?", `<p>${esc(interfaceLabel("Discard the custom meeting order and follow global changes."))}</p>`, async () => request("preferences", {meetingMicrophonePriority: null})); return;
     }
-    if (a === "clear-mic-priority") {
-      await request("preferences", { microphonePriority: [] });
-      return;
+    if (a === "mic-select" && micPicker && !micPicker.editing) {
+      const selected = b.dataset.device;
+      if (!microphoneConnected(selected)) return;
+      const order = [selected, ...microphoneDraft(micPicker.scope).filter(id => id !== selected)];
+      await request("preferences", microphonePreferencePayload(micPicker.scope, order));
+      if (micPicker) { micPicker.selected = selected; renderMicrophonePicker(); void previewMicrophone(selected); } return;
     }
+    if (a === "mic-reorder" && micPicker) { stopMicrophonePreview(); micPicker.editing = true; micPicker.draft = microphoneDraft(micPicker.scope); renderMicrophonePicker(); return; }
+    if (a === "mic-up" || a === "mic-down") {
+      if (!micPicker?.editing) return;
+      const from = Number(b.dataset.index), to = from + (a === "mic-up" ? -1 : 1);
+      if (to >= 0 && to < micPicker.draft.length) micPicker.draft = ScribbleMicrophonePreferences.moveRank(micPicker.draft, from, to);
+      renderMicrophonePicker(); return;
+    }
+    if (a === "mic-remove" && micPicker?.editing && microphonesKnown && !microphoneConnected(b.dataset.device)) { micPicker.draft = micPicker.draft.filter(id => id !== b.dataset.device); renderMicrophonePicker(); return; }
+    if (a === "meeting-mic-system") { await request("preferences", {meetingMicrophonePriority: []}); $("#modal").close(); return; }
     if (a === "recordings-folder") {
       const dir = await request("choose-recordings-folder");
       if (dir) await request("preferences", { recordingsDir: dir });
@@ -2331,6 +2430,11 @@ document.addEventListener("change", async (e) => {
   } catch {}
 });
 document.addEventListener("input", (e) => {
+  if (e.target.id === "settings-search") {
+    settingsQuery = e.target.value.slice(0, 200);
+    updateSettingsSearchBody();
+    return;
+  }
   if (e.target.dataset.setting === "silenceSensitivity") {
     const output = document.querySelector('#silence-sensitivity-value');
     if (output) output.textContent = Number(e.target.value).toFixed(1) + "×";
@@ -2401,6 +2505,9 @@ document.addEventListener("submit", async (e) => {
   } catch {}
 });
 document.addEventListener("keydown", (e) => {
+  if (page === "settings" && e.target.id === "settings-search" && e.key === "Escape" && settingsQuery) {
+    settingsQuery = ""; e.target.value = ""; updateSettingsSearchBody(); e.preventDefault(); return;
+  }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     e.preventDefault();
     openWorkspacePalette();
@@ -2413,6 +2520,7 @@ document.addEventListener("keydown", (e) => {
       state?.speechStatus.busy)
   ) {
     cancelled = true;
+    if (activeCapture) activeCapture.cancelled = true;
     request("cancel-recording").catch(() => {});
     return;
   }
@@ -2442,7 +2550,7 @@ async function refreshPermissions() {
   permissions = await request("permissions").catch(() => ({}));
   if ((page === "settings" && settingsTab === "permissions") || (page === "home" && state.settings.onboardingCompleted === false)) render();
 }
-$("#modal").addEventListener("close", () => void stopHotkeyCapture());
+$("#modal").addEventListener("close", () => { void stopHotkeyCapture(); closeMicrophonePicker(); });
 api.on(({ event, data }) => {
   if (event === "hotkey-captured" && hotkeyCaptureActive) {
     hotkeyCaptureActive = false;
@@ -2468,7 +2576,16 @@ api.on(({ event, data }) => {
     if (document.activeElement?.id !== "note-editor") render();
   }
   if (event === "recording-control") {
-    if (data.action === "start") recordingStart(data.mode);
+    if (data.action === "shutdown") {
+      if (micPicker) $("#modal").close();
+      closeMicrophonePicker();
+      recordingStop(true);
+      activeCapture?.stream?.getTracks().forEach(track => track.stop());
+      if (activeCapture) activeCapture.stream = null;
+      stream = null; stopLevels(); clearInterval(recordInterval); $("#record-bar").hidden = true;
+      return;
+    }
+    if (data.action === "start") recordingStart(data.mode, data.recordingToken);
     if (data.action === "stop") recordingStop();
     if (data.action === "cancel") {
       cancelled = true;
