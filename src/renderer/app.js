@@ -57,6 +57,7 @@ const interfaceLabel = (label) => {
   const key = Object.keys(ScribbleI18n.catalogues.en).find((key) => ScribbleI18n.catalogues.en[key] === label);
   return key ? ScribbleI18n.t(state?.settings.locale, key) : ScribbleFormTranslations.translate(state?.settings.locale, label);
 };
+const interfaceProse = (text) => Object.hasOwn(ScribbleFormTranslations.catalogues.en, text) ? esc(ScribbleFormTranslations.translate(state?.settings.locale, text)) : text;
 const date = (v) =>
     new Date(v).toLocaleDateString(ScribbleI18n.formattingLocale(state?.settings.locale), {
       month: "short",
@@ -231,6 +232,16 @@ const langList = [
   ["as", "Assamese"],
   ["yue", "Cantonese"],
 ];
+function speechLanguageOptions(model) {
+  const fixed = model && (model.englishOnly ? "en" : model.language && model.language !== "auto" ? model.language : "");
+  if (fixed) return [[fixed, langList.find(([code]) => code === fixed)?.[1] || fixed]];
+  if (!Array.isArray(model?.supportedLanguages)) return langList;
+  const names = new Intl.DisplayNames([ScribbleI18n.formattingLocale(state?.settings.locale)], { type: "language" });
+  return [["auto", "Auto-detect"], ...model.supportedLanguages.map((code) => [code, langList.find(([id]) => id === code)?.[1] || names.of(code) || code])];
+}
+function toneSpeechModel(modelId) {
+  return (modelId || state.settings.speechProvider === "local") && state.models.find((m) => m.id === (modelId || state.settings.modelId));
+}
 function toast(message) {
   $("#toast").textContent = message;
   $("#toast").hidden = false;
@@ -249,10 +260,10 @@ function button(label, action, ico, cls = "", data = "") {
   return `<button type="button" class="${cls}" data-action="${action}" ${data}>${ico ? icon(ico) : ""}${interfaceLabel(label)}</button>`;
 }
 function field(name, label, value = "", type = "text", hint = "") {
-  return `<label class="field">${esc(interfaceLabel(label))}<input name="${name}" type="${type}" value="${esc(value)}" ${type === "password" ? 'autocomplete="off"' : ""}>${hint ? `<small>${hint}</small>` : ""}</label>`;
+  return `<label class="field">${esc(interfaceLabel(label))}<input name="${name}" type="${type}" value="${esc(value)}" ${type === "password" ? 'autocomplete="off"' : ""}>${hint ? `<small>${interfaceProse(hint)}</small>` : ""}</label>`;
 }
 function area(name, label, value = "", hint = "") {
-  return `<label class="field">${esc(interfaceLabel(label))}<textarea name="${name}">${esc(value)}</textarea>${hint ? `<small>${hint}</small>` : ""}</label>`;
+  return `<label class="field">${esc(interfaceLabel(label))}<textarea name="${name}">${esc(value)}</textarea>${hint ? `<small>${interfaceProse(hint)}</small>` : ""}</label>`;
 }
 function select(name, label, options, value, disabled = false) {
   return `<label class="field">${esc(interfaceLabel(label))}<select name="${name}" ${disabled ? "disabled" : ""}>${options.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(value) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
@@ -261,7 +272,7 @@ function check(name, label, value = false) {
   return `<label class="row"><input name="${name}" type="checkbox" ${value ? "checked" : ""}>${esc(interfaceLabel(label))}</label>`;
 }
 function heading(eyebrow, title, subtitle, actions = "") {
-  return `<div class="page-heading"><div><p class="eyebrow">${esc(interfaceLabel(eyebrow))}</p><h1>${esc(interfaceLabel(title))}</h1><p class="lead">${subtitle}</p></div><div class="row wrap">${actions}</div></div>`;
+  return `<div class="page-heading"><div><p class="eyebrow">${esc(interfaceLabel(eyebrow))}</p><h1>${esc(interfaceLabel(title))}</h1><p class="lead">${interfaceProse(subtitle)}</p></div><div class="row wrap">${actions}</div></div>`;
 }
 function empty(ico, title, description, action = "") {
   return `<div class="empty">${icon(ico)}<h3>${title}</h3><p>${description}</p>${action}</div>`;
@@ -523,7 +534,7 @@ function renderFileLanguageSetting() {
   const model = (fileSpeechOptions.modelId || state.settings.speechProvider === "local") && state.models.find((m) => m.id === (fileSpeechOptions.modelId || state.settings.modelId));
   const fixed = model && (model.englishOnly ? "en" : model.language && model.language !== "auto" ? model.language : "");
   if (fixed) return select("fileLanguage", "Language for new files", [[fixed, langList.find(([code]) => code === fixed)?.[1] || fixed]], fixed, true);
-  return select("fileLanguage", "Language for new files", [["", "Use configured language"], ...langList], fileSpeechOptions.language || "");
+  return select("fileLanguage", "Language for new files", [["", "Use configured language"], ...speechLanguageOptions(model)], fileSpeechOptions.language || "");
 }
 function renderTranscribe() {
   const entries = state.history.filter((x) => x.kind === "file"),
@@ -638,12 +649,12 @@ function setting(label, description, key, type = "checkbox", options, disabled =
       : type === "select"
         ? `<select data-setting="${key}" aria-label="${esc(interfaceLabel(label))}">${options.map(([v, l]) => `<option value="${esc(v)}" ${String(s[key]) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`
         : `<input data-setting="${key}" data-type="${type}" type="${type}" value="${esc(s[key])}" aria-label="${esc(interfaceLabel(label))}">`;
-  return `<div class="setting-row"><div><h3>${esc(interfaceLabel(label))}</h3><p>${description}</p></div>${control}</div>`;
+  return `<div class="setting-row"><div><h3>${esc(interfaceLabel(label))}</h3><p>${interfaceProse(description)}</p></div>${control}</div>`;
 }
 function renderSpeechLanguageSetting() {
   const model = state.settings.speechProvider === "local" && state.models.find((m) => m.id === state.settings.modelId);
   const fixed = model && (model.englishOnly ? "en" : model.language && model.language !== "auto" ? model.language : "");
-  if (!fixed) return setting("Dictation language", "Auto-detect works with multilingual speech models.", "language", "select", langList);
+  if (!fixed) return setting("Dictation language", "Auto-detect works with multilingual speech models.", "language", "select", speechLanguageOptions(model));
   const label = langList.find(([code]) => code === fixed)?.[1] || fixed;
   return `<div class="setting-row"><div><h3>Dictation language</h3><p>${esc(model.name)} transcribes ${esc(label)}. Choose a multilingual model to change languages.</p></div><select data-setting="language" aria-label="Dictation language" disabled><option value="${esc(fixed)}">${esc(label)}</option></select></div>`;
 }
@@ -913,7 +924,7 @@ function editItem(kind, id) {
       select(
         "language",
         "Dictation language",
-        [["", "Default language"], ...langList],
+        [["", "Default language"], ...speechLanguageOptions(toneSpeechModel(item.modelId))],
         item.language || "",
       ) +
       field(
@@ -1986,6 +1997,17 @@ document.addEventListener("change", async (e) => {
       historyKind = input.value;
       historyLimit = 100;
       render();
+      return;
+    }
+    if (input.name === "modelId" && input.closest("#modal")) {
+      const language = input.form?.querySelector('[name="language"]');
+      if (language) {
+        const previous = language.value;
+        const choices = [["", "Default language"], ...speechLanguageOptions(toneSpeechModel(input.value))];
+        language.innerHTML = choices.map(([code, label]) => `<option value="${esc(code)}">${esc(label)}</option>`).join("");
+        language.value = choices.some(([code]) => code === previous) ? previous : "auto";
+        if (!language.value && previous) language.value = choices[1]?.[0] || "";
+      }
       return;
     }
     if (input.name === "fileModel") {

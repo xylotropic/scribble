@@ -11,6 +11,7 @@ const PARAKEET_MODELS = Object.entries(manifests).map(([version, m]) => ({
   name: `Parakeet ${version}`,
   engine: "parakeet",
   englishOnly: version === "v2",
+  supportedLanguages: version === "v2" ? ["en"] : "bg hr cs da nl en et fi fr de el hu it lv lt mt pl pt ro sk sl es sv ru uk".split(" "),
   bytes: m.files.reduce((n, f) => n + f.bytes, 0),
   license: "CC-BY-4.0",
   supported: process.platform === "darwin" && process.arch === "arm64",

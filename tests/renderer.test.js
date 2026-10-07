@@ -817,3 +817,34 @@ test('Japanese shortcut dialog localizes literal labels while leaving entered va
  assert.equal(input.value,'right-option');
  assert.equal(h.w.document.querySelector('#modal button[type="submit"]').textContent,h.w.ScribbleI18n.t('ja','action.save'));
 });
+
+test('local model language pickers use verified coverage and exact locale codes', options, async (t) => {
+  const h = await fixture(t);
+  h.data.models.push({ id:'nemotron-multilingual', name:'Nemotron', installed:true, engine:'catalog', language:'auto', supportedLanguages:['en-US','fr-CA','vi-VN'] });
+  h.data.settings.modelId = 'nemotron-multilingual';
+  h.emit('state', h.data);
+  await h.click('[data-page="settings"]');
+  await h.click('[data-tab="language"]');
+  const values = (select) => [...select.options].map(o => o.value);
+  assert.deepEqual(values(h.w.document.querySelector('[data-setting="language"]')), ['auto','en-US','fr-CA','vi-VN']);
+  await h.click('[data-page="transcribe"]');
+  assert.deepEqual(values(h.w.document.querySelector('[name="fileLanguage"]')), ['','auto','en-US','fr-CA','vi-VN']);
+  await h.click('[data-page="tones"]');
+  await h.click('[data-action="add-item"]');
+  const form = h.w.document.querySelector('#modal form');
+  assert.deepEqual(values(form.querySelector('[name="language"]')), ['','auto','en-US','fr-CA','vi-VN']);
+  const model = form.querySelector('[name="modelId"]');
+  model.value = 'base.en';
+  model.dispatchEvent(new h.w.Event('change', { bubbles:true }));
+  assert.deepEqual(values(form.querySelector('[name="language"]')), ['','en']);
+});
+
+test('translated settings explanations and field hints keep values intact', options, async (t) => {
+  const h = await fixture(t);
+  h.data.settings.locale = 'ja';
+  h.emit('state', h.data);
+  await h.click('[data-page="settings"]');
+  assert.ok(!h.w.document.querySelector('#content').textContent.includes('Used only for your dashboard greeting.'));
+  await h.click('[data-tab="language"]');
+  assert.equal(h.w.document.querySelector('[data-setting="language"]').value, 'en');
+});

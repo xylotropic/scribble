@@ -12,6 +12,11 @@ const CATALOG_MODELS = Object.entries(manifests).map(([id, m]) => ({
   engine: "catalog",
   englishOnly: m.language === "en",
   language: m.language,
+  // Usable model-card locales; tokenizer-only adaptation languages are excluded.
+  supportedLanguages: id === "nemotron-multilingual"
+    ? "en-US en-GB es-US es-ES fr-FR fr-CA it-IT pt-BR pt-PT nl-NL de-DE tr-TR ru-RU ar-AR hi-IN ja-JP ko-KR vi-VN uk-UA pl-PL sv-SE cs-CZ nb-NO da-DK bg-BG fi-FI hr-HR sk-SK zh-CN hu-HU ro-RO et-EE en es fr it pt nl de tr ru ar hi ja ko uk pl sv cs nb da bg fi hr sk zh hu ro et".split(" ")
+    : [m.language],
+  adaptationLanguages: id === "nemotron-multilingual" ? "el-GR lt-LT lv-LV mt-MT sl-SI he-IL th-TH nn-NO".split(" ") : [],
   bytes: m.files.reduce((n, f) => n + f.bytes, 0),
   license: m.license,
   licenseURL: m.licenseURL,

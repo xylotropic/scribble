@@ -141,3 +141,12 @@ The native capture protocol accepts keyboard, side-specific modifier, modifier-o
 ## Packaged shutdown regression
 
 The older tested host reproducibly stopped its native bridge/socket on Quit but remained alive, confirmed by read-only process inventory after the menu action. Shutdown now performs the existing cleanup and uses Electron app.exit(0) after the owned AI runtime cleanup completes. A main-process test verifies ordering. The rebuilt capture/form package was launched and quit through its actual application menu; subsequent process inventory found no Scribble host or bridge, while the pre-existing external Ollama PID23381 remained running. Strict deep signature verification passed. This proves the bounded idle shutdown regression, not shutdown during recording or provider activity.
+
+
+## File-tools packaged palette verification
+
+In the packaged capture/form build, File tools → Extract image colors accepted an independently generated 200×100 PNG through the native Open dialog, then a new JSON path through Save. The actual UI displayed the saved path. Read-back of the output reported #0000ff and #ff0000, each at proportion0.5, with8192 sampled pixels. This verifies one complete palette workflow in the packaged app; other utility workflows and spoken file-command invocation still need their own desktop acceptance evidence.
+
+## Model-aware languages and expanded localization
+
+Local model metadata now records verified supported languages from primary model/runtime sources in model-languages.md. Global, per-file and tone editors use that coverage, preserving exact supported locale codes such as vi-VN and excluding adaptation-only Nemotron languages. Saved incompatible global selections reset to Auto. Renderer tests exercise locale-code options and tone model switching. The independently authored form catalogue now includes162 exact labels/descriptions/hints/subtitles across18 locales; helper rendering escapes translated prose and preserves dynamic HTML. Thirty-seven focused renderer/localization/model-preference tests passed. These source changes still require fresh packaged verification.
