@@ -781,9 +781,13 @@ function editItem(kind, id) {
           ? "Variables: {date}, {time}, {clipboard}."
           : "Replaces matching phrases in your transcription.",
       );
-  if (kind === "threads")
+  if (kind === "threads" || kind === "expansions")
     html =
-      field("trigger", "Spoken trigger", item.trigger) +
+      field(
+        "trigger",
+        kind === "threads" ? "Spoken trigger" : "Typed shortcut",
+        item.trigger,
+      ) +
       `<label class="field">Replacement<div class="row wrap">${[
         ["bold", "Bold"],
         ["italic", "Italic"],
@@ -801,7 +805,7 @@ function editItem(kind, id) {
         )
         .join(
           "",
-        )}</div><div id="rich-editor" class="editor" contenteditable="true" role="textbox" aria-label="Thread replacement"></div><small>Formatting is included when inserting through the clipboard. AI cleanup returns plain text.</small></label>`;
+        )}</div><div id="rich-editor" class="editor" contenteditable="true" role="textbox" aria-label="Replacement text"></div><small>Formatting is included when inserting through the clipboard. AI cleanup returns plain text. Variables: {date}, {time}, {clipboard}, {selection}.</small></label>`;
   if (kind === "shortcuts")
     html =
       field("name", "Name", item.name) +
@@ -870,7 +874,7 @@ function editItem(kind, id) {
       }[kind],
     html,
     async (values) => {
-      if (kind === "threads") {
+      if (kind === "threads" || kind === "expansions") {
         const editor = $("#rich-editor");
         values.replacement = editor.innerText || editor.textContent;
         values.html = safeRichHTML(editor.innerHTML);
@@ -894,7 +898,7 @@ function editItem(kind, id) {
       toast("Saved locally.");
     },
   );
-  if (kind === "threads")
+  if (kind === "threads" || kind === "expansions")
     $("#rich-editor").innerHTML = safeRichHTML(
       item.html || "<p>" + esc(item.replacement || "") + "</p>",
     );

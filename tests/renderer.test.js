@@ -550,3 +550,27 @@ test(
     );
   },
 );
+
+test(
+  "Typed expansions preserve rich formatting and variables through editing",
+  options,
+  async (t) => {
+    const h = await fixture(t);
+    await h.click('[data-page="dictionary"]');
+    await h.click('[data-action="dictionary-tab"][data-tab="expansions"]');
+    await h.click('[data-action="add-item"][data-kind="expansions"]');
+    h.input('[name="trigger"]', ":intro");
+    const editor = h.w.document.querySelector("#rich-editor");
+    editor.innerHTML = "<p><strong>Hello</strong> {date}</p>";
+    await h.submit();
+    const saved = h.calls.find((c) => c.action === "save-item");
+    assert.equal(saved.args.kind, "expansions");
+    assert.match(saved.args.item.html, /<strong>Hello<\/strong>/);
+    assert.match(saved.args.item.replacement, /Hello.*\{date\}/);
+    await h.click('[data-action="edit-item"][data-kind="expansions"]');
+    assert.match(
+      h.w.document.querySelector("#rich-editor").innerHTML,
+      /<strong>Hello<\/strong>/,
+    );
+  },
+);
