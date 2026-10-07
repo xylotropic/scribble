@@ -279,6 +279,40 @@ function showModal(title, html, onSubmit) {
   });
   dialog.showModal();
 }
+function openWorkspacePalette() {
+  const dialog = $("#modal");
+  dialog.innerHTML = `<div class="row between"><h2>Go to a workspace</h2>${button("", "close-modal", "close", "ghost icon")}</div><input id="workspace-search" class="search" aria-label="Find a workspace" placeholder="Search pages…"><div id="workspace-results" class="stack"></div>`;
+  const input = $("#workspace-search");
+  const update = () => {
+    const query = input.value.trim().toLocaleLowerCase();
+    const matches = Object.entries(pages).filter(([key, [label]]) =>
+      (key + " " + label).toLocaleLowerCase().includes(query),
+    );
+    $("#workspace-results").innerHTML = matches.length
+      ? matches
+          .map(([key, [label, iconName]]) =>
+            button(
+              label,
+              "palette-navigate",
+              iconName,
+              "ghost",
+              `data-page="${key}"`,
+            ),
+          )
+          .join("")
+      : `<p class="muted">No matching workspace.</p>`;
+  };
+  input.addEventListener("input", update);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      $("#workspace-results button")?.click();
+    }
+  });
+  update();
+  dialog.showModal();
+  input.focus();
+}
 function render() {
   if (!state) return;
   const active = document.activeElement,
@@ -295,7 +329,7 @@ function render() {
   $("#sidebar").innerHTML =
     `<div class="brand"><div class="brand-mark">${icon("mic")}</div><div>Scribble<small>VOICE WORKSPACE</small></div></div><div class="nav-section">${nav(["home", "notes", "transcribe", "shortcuts", "command", "dictionary", "utilities"])}</div><div class="nav-section"><div class="nav-label">Make it yours</div>${nav(["models", "ai", "tones", "memory"])}</div><div class="sidebar-bottom nav-section">${nav(["settings", "help"])}<div class="local-card">${icon("shield")}<div>Local by default.<br>Your voice stays yours.</div></div></div>`;
   $("#header").innerHTML =
-    `<div class="breadcrumb">Workspace <span>/</span> <strong>${pages[page][0]}</strong></div><div class="header-actions"><span class="pill optional"><i class="dot ${state.speechStatus.ready ? "" : "warn"}"></i>${esc(state.settings.speechProvider === "local" ? state.settings.modelId : state.settings.speechProvider)}</span>${button("", "theme", state.settings.theme === "dark" ? "sun" : "moon", "ghost icon", 'title="Toggle appearance"')}${button("Dictate", "record", "mic", "primary")}</div>`;
+    `<div class="breadcrumb">Workspace <span>/</span> <strong>${pages[page][0]}</strong></div><div class="header-actions"><span class="pill optional"><i class="dot ${state.speechStatus.ready ? "" : "warn"}"></i>${esc(state.settings.speechProvider === "local" ? state.settings.modelId : state.settings.speechProvider)}</span>${button("Search workspace", "workspace-palette", "search", "ghost small")}${button("", "theme", state.settings.theme === "dark" ? "sun" : "moon", "ghost icon", 'title="Toggle appearance"')}${button("Dictate", "record", "mic", "primary")}</div>`;
   $("#content").innerHTML = {
     home: renderHome,
     notes: renderNotes,
@@ -1312,6 +1346,17 @@ document.addEventListener("click", async (e) => {
       }
       return;
     }
+    if (a === "workspace-palette") {
+      openWorkspacePalette();
+      return;
+    }
+    if (a === "palette-navigate") {
+      $("#modal").close();
+      page = b.dataset.page;
+      search = "";
+      render();
+      return;
+    }
     if (a === "close-modal") {
       $("#modal").close();
       return;
@@ -2029,6 +2074,11 @@ document.addEventListener("submit", async (e) => {
   } catch {}
 });
 document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    openWorkspacePalette();
+    return;
+  }
   if (
     e.key === "Escape" &&
     (startingRecording ||

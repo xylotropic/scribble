@@ -125,3 +125,5 @@ Public Vowen engine coverage exceeds a Whisper-only implementation. NVIDIA's [Pa
 
 - Relaunching the updated host automatically registered org.scribble.voice.share; pluginkit listed the embedded appex at the current package path. No manual registry mutation was used.
 - Finder selected the isolated public JFK WAV fixture and enabled Share. Its actual Share popover displayed `Unlock Mac to continue with Siri request` instead of destinations, corroborated by AX and screenshot. No Share handoff success is claimed; session unlock is needed to continue this desktop check.
+
+- Added searchable workspace navigation through the header and Cmd+K/Ctrl+K. A renderer interaction test filters to File tools and uses Enter to navigate, closing the palette. Other physical keyboard paths remain under desktop verification.

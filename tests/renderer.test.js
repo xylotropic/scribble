@@ -711,3 +711,38 @@ test(
     ]);
   },
 );
+
+test(
+  "Workspace palette filters destinations and navigates with Enter",
+  options,
+  async (t) => {
+    const h = await fixture(t);
+    h.w.document.dispatchEvent(
+      new h.w.KeyboardEvent("keydown", {
+        key: "k",
+        metaKey: true,
+        bubbles: true,
+      }),
+    );
+    h.input("#workspace-search", "file tools");
+    assert.equal(
+      h.w.document.querySelectorAll("#workspace-results button").length,
+      1,
+    );
+    h.w.document
+      .querySelector("#workspace-search")
+      .dispatchEvent(
+        new h.w.KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    await flush();
+    assert.match(
+      h.w.document.querySelector("#content").textContent,
+      /Make your files work/,
+    );
+    assert.equal(h.w.document.querySelector("#modal").open, false);
+  },
+);
