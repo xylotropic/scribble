@@ -271,7 +271,9 @@ function showModal(title, html, onSubmit) {
     try {
       await onSubmit(values);
       dialog.close();
-    } catch {}
+    } catch (error) {
+      toast(error.message || "Unable to save");
+    }
   });
   dialog.showModal();
 }
@@ -493,7 +495,7 @@ function renderShortcuts() {
   return `${heading("A phrase. An action.", "Your voice is a shortcut.", "Search the web, launch an app, or open a folder. Built-in shortcuts work without an AI provider.", button("Add shortcut", "add-item", "plus", "primary", 'data-kind="shortcuts"'))}<div class="banner">Say “google best coffee near me” while dictating. Scribble routes the phrase instead of typing it.</div><div class="card">${state.shortcuts.map((s) => `<div class="list-row"><span class="list-icon">${icon(s.type === "folder" ? "folder" : "shortcut")}</span><div class="body"><strong>${esc(s.name || s.trigger)}</strong><p><span class="shortcut-trigger">${esc(s.trigger)}</span> ${esc(s.target === "navigate" ? "Open a spoken website" : s.target === "folder" ? "Open a common folder" : s.target)}</p></div>${s.builtin ? '<span class="badge">BUILT-IN</span>' : ""}<input type="checkbox" data-toggle-kind="shortcuts" data-id="${s.id}" ${s.enabled !== false ? "checked" : ""} aria-label="Enable ${esc(s.name)}">${!s.builtin ? button("", "edit-item", "edit", "ghost icon", `data-kind="shortcuts" data-id="${s.id}"`) + button("", "delete", "trash", "ghost icon danger", `data-kind="shortcuts" data-id="${s.id}"`) : ""}</div>`).join("")}</div><div class="card"><h3>Try a shortcut</h3><div class="row"><input class="inline-input" id="shortcut-test" placeholder="google public hiking trails">${button("Run", "test-shortcut", "play")}</div><p class="tip">Running a shortcut opens the selected app, folder, or browser destination.</p></div>`;
 }
 function renderCommand() {
-  return `${heading("Say what should happen", "Command Mode.", "Transform selected text, set a timer, or ask your own language model. Review a result before inserting it.")}<div class="card"><p class="eyebrow">Hold ⌥ ⌃ Space for a voice command</p><label class="field">What would you like to do?<input id="command-text" value="${esc(commandDraft)}" placeholder="Make this more concise, set a timer for 5 minutes…"></label>${area("command-context", "Text to work with", commandTextContext, "Leave empty to use the selected text or clipboard.")}<div class="row wrap">${["Clean up", "Formal", "Polish", "Summarize", "Bullets", "Email"].map((label) => button(label, "command-preset", "", "small", `data-preset="${label}"`)).join("")}</div><div class="row">${button("Choose context files", "command-files", "upload")}${commandAttachments.sources.length ? button("Clear files", "clear-command-files", "close", "ghost") + `<span class="muted">${commandAttachments.sources.map((source) => esc(source.name)).join(", ")}</span>` : ""}${button("Run command", "run-command", "spark", "primary")}${button("Speak a command", "record-command", "mic")}<span class="muted">Local utilities are ready. AI commands use your configured provider.</span></div>${commandResult ? `<div class="command-panel"><div class="command-result" id="command-result" tabindex="0">${esc(commandResult.text)}</div><div class="row">${button("Copy", "copy-command", "copy")}${commandResult.kind === "text" ? button("Insert", "paste-command", "arrow", "primary") : ""}</div>${commandResult.kind === "text" ? `<label class="field">Refine this result<input id="refine-command" placeholder="Make it shorter, change the tone…"></label>${button("Refine", "refine-command", "spark", "small")}` : ""}<p class="smallprint">Focus the result and press Tab to insert, or Escape to dismiss.</p></div>` : ""}</div>${state.timers.length ? `<div class="section-heading"><h2>Timers</h2></div><div class="grid three">${state.timers.map((t) => `<div class="card"><h3>${esc(t.title)}</h3><p class="number">${clock(Math.max(0, (t.endsAt - Date.now()) / 1000))}</p>${button("Cancel", "cancel-timer", "close", "small", `data-id="${t.id}"`)}</div>`).join("")}</div>` : ""}<div class="section-heading"><h2>A few things to try</h2></div><div class="grid three">${[
+  return `${heading("Say what should happen", "Command Mode.", "Transform selected text, set a timer, or ask your own language model. Review a result before inserting it.")}<div class="card"><p class="eyebrow">Hold ⌥ ⌃ Space for a voice command</p><label class="field">What would you like to do?<input id="command-text" value="${esc(commandDraft)}" placeholder="Make this more concise, set a timer for 5 minutes…"></label>${area("command-context", "Text to work with", commandTextContext, "Leave empty to use the selected text or clipboard.")}<div class="row wrap">${["Clean up", "Formal", "Polish", "Summarize", "Bullets", "Email"].map((label) => button(label, "command-preset", "", "small", `data-preset="${label}"`)).join("")}</div><div class="row">${button("Choose context files", "command-files", "upload")}${button("Capture screen context", "command-screen", "image")}${commandAttachments.sources.length ? button("Clear files", "clear-command-files", "close", "ghost") + `<span class="muted">${commandAttachments.sources.map((source) => esc(source.name)).join(", ")}</span>` : ""}${button("Run command", "run-command", "spark", "primary")}${button("Speak a command", "record-command", "mic")}<span class="muted">Local utilities are ready. AI commands use your configured provider.</span></div>${commandResult ? `<div class="command-panel"><div class="command-result" id="command-result" tabindex="0">${esc(commandResult.text)}</div><div class="row">${button("Copy", "copy-command", "copy")}${commandResult.kind === "text" ? button("Insert", "paste-command", "arrow", "primary") : ""}</div>${commandResult.kind === "text" ? `<label class="field">Refine this result<input id="refine-command" placeholder="Make it shorter, change the tone…"></label>${button("Refine", "refine-command", "spark", "small")}` : ""}<p class="smallprint">Focus the result and press Tab to insert, or Escape to dismiss.</p></div>` : ""}</div>${state.timers.length ? `<div class="section-heading"><h2>Timers</h2></div><div class="grid three">${state.timers.map((t) => `<div class="card"><h3>${esc(t.title)}</h3><p class="number">${clock(Math.max(0, (t.endsAt - Date.now()) / 1000))}</p>${button("Cancel", "cancel-timer", "close", "small", `data-id="${t.id}"`)}</div>`).join("")}</div>` : ""}<div class="section-heading"><h2>A few things to try</h2></div><div class="grid three">${[
     [
       "clock",
       "“Set a timer for 5 minutes”",
@@ -1588,6 +1590,41 @@ document.addEventListener("click", async (e) => {
       } finally {
         b.disabled = false;
       }
+      return;
+    }
+    if (a === "command-screen") {
+      const screens = await request("screen-context");
+      if (!screens.length)
+        throw Error(
+          "No screen image available. Check Screen Recording permission.",
+        );
+      showModal(
+        "Choose screen context",
+        `<p class="muted">Only the selected preview is attached. Running the command sends it to your configured AI provider. Use a vision-capable model.</p><label class="field">Screen<select name="screenIndex">${screens.map((screen, index) => `<option value="${index}">${esc(screen.name)}</option>`).join("")}</select></label><div>${screens.map((screen) => `<figure><figcaption>${esc(screen.name)}</figcaption><img alt="Screen context preview" style="max-width:100%" src="${esc(screen.image)}"></figure>`).join("")}</div>`,
+        async (values) => {
+          const screen = screens[Number(values.screenIndex)];
+          const match = screen?.image.match(
+            /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/,
+          );
+          if (!match)
+            throw Error("Screen capture did not return a usable image");
+          if (commandAttachments.images.length >= 5)
+            throw Error("Remove an image before adding another screen");
+          commandAttachments = {
+            ...commandAttachments,
+            images: [
+              ...commandAttachments.images,
+              { mimeType: match[1], data: match[2] },
+            ],
+            sources: [
+              ...commandAttachments.sources,
+              { name: screen.name + " (screen preview)", type: "image" },
+            ],
+          };
+          render();
+        },
+      );
+      $("#modal button[type=submit]").textContent = "Attach selected screen";
       return;
     }
     if (a === "command-files") {

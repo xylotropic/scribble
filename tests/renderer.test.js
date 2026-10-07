@@ -14,7 +14,10 @@ const { SETTINGS } = require("../src/main/store");
 const wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   flush = () => wait(15),
   clone = (x) => JSON.parse(JSON.stringify(x));
-async function fixture(t, { notes = [], mediaPromise, commandFiles } = {}) {
+async function fixture(
+  t,
+  { notes = [], mediaPromise, commandFiles, screens = [] } = {},
+) {
   const dom = new JSDOM(
     fs.readFileSync(path.join(__dirname, "../src/renderer/index.html"), "utf8"),
     {
@@ -96,6 +99,7 @@ async function fixture(t, { notes = [], mediaPromise, commandFiles } = {}) {
         emit("state", data);
         return true;
       }
+      if (action === "screen-context") return clone(screens);
       if (action === "choose-command-files")
         return clone(commandFiles || { text: "", images: [], sources: [] });
       if (action === "command") return { kind: "text", text: "fixture answer" };
@@ -504,5 +508,45 @@ test(
     const call = h.calls.find((c) => c.action === "command");
     assert.deepEqual(clone(call.args.attachments), files);
     assert.equal(call.args.context, "Keep the owner explicit.");
+  },
+);
+
+test(
+  "Screen context attaches only the explicitly selected preview",
+  options,
+  async (t) => {
+    const h = await fixture(t, {
+      screens: [
+        {
+          id: "screen:0",
+          name: "First display",
+          image: "data:image/png;base64,YQ==",
+        },
+        {
+          id: "screen:1",
+          name: "Second display",
+          image: "data:image/png;base64,Yg==",
+        },
+      ],
+    });
+    await h.click('[data-page="command"]');
+    h.input("#command-text", "Describe this screen");
+    await h.click('[data-action="command-screen"]');
+    assert.equal(h.calls.filter((c) => c.action === "command").length, 0);
+    h.w.document.querySelector('[name="screenIndex"]').value = "1";
+    await h.submit();
+    assert.equal(
+      h.w.document.querySelector("#command-text").value,
+      "Describe this screen",
+    );
+    await h.click('[data-action="run-command"]');
+    const call = h.calls.find((c) => c.action === "command");
+    assert.deepEqual(clone(call.args.attachments.images), [
+      { mimeType: "image/png", data: "Yg==" },
+    ]);
+    assert.equal(
+      call.args.attachments.sources[0].name,
+      "Second display (screen preview)",
+    );
   },
 );

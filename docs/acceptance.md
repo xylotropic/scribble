@@ -94,3 +94,8 @@ Public Vowen engine coverage exceeds a Whisper-only implementation. NVIDIA's [Pa
 - File-command parsing now routes explicit conversion, compression, palette, PDF and archive requests into real file dialogs and utility execution. Cancellation returns a cancelled result; saved results include the output path and any compression size notice. A root integration test proves routing without AI simulation.
 - Current full suite: 184 tests, 179 passed, five optional live tests skipped. Production dependency audit reports zero vulnerabilities. These checks do not establish the remaining desktop acceptance gates.
 - The rebuilt Apple Silicon application passes strict deep ad-hoc signature verification. The subsequent CLI local-model routing correction is tested in source and requires the next package refresh.
+
+### Public clone and screen context
+
+- Public commit `7ccd035df3016920b759743fd9407fbcc4e96ba3` was cloned into a new directory. `npm ci`, native bridge compilation and documented FFmpeg source setup succeeded. The resulting clone passed 179 tests with five optional live tests skipped.
+- Command Mode now previews available screen images and attaches only the user-selected preview. A renderer interaction test verifies draft preservation, no premature command dispatch, and the selected image in the eventual command request. Actual screen permission, region cropping and live vision inference remain unverified or incomplete.
