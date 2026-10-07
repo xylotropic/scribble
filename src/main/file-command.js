@@ -30,10 +30,19 @@ function parseFileCommand(text) {
     command.match(
       /^convert (?:image|audio|video|config|configuration|file|files) to (jpg|jpeg|png|webp|wav|mp3|m4a|opus|mp4|webm|json|yaml|yml|toml)$/,
     );
+  const explicitConversion = command.match(/^(?:convert|change|turn) (?:this |these |the selected )?(?:image|images|audio|video|file|files|config|configuration) from (jpg|jpeg|png|webp|wav|mp3|m4a|opus|mp4|webm|json|yaml|yml|toml) (?:to|into) (jpg|jpeg|png|webp|wav|mp3|m4a|opus|mp4|webm|json|yaml|yml|toml)$/);
+  if (explicitConversion) {
+    const [,from,to] = explicitConversion;
+    if (formats[from] !== formats[to]) return null;
+    const normalize = value => value.replace("jpeg", "jpg").replace("yml", "yaml");
+    return {operation:formats[to],options:{format:normalize(to),...(formats[to] === "config-convert" ? {from:normalize(from)} : {})}};
+  }
   if (conversion) {
     const format = conversion[1].replace("jpeg", "jpg").replace("yml", "yaml");
     return { operation: formats[conversion[1]], options: { format } };
   }
+  const textMarkdown = command.match(/^(?:convert|make|turn) (?:this |these |the selected )?(?:text|text file|text files)(?: to| into| as) markdown(?:,? (without (?:a |the )?(?:first[- ]line )?heading|(?:don't|do not) (?:make|turn) (?:the )?first line (?:into )?(?:a )?heading))?$/);
+  if (textMarkdown) return { operation: "text-markdown", options: textMarkdown[1] ? { firstLineHeading: false } : {} };
   const commands = [
     [
       /^(?:compress|optimize) (?:this |the selected )?(?:image|photo)$/,

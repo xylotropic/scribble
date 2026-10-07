@@ -248,11 +248,30 @@ test("Markdown PDF supports headings, wrapping and Unicode with a real font", ()
       operation: "text-markdown",
       files: [input],
       output: md,
+      options: { firstLineHeading: false },
     });
     assert.equal(
       await fs.readFile(md, "utf8"),
       await fs.readFile(input, "utf8"),
     );
+  }));
+test("text to Markdown turns only the first line into a heading and preserves remaining bytes", () =>
+  fixture(async dir => {
+    const input=path.join(dir,"notes.txt");
+    for (const [index,text] of ["Project notes\r\nKeep this **exact**\r\n", "日本語\nSecond line\n", "Single line", "", "\nBlank first line", "  \r\nWhitespace first line"].entries()) {
+      await fs.writeFile(input,text);
+      const output=path.join(dir,`default-${index}.md`);
+      const result=await performUtility({operation:"text-markdown",files:[input],output});
+      const heading=!!text.split(/\r\n|\n|\r/,1)[0].trim();
+      assert.equal(await fs.readFile(output,"utf8"),heading ? "# "+text : text);
+      assert.equal(result.details.firstLineHeading,heading);
+      const plain=path.join(dir,`plain-${index}.md`);
+      await performUtility({operation:"text-markdown",files:[input],output:plain,options:{firstLineHeading:false}});
+      assert.equal(await fs.readFile(plain,"utf8"),text);
+    }
+    const invalid=path.join(dir,"invalid.md");
+    await assert.rejects(performUtility({operation:"text-markdown",files:[input],output:invalid,options:{firstLineHeading:"false"}}),/heading must/);
+    await assert.rejects(fs.access(invalid));
   }));
 test("outputs never replace inputs and overwriting requires an explicit option", () =>
   fixture(async (dir) => {
@@ -280,7 +299,7 @@ test("outputs never replace inputs and overwriting requires an explicit option",
       output,
       options: { overwrite: true },
     });
-    assert.equal(await fs.readFile(output, "utf8"), "new");
+    assert.equal(await fs.readFile(output, "utf8"), "# new");
     const link = path.join(dir, "hardlink.md");
     await fs.link(input, link);
     await assert.rejects(

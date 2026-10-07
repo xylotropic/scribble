@@ -1,0 +1,42 @@
+{
+  "verifiedAt": "2026-10-07T12:54:29.199Z",
+  "publicCommit": "c53dacfb7d78a2451ac720dfb2c5fb07320940ce",
+  "tree": "71a4c40ce42a4a4c55c166537681af1340d5b26e",
+  "app": "/tmp/scribble-screen-package-20261007/mac-arm64/Scribble.app",
+  "architecture": "arm64",
+  "guard": {
+    "architectures": [
+      "arm64"
+    ],
+    "checkedExecutables": 6
+  },
+  "shippedAsarFilesByteIdentical": 54,
+  "runtimePackageMetadataMatched": [
+    "name",
+    "version",
+    "main",
+    "dependencies"
+  ],
+  "nativeModules": [
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.5.node",
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.7.dylib",
+    "Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node"
+  ],
+  "signature": {
+    "deepStrict": true,
+    "adHoc": true,
+    "hardenedRuntime": true,
+    "notarized": false
+  },
+  "runtimeSourceFilesAndLinksUnchanged": 83,
+  "priorMemoryPackagedRuntimeFilesAndLinksIdentical": 82,
+  "packagedOllamaRelativeLinksChecked": 10,
+  "bridgeAndShareRebuilt": true,
+  "screenPermissionNotice": "Scribble captures meeting system audio when you start a meeting recording and screen images when you enable Command Mode screen context.",
+  "electronDistribution": "Existing cached electron-v44.6.0-darwin-arm64.zip; no runtime downloads/setup/services invoked.",
+  "limitations": [
+    "No GUI launch or microphone/screen capture/provider inference tests.",
+    "Finder AX hierarchy and native screen region interaction remain unverified on the desktop.",
+    "Ad hoc signed and not notarized."
+  ]
+}

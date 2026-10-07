@@ -821,3 +821,33 @@ test('failed screen cleanup still applies the master setting and unregisters com
  assert.ok(h.nativeCalls.findLast(x=>x.command==='setHotkeys').args.hotkeys.every(x=>x.mode!=='command'));
  await assert.rejects(h.actions.command({text:'describe'}),/disabled/);
 });
+test('typed automatic context retains app, matched tone, language and recent terms privately across refinement',async(t)=>{
+ const prompts=[],models=[];let frontCalls=0,frontName='TextEdit';
+ const h=harness(t,{chat:async(settings,messages)=>{prompts.push(messages[0].content);models.push(settings.aiModel);return 'result';},nativeRequest:async(command)=>{
+ if(command==='frontmost'){frontCalls++;return {pid:9,bundleId:'com.apple.TextEdit',name:frontName};}
+ if(command==='captureCommandContext')return {available:true,pid:9,bundleId:'com.apple.TextEdit',text:'Selected prose',selectedFiles:[]};return {};
+ }});
+ h.store.data.dictionary=Array.from({length:12},(_,i)=>({id:'d'+i,word:'Term'+i,createdAt:new Date(Date.UTC(2026,0,i+1)).toISOString()}));
+ const tone=h.store.upsert('tones',{name:'App tone',apps:['TextEdit'],language:'ja',customInstructions:'Private formal Japanese directive',languageModel:{provider:'ollama',model:'tone-fixture'}});
+ const result=await h.actions.command({text:'draft a response'});
+ h.store.upsert('tones',{...tone,customInstructions:'New unrelated tone',language:'fr',languageModel:{provider:'ollama',model:'changed-model'}});h.store.data.dictionary=[{word:'NewTerm',createdAt:'2099-01-01'}];frontName='Another app';
+ await h.actions.command({text:'make it shorter',reviewId:result.reviewId,historyId:result.historyId});
+ assert.equal(frontCalls,1);assert.deepEqual(models,['tone-fixture','tone-fixture']);assert.equal(prompts[0],prompts[1]);
+ assert.match(prompts[0],/"activeApp":"TextEdit"/);assert.match(prompts[0],/"transcriptionLanguage":"ja"/);assert.match(prompts[0],/Private formal Japanese directive/);assert.match(prompts[0],/"vocabulary":\["Term11","Term10"/);assert.doesNotMatch(prompts[0],/"Term0"|"Term1"|NewTerm/);
+ assert.equal(JSON.stringify(h.store.data.history).includes('Private formal Japanese directive'),false);assert.equal(JSON.stringify(result).includes('tone-fixture'),false);
+});
+test('voice activation keeps explicit hotkey tone and speech settings after tone/global edits',async(t)=>{
+ const speechSettings=[],prompts=[],models=[];
+ const h=harness(t,{transcribe:async(_file,options)=>{speechSettings.push(options);return {text:'draft a response',segments:[],duration:1};},chat:async(settings,messages)=>{models.push(settings.aiModel);prompts.push(messages[0].content);return 'result';},nativeRequest:async(command)=>command==='frontmost'?{pid:9,bundleId:'com.apple.TextEdit',name:'TextEdit'}:command==='captureCommandContext'?{available:true,pid:9,bundleId:'com.apple.TextEdit',text:'Selected text',selectedFiles:[]}: {}});
+ const matched=h.store.upsert('tones',{name:'App default',apps:['TextEdit'],customInstructions:'App default directive'});
+ const override=h.store.upsert('tones',{name:'Hotkey tone',language:'ja',modelId:'small',customInstructions:'Private hotkey tone',languageModel:{provider:'ollama',model:'hotkey-model'}});
+ await h.beginRecording('command',override.id);
+ h.store.upsert('tones',{...override,language:'fr',modelId:'tiny',customInstructions:'Changed directive'});h.store.updateSettings({language:'en',aiModel:'new-global-model',pinnedToneId:matched.id});
+ await h.actions['save-recording']({bytes:Buffer.from('audio'),mode:'command'});
+ assert.equal(speechSettings[0].language,'ja');assert.equal(speechSettings[0].modelId,'small');assert.deepEqual(models,['hotkey-model']);assert.match(prompts[0],/Private hotkey tone/);assert.doesNotMatch(prompts[0],/Changed directive|App default directive/);
+});
+test('unavailable active app stays unknown and incompatible speech language is normalized in the captured command context',async(t)=>{
+ let prompt;const h=harness(t,{models:[{id:'base.en',englishOnly:true}],chat:async(_s,m)=>{prompt=m[0].content;return 'result';},nativeRequest:async()=>({})});
+ h.store.data.settings.language='ja';await h.actions.command({text:'draft a response'});
+ assert.match(prompt,/"activeApp":null/);assert.match(prompt,/"transcriptionLanguage":"auto"/);assert.equal(h.store.data.settings.language,'ja');
+});

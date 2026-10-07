@@ -478,8 +478,12 @@ async function beginRecording(mode = "dictation", toneId) {
     recordTarget = null;
     return;
   }
-  let commandContext = null;
-  try { if(mode === "command") commandContext = await captureFileCommandContext() || {text:"",files:[]};
+  let commandContext = null, commandAutomatic = null;
+  try {
+    if (mode === "command") {
+      commandAutomatic = captureAutomaticCommandContext({...front,toneId});
+      commandContext = await captureFileCommandContext() || {text:"",files:[]};
+    }
     if(commandContext?.pid && front.pid && (commandContext.pid!==front.pid || commandContext.bundleId!==front.bundleId)) throw Error("The active application changed during command activation"); }
   catch(error) { if(recordTarget === reservation) recordTarget=null; throw error; }
   if (recordTarget !== reservation) return;
@@ -490,7 +494,7 @@ async function beginRecording(mode = "dictation", toneId) {
     if (recordTarget !== reservation) { await commandScreen?.cancel(recordingToken); return; }
     if (mode === "command") assertCommandEnabled();
   } catch (error) { if (recordTarget === reservation) recordTarget = null; throw error; }
-  recordTarget = { ...front, toneId, commandTarget, commandContext, recordingToken, mode, screenCapture: mode === "command" && screenEnabled() };
+  recordTarget = { ...front, toneId, commandTarget, commandContext, commandAutomatic, recordingToken, mode, screenCapture: mode === "command" && screenEnabled() };
   activeMode = mode;
   emit("recording-control", { action: "start", mode, recordingToken });
   indicator("starting", "Starting microphone…");
@@ -543,6 +547,12 @@ function resolveCurrentTone(front) {
     { app: front?.bundleId, url: front?.url, hotkeyToneId: front?.toneId },
     store.data.settings,
   );
+}
+function captureAutomaticCommandContext(front) {
+  const resolution = resolveCurrentTone(front);
+  const settings = applyTone(store.data.settings, front);
+  Object.assign(settings, require("./speech-preferences").normalizeSpeechPreferences(settings, speech.listModels()));
+  return require("./command-automatic-context").captureContext({settings,dictionary:store.data.dictionary,front:front || {},resolution});
 }
 function applyTone(settings, front) {
   const resolution = resolveCurrentTone(front);
@@ -760,7 +770,7 @@ async function captureCommandTarget(expected = null) {
   return target?.token && (!expected || !Number.isInteger(expected.pid) || (target.pid === expected.pid && target.bundleId === expected.bundleId)) && target.bundleId !== "org.scribble.voice"
     ? { token: target.token, expiresAt: Date.now() + 600000 } : null;
 }
-function attachCommandReview(result, target, captured = null, images = []) {
+function attachCommandReview(result, target, captured = null, images = [], automatic = null) {
   if (result.kind !== "text") return result;
   if (typeof result.text !== "string" || result.text.length > 100000)
     throw Error("Command result is too large or invalid");
@@ -775,7 +785,7 @@ function attachCommandReview(result, target, captured = null, images = []) {
   }
   result.reviewId = crypto.randomUUID();
   result.canInsert = !!target?.token && target.expiresAt > Date.now();
-  commandReviews.set(result.reviewId, { result, images: mergeImages(images), context: captured, target: result.canInsert ? target : null,
+  commandReviews.set(result.reviewId, { result, images: mergeImages(images), automatic, context: captured, target: result.canInsert ? target : null,
     expiresAt: target?.expiresAt || Date.now() + 600000 });
   expireCommandReviews();
   return result;
@@ -885,7 +895,7 @@ async function launchApplication(name, folder = "") {
     );
   });
 }
-async function runCommand(text, context = "", attachments = {}, captured = null) {
+async function runCommand(text, context = "", attachments = {}, captured = null, automatic = null) {
   assertCommandEnabled();
   const fileCommand = require("./file-command").parseFileCommand(text);
   if (fileCommand) {
@@ -987,19 +997,21 @@ async function runCommand(text, context = "", attachments = {}, captured = null)
     else if (parsed.action === "lowercase") result = target.toLocaleLowerCase();
     else result = target.split(parsed.find).join(parsed.replacement);
   } else {
-    const memory = require("./memory-context").memoryContext(store.data.memory, store.data.settings);
+    automatic ||= captureAutomaticCommandContext(null);
+    const commandSettings = automatic.settings;
+    const memory = require("./memory-context").memoryContext(store.data.memory, commandSettings);
     result = await chat(
-      store.data.settings,
+      commandSettings,
       [
         {
           role: "system",
           content:
-            "You are Scribble, a precise writing assistant. Follow the user command using the provided text. Return only the requested final text. Never invent successful system actions. Reference material:\n" +
+            "You are Scribble, a precise writing assistant. Follow the user command using the provided text. Return only the requested final text. Never invent successful system actions." + require("./command-automatic-context").promptContext(automatic) + "\nReference material:\n" +
             memory,
         },
         { role: "user", content: `Command: ${text}\n\nText:\n${target}${captured?.files?.length ? "\n\nSelected file paths (context only; no file action has run):\n" + JSON.stringify(captured.files.map(file=>file.path)) : ""}` },
       ],
-      apiKey(),
+      "",
       {
         signal: activeProcess?.controller.signal,
         images: attachments.images || [],
@@ -1061,7 +1073,7 @@ async function transcribeAndProcess(
     throw Error("Unknown file speech option");
   store.validateSettings(speechOptions);
   const settings = {
-    ...applyTone(store.data.settings, front),
+    ...(kind === "command" && front?.commandAutomatic ? front.commandAutomatic.settings : applyTone(store.data.settings, front)),
     ...speechOptions,
   };
   Object.assign(
@@ -1155,9 +1167,9 @@ async function transcribeAndProcess(
     speechProvider: settings.speechProvider,
   };
   if (kind === "command") {
-    const output = await runCommand(text, "", attachments, recordTarget?.commandContext);
+    const output = await runCommand(text, "", attachments, recordTarget?.commandContext, front?.commandAutomatic);
     assertCommandEnabled();
-    const command = attachCommandReview(output, recordTarget?.commandTarget, recordTarget?.commandContext, attachments.images || []);
+    const command = attachCommandReview(output, recordTarget?.commandTarget, recordTarget?.commandContext, attachments.images || [], front?.commandAutomatic);
     entry.text = command.text;
     entry.command = text;
     entry.commandResult = command;
@@ -1888,7 +1900,11 @@ const actions = {
     const job = {kind:"command",controller:new AbortController(),token:crypto.randomUUID()};
     activeProcess = job;
     try {
+    const front = reviewId ? null : await native.request("frontmost").catch(() => ({}));
+    assertCommandEnabled();
+    const automatic = reviewId ? prior.automatic : captureAutomaticCommandContext(front);
     const captured = reviewId ? (prior?.context || {text:"",files:[]}) : (await captureFileCommandContext() || {text:"",files:[]});
+    if (captured?.pid && front?.pid && (captured.pid !== front.pid || captured.bundleId !== front.bundleId)) throw Error("The active application changed during command activation");
     const target = reviewId ? (prior?.expiresAt > Date.now() ? prior.target : null) : await captureCommandTarget(captured);
     assertCommandEnabled();
     let capturedImages = prior?.images || [];
@@ -1903,9 +1919,9 @@ const actions = {
     }
     assertCommandEnabled();
     attachments = {...attachments,images:mergeImages(capturedImages,attachments.images || [])};
-    const command = await runCommand(text, String(context || ""), attachments, captured);
+    const command = await runCommand(text, String(context || ""), attachments, captured, automatic);
     assertCommandEnabled();
-    const result = attachCommandReview(command, target, captured, attachments.images);
+    const result = attachCommandReview(command, target, captured, attachments.images, automatic);
     if (reviewId) commandReviews.delete(reviewId);
     if (!store.data.settings.saveHistory) return result;
     const revision = {

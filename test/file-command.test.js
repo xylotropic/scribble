@@ -1,7 +1,17 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { parseFileCommand } = require("../src/main/file-command");
+test("text to Markdown supports plural selection and explicit heading opt-out", () => {
+  assert.deepEqual(parseFileCommand("Convert these text files to Markdown"), {operation:"text-markdown",options:{}});
+  for (const command of ["convert this text to markdown without a heading", "turn these text files into markdown, do not make the first line a heading", "make text as markdown without a first-line heading"])
+    assert.deepEqual(parseFileCommand(command), {operation:"text-markdown",options:{firstLineHeading:false}});
+  assert.equal(parseFileCommand("convert text to markdown without a heading and upload it"), null);
+});
 test("literal conversion commands select explicit file formats", () => {
+  assert.deepEqual(parseFileCommand("Convert this image from JPG to PNG"), {operation:"image-convert",options:{format:"png"}});
+  assert.deepEqual(parseFileCommand("Convert these files from YML to JSON"), {operation:"config-convert",options:{from:"yaml",format:"json"}});
+  assert.equal(parseFileCommand("convert this file from mp3 to png"), null);
+  assert.equal(parseFileCommand("convert this image from jpg to png and upload it"), null);
   assert.deepEqual(parseFileCommand("Make this a PNG"), {
     operation: "image-convert",
     options: { format: "png" },

@@ -1,0 +1,11 @@
+# Automatic command context
+
+AI writing commands receive the ten most recently added dictionary terms, the active app name when the native helper knows it, the matched Tone directive and the transcription language. Dictionary recency uses creation time, never edit time. Equal dates preserve stored order; undated legacy entries follow dated additions in their stored order. Unavailable app names remain null.
+
+Voice activation resolves an explicit hotkey Tone before app rules and retains its speech and AI settings. Typed commands capture the active app once. Result refinements reuse the original private context and provider choices even if the dictionary, Tone or active app changes afterward. Relevant settings are copied without credentials, hotkeys, microphone labels or UI history. Provider credentials are fetched separately when needed. Current enabled Memory summaries retain their existing behavior.
+
+This snapshot is separate from the existing file-attachment reader. Text, PDF and image attachment preparation remains available. Private context is excluded from public result objects and history metadata. The context goes to the configured AI provider with the requested command; it is not a claim that a file or system action succeeded.
+
+Text-to-Markdown conversion now makes a nonblank first line a heading by default and preserves the remaining text and line endings. An empty or whitespace-only first line remains unchanged. Say “without a heading” or “do not make the first line a heading” to preserve the input, or pass `firstLineHeading: false` to the utility. Conversion parsing also accepts explicit “from JPG to PNG” and same-family source/target formats already supported by the engine. Config conversion passes the spoken source format to its parser; unsupported target formats remain unavailable.
+
+Tests cover dictionary recency and legacy ordering, immutable snapshots and credential exclusion, app and hotkey Tone selection, settings changes during recording, refinement stability, unknown apps, speech-language normalization, preserved attachment preparation, heading opt-out and actual UTF-8 output. Live app selection, microphone recording and insertion still need desktop acceptance.

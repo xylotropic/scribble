@@ -1,0 +1,390 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-10-07T12:54:26.992Z",
+  "scope": "Isolated Intel build and static verification only; no Intel execution, inference, Rosetta, GUI or service changes",
+  "buildCheckout": "/tmp/scribble-intel-c53dacf-source",
+  "publicCommit": "c53dacfb7d78a2451ac720dfb2c5fb07320940ce",
+  "sourceTree": "71a4c40ce42a4a4c55c166537681af1340d5b26e",
+  "sourceClean": true,
+  "outputApp": "/tmp/scribble-intel-c53dacf-output/mac/Scribble.app",
+  "targetArchitecture": "x64",
+  "dependencyReuse": {
+    "root": "/tmp/scribble-intel-package/node_modules",
+    "filesByteIdentical": 12686,
+    "lockfileSHA256": "054e354e8ffe13d2c5da2d91a0e4a4b9cfb7a6c519f1a2c7dc1f8c3f338a4e81",
+    "oldLockfileSHA256": "054e354e8ffe13d2c5da2d91a0e4a4b9cfb7a6c519f1a2c7dc1f8c3f338a4e81",
+    "npmRebuild": false,
+    "noInstallOrDownload": true
+  },
+  "electron": {
+    "version": "44.6.0",
+    "cachedZip": "/Users/floydkorzan-mac-mini/Library/Caches/electron/8ed3ed5a704bf2ea4aac1ece9f050d2f11422ac8430103e9efbf921b4ea38d8c/electron-v44.6.0-darwin-x64.zip",
+    "cachedZipSHA256": "25076a029742bb6bc4a1110db208658837c9febb0688a6f34acddcc645bdfb45",
+    "electronDist": "/tmp/scribble-intel-5419146-electron",
+    "cachedArchiveMembersByteIdentical": 273,
+    "cachedArchiveSHA256MatchedPreviousProof": true
+  },
+  "sourceEquivalence": {
+    "shippedFilesByteIdentical": 54,
+    "files": [
+      {
+        "path": "assets/icon.png",
+        "sha256": "3b6cb74d615194116831291854c8233bb7b9d25d6c46f2151d38e0d58c2dc66a"
+      },
+      {
+        "path": "assets/icon.svg",
+        "sha256": "ece2b9aaee4afa6bd3246f18b40781abb1e865293417bf49fa724921557ddefb"
+      },
+      {
+        "path": "assets/tray.png",
+        "sha256": "06ef9c5e91997d2491744fde21a0de5d4236f8b850a7b214e0a2e3a837e3d10e"
+      },
+      {
+        "path": "assets/tray@2x.png",
+        "sha256": "9f27aa7ca0eeeb6a17d27d5dada32d7feeca6a123f40ce672032fff6b398bc23"
+      },
+      {
+        "path": "native/Parakeet/catalog-models.json",
+        "sha256": "b9a9c7f50b003a045b05c5e380a87ee31834722cf446969c64f0153316f10e3c"
+      },
+      {
+        "path": "native/Parakeet/models.json",
+        "sha256": "def8c27e2aca177bbf0eec72a24c7e27b50cf507b703e9faed445aa94fae9f91"
+      },
+      {
+        "path": "scripts/scribble.cjs",
+        "sha256": "0974b5b74f95ef68953d31a896554275b7e96fa521b35e6e35d16fcfc1f2e3de"
+      },
+      {
+        "path": "src/main/ai-runtime.js",
+        "sha256": "9915340a86175dba56b2885412e6316e137cae0850d28fea0b86592dbe95134c"
+      },
+      {
+        "path": "src/main/ai-utility.js",
+        "sha256": "a85fd9d8f3a901b24e5e8213de7f0c9df100dfb3e65dbba776423d7d0869b4f2"
+      },
+      {
+        "path": "src/main/ai.js",
+        "sha256": "9ed182b62fa7538466762a2647766472379994811b798fb37ddc181f9b8bde22"
+      },
+      {
+        "path": "src/main/browser-catalog.js",
+        "sha256": "e1555e0d68d87a4991a70bc5cb25235fdf7368ce6266df25db7ba2ebc8f20d86"
+      },
+      {
+        "path": "src/main/browser-launch.js",
+        "sha256": "2818718ba53cf2aced84211766dc48ae573f66e98b711c58f367daa8d4861100"
+      },
+      {
+        "path": "src/main/catalog-engine.js",
+        "sha256": "fb15d7ea6489823902f24946c88969914ed47b4171046e76558c15620332115a"
+      },
+      {
+        "path": "src/main/cloud-ai.js",
+        "sha256": "82cff1c0a96fa82f428c98a8b3d39464870dae87d9b71cafc0483b72364a113d"
+      },
+      {
+        "path": "src/main/cloud-input.js",
+        "sha256": "1f38b6ddb540cf09b2fd4aff81e9e3f5f9e6eec50608ce0e0fbde4b602aaed8d"
+      },
+      {
+        "path": "src/main/cloud-silence.js",
+        "sha256": "9227dbe1296bea3a713c1283987d6ea37c6ba5102979fc7c35702edc79c7691d"
+      },
+      {
+        "path": "src/main/cloud-speech.js",
+        "sha256": "7cf6a4848e80233e6b244f07202d76532ef5a3523f3f71c9744cd0c30617c734"
+      },
+      {
+        "path": "src/main/command-context.js",
+        "sha256": "8bae04bfbfb78faca69902cbb6fdfbbf0616417a6a09d602f38b3cef9d02e820"
+      },
+      {
+        "path": "src/main/command-screen.js",
+        "sha256": "62104408325d4b53f30a58cedf88cc5a80418cfcf50c6c092f9352772f4d4612"
+      },
+      {
+        "path": "src/main/domain.js",
+        "sha256": "18dd36e7e46ed73cb10338eb917d8fb1295c1a621f2714ff02819263d322bdc2"
+      },
+      {
+        "path": "src/main/ffmpeg.js",
+        "sha256": "6df9092a37a8590e763341bed783a0ec2e17a6eb385120ea334c699afc42174f"
+      },
+      {
+        "path": "src/main/file-command.js",
+        "sha256": "1db2e981d7ba6a5cd823ae475a20de76f83b92384244342b5eca11edad5da54d"
+      },
+      {
+        "path": "src/main/index.js",
+        "sha256": "f7918238b0189d34a300ad8f20b97e68c388f7cc3d10ed816872b5202714a315"
+      },
+      {
+        "path": "src/main/memory-context.js",
+        "sha256": "e1b111412055d6c0c8f91fa7d35c491fa895b287bf443167fd51d5dfee7bf3a9"
+      },
+      {
+        "path": "src/main/memory-docx.js",
+        "sha256": "bd666d4416d32f82a536d59a12b6b091f68d6bd3d3cda5f32a3a6dec60a159b2"
+      },
+      {
+        "path": "src/main/memory-index.js",
+        "sha256": "8e57e68dd8d041b3e4d3c88e72ae373b4a738e3cfff498b28e841d54dd169e9b"
+      },
+      {
+        "path": "src/main/memory-storage.js",
+        "sha256": "00937505ff5936d749846478188f21e7401035353d21166ee081d65a57f8e345"
+      },
+      {
+        "path": "src/main/memory-summary.js",
+        "sha256": "381c95c7961f9032a70646b4779b288d1684a8d0820659dcff9cae235606f3ba"
+      },
+      {
+        "path": "src/main/native-indicator.js",
+        "sha256": "a17ee7014f697a15682268854ad523faf97e5a00193256b715f24f557dd15b27"
+      },
+      {
+        "path": "src/main/native.js",
+        "sha256": "017663f10ec4e5b3d84838423a2293006f7f5fe75ff486f924f8e9e61eb23d06"
+      },
+      {
+        "path": "src/main/network-preferences.js",
+        "sha256": "939a0d0e5ebddd2e18037e0da86b819b0a1284e7b7188de64c39b9bb54da2e28"
+      },
+      {
+        "path": "src/main/overlay-placement.js",
+        "sha256": "5e4dc1a36b8f92a31fce95016f7ce6f5ef8ab819c689af4550f696f20ab07dec"
+      },
+      {
+        "path": "src/main/parakeet.js",
+        "sha256": "b0eb03da12e81807c83055d1401fea2ba93d15b4adf331df5388eeaa914c936c"
+      },
+      {
+        "path": "src/main/preload.js",
+        "sha256": "a515328c7829b1b08fe22128cc27b37ca360bddbdcf543c517f58654f5124b1b"
+      },
+      {
+        "path": "src/main/screen-context.js",
+        "sha256": "68d561a7eb5b0fe15172ee84554ec0511d868844479f612e34e8b555eeb00b94"
+      },
+      {
+        "path": "src/main/shortcut-actions.js",
+        "sha256": "8bf4cb9ccbc3b3d8c50a878c62dbe358cfd24bea27b640712cf38e1e743f3274"
+      },
+      {
+        "path": "src/main/shortcut-execution.js",
+        "sha256": "a6f52391eb2375482a33f367ec914648a711262ef996abe59a345c7d2611f766"
+      },
+      {
+        "path": "src/main/speech-preferences.js",
+        "sha256": "d8c25f5851cdc72505979a12bec9bae9115ecb2a36bf409b735c3ffda79465d1"
+      },
+      {
+        "path": "src/main/speech.js",
+        "sha256": "ca6aadcce9259b1c8673ef048713ad50990b8c1a47e047fe86aab79c35645e19"
+      },
+      {
+        "path": "src/main/store.js",
+        "sha256": "1d46f212704dde055ca865cc7c7ea164a403acb5ae2fb90137ae0bb8351eb09b"
+      },
+      {
+        "path": "src/main/summary-cli.js",
+        "sha256": "f6e0c43aaf48e74169d522c05375c2c9558bafbe9510fe8a20199d24c374800e"
+      },
+      {
+        "path": "src/main/summary.js",
+        "sha256": "43254d3e621e365def4976047df9acfb8ba27f5ec0719338fc2baee68f559081"
+      },
+      {
+        "path": "src/main/tones.js",
+        "sha256": "8cc2e7d2d49788a6e9f8f1067b053c46a527b84a41e633134f03636a8a4cf053"
+      },
+      {
+        "path": "src/main/utilities.js",
+        "sha256": "7a0bc37397396101e30a983ecc2c194747c0c55d86295d06d0fd42a3803a4976"
+      },
+      {
+        "path": "src/main/voice-routing.js",
+        "sha256": "ae92e6caaf65500da19314e6f89244274c41cdfa12818f5abcdeccd10368185d"
+      },
+      {
+        "path": "src/renderer/app.js",
+        "sha256": "6240bf5c837b68aca752bd2b7c435f9b4b051765369126fce702bad9a50f1e38"
+      },
+      {
+        "path": "src/renderer/index.html",
+        "sha256": "a3670cd741918b2509f68e3b05779552ce7ebae9b68317806d7e8c7230502361"
+      },
+      {
+        "path": "src/renderer/overlay.css",
+        "sha256": "11b777661b021e7aa58b96dd41ec23363a050068c66c2581854922717db2b2db"
+      },
+      {
+        "path": "src/renderer/overlay.html",
+        "sha256": "29d7cd98c1156fd1da6ed86daa93854bef41570435d86c18919afc54fad03a2e"
+      },
+      {
+        "path": "src/renderer/overlay.js",
+        "sha256": "53836a79662d42a92e175c14b4e7167cd03c3a1dc1ccc71b860b6025dcf9705a"
+      },
+      {
+        "path": "src/renderer/styles.css",
+        "sha256": "e5a05f9cafa0f9cb0bb0a09d724cd30ab309dd8a5c2384dda3583be25470a9d5"
+      },
+      {
+        "path": "src/shared/form-translations.js",
+        "sha256": "ec9ecdbc1bde2a14f96feea4a016fd9a72de3ab7b9618e21a733a02c568d68a8"
+      },
+      {
+        "path": "src/shared/i18n.js",
+        "sha256": "72b84a88797dcda5d740da31e9d42876eafa24663908de91bec057716264cafc"
+      },
+      {
+        "path": "src/shared/microphone-preferences.js",
+        "sha256": "2296ffc4d8f3a1f07a564bcf2cdf785088caab04b8d37cca109b5185ee2e5561"
+      }
+    ],
+    "packageMetadataMatched": [
+      "name",
+      "version",
+      "main",
+      "dependencies"
+    ],
+    "packageMetadataNote": "Electron-builder strips development/build fields; package.json ASAR byte equality not claimed."
+  },
+  "architectureGuard": {
+    "architectures": [
+      "x86_64"
+    ],
+    "checkedExecutables": 6
+  },
+  "machOInspection": [
+    {
+      "path": "Contents/MacOS/Scribble",
+      "architectures": [
+        "x86_64"
+      ],
+      "sha256": "b828c7e177fa9a901406c52bf55e78013d3c4016a74f3be129beb58ed2bcef02"
+    },
+    {
+      "path": "Contents/Resources/native/scribble-bridge",
+      "architectures": [
+        "x86_64"
+      ],
+      "sha256": "aee87467abb76ec9d20fe439bf68e475442386242f5c8628cae33abc40489e2c"
+    },
+    {
+      "path": "Contents/Resources/native/speech/whisper-cli",
+      "architectures": [
+        "x86_64"
+      ],
+      "sha256": "c7146d0ad74d91de27a787bbafb00aeb1c478747a15bf2a6ed6d336256b00c3d"
+    },
+    {
+      "path": "Contents/Resources/native/ffmpeg",
+      "architectures": [
+        "x86_64"
+      ],
+      "sha256": "8867cf3fa5567d9f6b1f397645ea38833d7565f6cc0aa644aa4345ff57a450f6"
+    },
+    {
+      "path": "Contents/Resources/runtime/ollama/ollama",
+      "architectures": [
+        "x86_64",
+        "arm64"
+      ],
+      "sha256": "9d8ee8964971c91b4faaa84cf61aac9a9d5a568af6629d8fc1d2cb939f9ce07f"
+    },
+    {
+      "path": "Contents/PlugIns/ScribbleShare.appex/Contents/MacOS/ScribbleShare",
+      "architectures": [
+        "x86_64"
+      ],
+      "sha256": "a9001411d63e0ebc6d56d1cba25fc9fee2a23d1b61efc922dda69410a904e71c"
+    },
+    {
+      "path": "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-darwin-x64/lib/sharp-darwin-x64-0.35.5.node",
+      "architectures": [
+        "x86_64"
+      ],
+      "sha256": "93ed8bbb177f3a1396f96b1179f4cd53beeda5e11bc11cd9edd210cb0ec41fed"
+    },
+    {
+      "path": "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-libvips-darwin-x64/lib/libvips-cpp.8.18.7.dylib",
+      "architectures": [
+        "x86_64"
+      ],
+      "sha256": "532f6146f108715693cc38b307bd69a864aca2f2a9c7c4f6fe045d5456fb6a2e"
+    }
+  ],
+  "nativeRebuild": {
+    "sdk": "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk",
+    "architecture": "x86_64",
+    "warningFree": true,
+    "bridgeSourceSHA256": "2d32e860bc5db43f126f2beb5bf482c94d9ef81d16fd1c179d1480556127d834",
+    "shareSourceSHA256": "aa694fa6b970d66436e7404817561ff7e311416facfc22d813afbb653c681d26"
+  },
+  "permissionDescription": "Scribble captures meeting system audio when you start a meeting recording and screen images when you enable Command Mode screen context.",
+  "signature": {
+    "deepStrictVerified": true,
+    "kind": "ad-hoc",
+    "hardenedRuntime": true,
+    "notarized": false,
+    "details": "Executable=/private/tmp/scribble-intel-c53dacf-output/mac/Scribble.app/Contents/MacOS/Scribble\nIdentifier=org.scribble.voice\nFormat=app bundle with Mach-O thin (x86_64)\nCodeDirectory v=20500 size=467 flags=0x10002(adhoc,runtime) hashes=4+7 location=embedded\nVersionPlatform=1\nVersionMin=851968\nVersionSDK=1705216\nHash type=sha256 size=32\nCandidateCDHash sha256=aa3799bde7ec73268284debcf396270279fca40d\nCandidateCDHashFull sha256=aa3799bde7ec73268284debcf396270279fca40dc2e766a45df5975657b564e7\nHash choices=sha256\nCMSDigest=aa3799bde7ec73268284debcf396270279fca40dc2e766a45df5975657b564e7\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=8192\nExecutable Segment flags=0x1\nPage size=4096\nCDHash=aa3799bde7ec73268284debcf396270279fca40d\nSignature=adhoc\nInfo.plist entries=35\nTeamIdentifier=not set\nRuntime Version=26.5.0\nSealed Resources version=2 rules=13 files=142\nInternal requirements count=0 size=12\n"
+  },
+  "runtimes": {
+    "stage": "/tmp/scribble-intel-5419146-runtime",
+    "previousStage": "/tmp/scribble-intel-audit/stage",
+    "originalRuntimeUnchanged": true,
+    "reusedFiles": [
+      {
+        "path": "whisper-cli",
+        "sha256": "f580640947637804174085b9edb56dd7895fd4da0c1e861c7a0dd8df8ab7e116"
+      },
+      {
+        "path": "WHISPER-LICENSE",
+        "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+      },
+      {
+        "path": "ffmpeg",
+        "sha256": "d2f7ab311e8081f7bd401c556207f7bfe62fd9a59b2e3fee801c815cc4692e2c"
+      },
+      {
+        "path": "ffmpeg-build.json",
+        "sha256": "1e3522891b7c8cd93bccd9624590634f14d169bebbcb04c0909940d5197bd13a"
+      }
+    ],
+    "ollama": {
+      "version": "0.40.0",
+      "archiveSHA256": "b490b4925a95c5f3dfcd889e566cf3dcd727848d59057fb00b03f1d6630326dc",
+      "roots": [
+        "/Users/floydkorzan-mac-mini/.local/share/scribble-tools/ollama/0.40.0",
+        "/tmp/scribble-intel-audit/stage/ollama",
+        "/tmp/scribble-intel-5419146-runtime/ollama",
+        "/tmp/scribble-intel-c53dacf-output/mac/Scribble.app/Contents/Resources/runtime/ollama"
+      ],
+      "pinnedFilesChecked": 180,
+      "relativeLinksChecked": 40,
+      "linksVerbatim": true
+    },
+    "parakeet": "Apple Silicon-only helpers omitted; empty resource folder"
+  },
+  "buildLog": "/tmp/scribble-intel-c53dacf-build.log",
+  "previousProof": "/tmp/scribble-intel-5419146-verification.json",
+  "limitations": [
+    "Static Intel verification only; no Intel functional acceptance or inference.",
+    "Ad-hoc package is not notarized.",
+    "Temporary artifacts may be removed."
+  ],
+  "isolatedConfigOverrides": {
+    "validatedAgainstPublicConfig": true,
+    "onlyChanges": [
+      "directories.output",
+      "npmRebuild=false for byte-verified reused dependencies",
+      "electronDist=cached Intel Electron",
+      "extraResources.from=verified Intel runtime stage"
+    ],
+    "configPath": "/tmp/scribble-intel-c53dacf-config.json",
+    "configSHA256": "58de1447495798c689de9fa091baf9affdaa046e6da6a0af192536d9a198902c"
+  }
+}

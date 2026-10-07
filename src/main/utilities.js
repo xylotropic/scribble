@@ -667,8 +667,14 @@ async function performUtility({ operation, files, output, options = {} } = {}) {
       case "text-markdown":
         if (inputs[0].stat.size > LIMITS.configBytes)
           throw new Error("Text input exceeds 16 MB");
-        await fsp.writeFile(temp, await readUTF8(inputs[0].file));
-        details = { format: "md" };
+        if (options.firstLineHeading !== undefined && typeof options.firstLineHeading !== "boolean")
+          throw new Error("First-line heading must be true or false");
+        {
+          const text = await readUTF8(inputs[0].file);
+          const heading = options.firstLineHeading !== false && !!text.split(/\r\n|\n|\r/, 1)[0].trim();
+          await fsp.writeFile(temp, heading ? "# " + text : text);
+          details = { format: "md", firstLineHeading: heading };
+        }
         break;
     }
     if (operation === "archive-extract") {
