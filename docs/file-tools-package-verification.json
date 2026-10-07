@@ -1,0 +1,50 @@
+{
+  "verifiedAt": "2026-10-07T13:15:21.358Z",
+  "publicCommit": "4d7d673a23b95447e5e780fe193d02abe4b11292",
+  "tree": "6e5fe208a01cc08467be3310feba5df0b5d41ae9",
+  "app": "/tmp/scribble-file-tools-package-20261007/mac-arm64/Scribble.app",
+  "architecture": "arm64",
+  "guard": {
+    "architectures": [
+      "arm64"
+    ],
+    "checkedExecutables": 7
+  },
+  "shippedAsarFilesByteIdentical": 57,
+  "runtimePackageMetadataMatched": [
+    "name",
+    "version",
+    "main",
+    "dependencies"
+  ],
+  "nativeModules": [
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.5.node",
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.7.dylib",
+    "Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node"
+  ],
+  "signature": {
+    "deepStrict": true,
+    "adHoc": true,
+    "hardenedRuntime": true,
+    "notarized": false
+  },
+  "runtimeSourceFilesAndLinksUnchanged": 83,
+  "priorScreenPackagedRuntimeFilesAndLinksIdentical": 82,
+  "packagedOllamaRelativeLinksChecked": 10,
+  "bridgeImageCodecAndShareRebuilt": true,
+  "screenPermissionNotice": "Scribble captures meeting system audio when you start a meeting recording and screen images when you enable Command Mode screen context.",
+  "infoPlist": {
+    "NSMicrophoneUsageDescription": "Scribble records your voice for local transcription.",
+    "NSScreenCaptureUsageDescription": "Scribble captures meeting system audio when you start a meeting recording and screen images when you enable Command Mode screen context.",
+    "NSAppleEventsUsageDescription": "Scribble inserts your dictation in the application you are using.",
+    "CFBundleIdentifier": "org.scribble.voice",
+    "CFBundleShortVersionString": "0.1.0",
+    "LSMinimumSystemVersion": "14.0.0"
+  },
+  "electronDistribution": "Existing cached electron-v44.6.0-darwin-arm64.zip; no runtime downloads/setup/services invoked.",
+  "limitations": [
+    "No GUI launch or microphone/screen capture/provider inference tests.",
+    "Finder AX hierarchy and native screen region interaction remain unverified on the desktop.",
+    "Ad hoc signed and not notarized."
+  ]
+}
