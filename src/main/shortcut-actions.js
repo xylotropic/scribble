@@ -1,4 +1,5 @@
 "use strict";
+const { BROWSER_IDS, GECKO_IDS } = require("./browser-catalog");
 const path = require("node:path"),
   os = require("node:os");
 const { resolveWebsite, resolveCommonFolder } = require("./voice-routing");
@@ -42,7 +43,12 @@ function planShortcutActions(
     if (target === "navigate") {
       const url = resolveWebsite(query, "", { allowMailto: true });
       return url
-        ? { actions: [{ type: "websites", urls: [url], profile: "" }], query }
+        ? {
+            actions: [
+              { type: "websites", urls: [url], browser: "chrome", profile: "" },
+            ],
+            query,
+          }
         : null;
     }
     if (target === "folder") {
@@ -68,7 +74,12 @@ function planShortcutActions(
       actions = [{ type: "folders", paths: [target] }];
     else
       actions = [
-        { type: "websites", urls: [target], profile: shortcut.profile || "" },
+        {
+          type: "websites",
+          urls: [target],
+          browser: shortcut.browser || "chrome",
+          profile: shortcut.profile || "",
+        },
       ];
   }
   if (!Array.isArray(actions) || !actions.length || actions.length > 32)
@@ -86,12 +97,22 @@ function planShortcutActions(
       const urls = action.urls.map((value) => resolveWebsite(value, query));
       if (urls.some((url) => url === null)) return null;
       const profile = action.profile === undefined ? "" : action.profile;
+      const browser = action.browser === undefined ? "chrome" : action.browser;
       if (
-        typeof profile !== "string" ||
-        !/^$|^Default$|^Profile [0-9]{1,6}$/.test(profile)
+        typeof browser !== "string" ||
+        !["default", ...BROWSER_IDS].includes(browser) ||
+        typeof profile !== "string"
       )
         return null;
-      plan.push({ type: "websites", urls, profile });
+      if (
+        ["default", "safari"].includes(browser)
+          ? profile !== ""
+          : GECKO_IDS.includes(browser)
+            ? !/^$|^Profile[0-9]{1,6}$/.test(profile)
+            : !/^$|^Default$|^Profile [0-9]{1,6}$/.test(profile)
+      )
+        return null;
+      plan.push({ type: "websites", urls, browser, profile });
     } else if (action.type === "application") {
       const name = safeString(action.name, 200);
       if (!name) return null;

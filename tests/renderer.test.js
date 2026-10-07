@@ -16,7 +16,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   clone = (x) => JSON.parse(JSON.stringify(x));
 async function fixture(
   t,
-  { notes = [], shortcuts = [], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
+  { notes = [], shortcuts = [], browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
 ) {
   const dom = new JSDOM(
     fs.readFileSync(path.join(__dirname, "../src/renderer/index.html"), "utf8"),
@@ -78,6 +78,7 @@ async function fixture(
     async request(action, args = {}) {
       calls.push({ action, args });
       if (action === "state") return clone(data);
+      if (action === "browser-catalog") return browserPromise ? await browserPromise : clone(browserCatalogue);
       if (action === "permissions") return clone(setupPermissions);
       if (action === "preferences") {
         Object.assign(data.settings, args);
@@ -977,11 +978,11 @@ test('shortcut numbered blocks add, reorder and remove without losing entered va
   assert.deepEqual([...h.w.document.querySelectorAll('[data-shortcut-action] h3')].map(el=>el.textContent.trim()),['1. Open folders','2. Open websites']);
   assert.equal(h.w.document.querySelector('#modal [name="name"]').value,'Research & notes');await h.submit();
   const saved=clone(h.calls.find(call=>call.action==='save-item').args.item);
-  assert.deepEqual(saved.actions,[{type:'folders',paths:['~/Documents','/Users/floyd/Research & Notes']},{type:'websites',urls:['https://docs.example.com/{{text}}?sort=a&b=1','https://example.org/path'],profile:'Profile 12'}]);
+  assert.deepEqual(saved.actions,[{type:'folders',paths:['~/Documents','/Users/floyd/Research & Notes']},{type:'websites',urls:['https://docs.example.com/{{text}}?sort=a&b=1','https://example.org/path'],browser:'chrome',profile:'Profile 12'}]);
   assert.deepEqual(saved.aliases,['research now','begin research']);assert.equal(saved.trigger,'start research');assert.equal(saved.name,'Research & notes');assert.equal(h.w.document.querySelector('#modal').open,false);
 });
 test('editing each legacy shortcut derives an action while preserving legacy fields and identity',options,async t=>{
-  for(const [type,target,expected]of [['url','https://example.org',{type:'websites',urls:['https://example.org'],profile:'Default'}],['app','TextEdit',{type:'application',name:'TextEdit',folder:''}],['folder','~/Documents',{type:'folders',paths:['~/Documents']}]] ){
+  for(const [type,target,expected]of [['url','https://example.org',{type:'websites',urls:['https://example.org'],browser:'chrome',profile:'Default'}],['app','TextEdit',{type:'application',name:'TextEdit',folder:''}],['folder','~/Documents',{type:'folders',paths:['~/Documents']}]] ){
     const shortcut={id:'legacy',name:'Legacy',trigger:'legacy task',type,target,profile:'Default',enabled:false,aliases:['old alias'],extra:'keep'};
     const h=await fixture(t,{shortcuts:[shortcut]});await h.click('[data-page="shortcuts"]');await h.click('[data-action="edit-item"][data-kind="shortcuts"][data-id="legacy"]');
     assert.equal(h.w.document.querySelectorAll('[data-shortcut-action]').length,1);await h.submit();
@@ -989,16 +990,39 @@ test('editing each legacy shortcut derives an action while preserving legacy fie
   }
 });
 test('editing grouped actions keeps websites, Chrome profile, application folder and path order',options,async t=>{
-  const actions=[{type:'websites',urls:['https://one.example','https://two.example'],profile:'Profile 7'},{type:'application',name:'TextEdit',folder:'~/Documents/Work'},{type:'folders',paths:['/tmp/one','~/Pictures']}];
+  const actions=[{type:'websites',urls:['https://one.example','https://two.example'],browser:'chrome',profile:'Profile 7'},{type:'application',name:'TextEdit',folder:'~/Documents/Work'},{type:'folders',paths:['/tmp/one','~/Pictures']}];
   const h=await fixture(t,{shortcuts:[{id:'multi',name:'My actions',trigger:'my actions',actions,type:'url',target:'https://legacy.example'}]});await h.click('[data-page="shortcuts"]');await h.click('[data-action="edit-item"][data-id="multi"]');
   assert.equal(h.w.document.querySelectorAll('[data-shortcut-action]').length,3);await h.submit();const item=clone(h.calls.find(call=>call.action==='save-item').args.item);assert.deepEqual(item.actions,actions);assert.equal(item.target,'https://legacy.example');
 });
-test('shortcut editor refuses empty, oversized lists and invalid Chrome profile before saving',options,async t=>{
+test('shortcut editor refuses empty and oversized website lists before saving',options,async t=>{
   const h=await fixture(t);await h.click('[data-page="shortcuts"]');await h.click('[data-action="add-item"][data-kind="shortcuts"]');h.input('#modal [name="trigger"]','test');await h.submit();assert.equal(h.calls.filter(x=>x.action==='save-item').length,0);assert.match(h.w.document.querySelector('#toast').textContent,/1 and 32/);
-  await h.click('[data-action="shortcut-action-add"][data-action-type="websites"]');h.input('[data-shortcut-field="urlsText"]','https://example.org');h.input('[data-shortcut-field="profile"]','../Other Profile');await h.submit();assert.match(h.w.document.querySelector('#toast').textContent,/Chrome profile/);assert.equal(h.calls.filter(x=>x.action==='save-item').length,0);
+  await h.click('[data-action="shortcut-action-add"][data-action-type="websites"]');h.input('[data-shortcut-field="urlsText"]','https://example.org');assert.equal(h.w.document.querySelector('[data-shortcut-field="profile"]').tagName,'SELECT');
   h.input('[data-shortcut-field="profile"]','Default');h.input('[data-shortcut-field="urlsText"]',Array.from({length:17},(_,i)=>`https://example.org/${i}`).join('\n'));await h.submit();assert.match(h.w.document.querySelector('#toast').textContent,/1 and 16/);assert.equal(h.calls.filter(x=>x.action==='save-item').length,0);assert.equal(h.w.document.querySelector('#modal').open,true);
 });
 test('shortcut editor caps action blocks at 32 and cancel leaves the source unchanged',options,async t=>{
   const actions=Array.from({length:32},(_,i)=>({type:'application',name:`App ${i}`,folder:''}));const original={id:'full',trigger:'full',actions};const h=await fixture(t,{shortcuts:[original]});await h.click('[data-page="shortcuts"]');await h.click('[data-action="edit-item"][data-id="full"]');assert.equal(h.w.document.querySelectorAll('[data-shortcut-action]').length,32);for(const button of h.w.document.querySelectorAll('[data-action="shortcut-action-add"]'))assert.equal(button.disabled,true);
   await h.click('[data-action="shortcut-action-remove"][data-index="3"]');assert.equal(h.w.document.querySelectorAll('[data-shortcut-action]').length,31);assert.equal(h.w.document.querySelector('[data-action="shortcut-action-add"]').disabled,false);await h.click('#modal [data-action="close-modal"]');assert.equal(h.calls.filter(x=>x.action==='save-item').length,0);assert.deepEqual(h.data.shortcuts,[original]);
+});
+test('browser discovery occurs only when editing shortcuts and browser changes reset only that profile',options,async t=>{
+  const catalogue=[{id:'chrome',name:'Google Chrome',family:'chromium',profiles:[{id:'Profile 7',name:'Work'}]},{id:'firefox',name:'Firefox',family:'gecko',profiles:[{id:'Profile0',name:'Personal Firefox'}]},{id:'safari',name:'Safari',family:'webkit',profiles:[]}];
+  const actions=[{type:'websites',urls:['https://one.example'],browser:'chrome',profile:'Profile 7'},{type:'websites',urls:['https://two.example'],browser:'chrome',profile:'Profile 7'}];const h=await fixture(t,{browserCatalogue:catalogue,shortcuts:[{id:'browsers',trigger:'open things',actions}]});
+  assert.equal(h.calls.filter(x=>x.action==='browser-catalog').length,0);await h.click('[data-page="shortcuts"]');assert.equal(h.calls.filter(x=>x.action==='browser-catalog').length,0);await h.click('[data-action="edit-item"][data-id="browsers"]');assert.equal(h.calls.filter(x=>x.action==='browser-catalog').length,1);
+  const browser=h.w.document.querySelector('[data-shortcut-action="0"] [data-shortcut-field="browser"]');assert.deepEqual([...browser.options].map(x=>x.value),['default','chrome','firefox','safari']);browser.value='firefox';browser.dispatchEvent(new h.w.Event('change',{bubbles:true}));await flush();
+  const profile=h.w.document.querySelector('[data-shortcut-action="0"] [data-shortcut-field="profile"]');assert.equal(profile.value,'');assert.deepEqual([...profile.options].map(x=>[x.value,x.textContent]),[['','Browser default profile'],['Profile0','Personal Firefox']]);assert.equal(h.w.document.querySelector('[data-shortcut-action="1"] [data-shortcut-field="profile"]').value,'Profile 7');profile.value='Profile0';await h.submit();assert.deepEqual(clone(h.calls.find(x=>x.action==='save-item').args.item.actions),[{type:'websites',urls:['https://one.example'],browser:'firefox',profile:'Profile0'},actions[1]]);
+});
+test('unavailable saved browser and profile selections remain visible and unchanged on save',options,async t=>{
+  const actions=[{type:'websites',urls:['https://one.example'],browser:'brave',profile:'Profile 99'},{type:'websites',urls:['https://two.example'],browser:'chrome',profile:'Profile 42'}];const h=await fixture(t,{shortcuts:[{id:'missing',trigger:'missing',actions}]});await h.click('[data-page="shortcuts"]');await h.click('[data-action="edit-item"][data-id="missing"]');
+  const browser=h.w.document.querySelector('[data-shortcut-action="0"] [data-shortcut-field="browser"]');assert.equal(browser.value,'brave');assert.match(browser.selectedOptions[0].textContent,/unavailable/);for(const index of [0,1]){const profile=h.w.document.querySelector(`[data-shortcut-action="${index}"] [data-shortcut-field="profile"]`);assert.equal(profile.value,actions[index].profile);assert.match(profile.selectedOptions[0].textContent,/unavailable/);}
+  await h.click('[data-action="shortcut-action-up"][data-index="1"]');await h.submit();assert.deepEqual(clone(h.calls.find(x=>x.action==='save-item').args.item.actions),[actions[1],actions[0]]);
+});
+test('late browser discovery preserves draft text, focus and explicit system-browser selection',options,async t=>{
+  let resolve;const promise=new Promise(done=>{resolve=done;});const h=await fixture(t,{browserPromise:promise});await h.click('[data-page="shortcuts"]');await h.click('[data-action="add-item"][data-kind="shortcuts"]');h.input('#modal [name="trigger"]','late browser');await h.click('[data-action="shortcut-action-add"][data-action-type="websites"]');const text='https://example.org/{{text}}?a=1&b=2\n\nhttps://two.example';h.input('[data-shortcut-field="urlsText"]',text);
+  const browser=h.w.document.querySelector('[data-shortcut-field="browser"]');browser.value='default';browser.dispatchEvent(new h.w.Event('change',{bubbles:true}));await flush();const textarea=h.w.document.querySelector('[data-shortcut-field="urlsText"]');textarea.focus();textarea.setSelectionRange(5,12);
+  resolve([{id:'chrome',name:'Google Chrome',family:'chromium',profiles:[{id:'Default',name:'Personal'}]}]);await flush();assert.equal(textarea.value,text);assert.equal(h.w.document.activeElement,textarea);assert.equal(textarea.selectionStart,5);assert.equal(textarea.selectionEnd,12);assert.equal(browser.value,'default');assert.equal(h.w.document.querySelector('[data-shortcut-field="profile"]').disabled,true);await h.submit();assert.deepEqual(clone(h.calls.find(x=>x.action==='save-item').args.item.actions),[{type:'websites',urls:['https://example.org/{{text}}?a=1&b=2','https://two.example'],browser:'default',profile:''}]);
+});
+test('browser discovery finishing after close never changes a later modal or persists a shortcut',options,async t=>{
+  let resolve;const promise=new Promise(done=>{resolve=done;});const h=await fixture(t,{browserPromise:promise});await h.click('[data-page="shortcuts"]');await h.click('[data-action="add-item"][data-kind="shortcuts"]');await h.click('#modal [data-action="close-modal"]');await h.click('[data-page="dictionary"]');await h.click('[data-action="add-item"][data-kind="dictionary"]');h.input('#modal [name="word"]','Keep this draft');const before=h.w.document.querySelector('#modal').innerHTML;resolve([{id:'chrome',name:'Google Chrome',family:'chromium',profiles:[]}]);await flush();assert.equal(h.w.document.querySelector('#modal').innerHTML,before);assert.equal(h.w.document.querySelector('#modal [name="word"]').value,'Keep this draft');assert.equal(h.calls.filter(x=>x.action==='save-item').length,0);
+});
+test('browser discovery failure is explicit and retains unavailable existing choices',options,async t=>{
+  let reject;const promise=new Promise((resolve,fail)=>{reject=fail;});const action={type:'websites',urls:['https://example.org'],browser:'chrome',profile:'Profile 7'};const h=await fixture(t,{browserPromise:promise,shortcuts:[{id:'failure',trigger:'failure',actions:[action]}]});await h.click('[data-page="shortcuts"]');await h.click('[data-action="edit-item"][data-id="failure"]');reject(Error('Discovery unavailable'));await flush();assert.match(h.w.document.querySelector('#shortcut-browser-status').textContent,/Discovery unavailable/);assert.equal(h.w.document.querySelector('[data-shortcut-field="profile"]').value,'Profile 7');assert.match(h.w.document.querySelector('[data-shortcut-field="profile"]').selectedOptions[0].textContent,/unavailable/);await h.submit();assert.deepEqual(clone(h.calls.find(x=>x.action==='save-item').args.item.actions),[action]);
 });

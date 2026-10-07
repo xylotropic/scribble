@@ -28,6 +28,7 @@ test("multiple action groups preserve ordering, grouped websites, app folder and
     actions: [
       {
         type: "websites",
+        browser: "chrome",
         urls: ["https://example.com/?q=a%20%26%20b", "https://example.org/"],
         profile: "Profile 2",
       },
@@ -120,4 +121,45 @@ test("custom Website action keeps exact substituted query punctuation", () => {
     "https://example.com/?q=hi!%20%3F",
     "https://example.org/?q=wow!",
   ]);
+});
+
+test("browser ids and family-specific profile tokens validate without requiring installed browser reads", () => {
+  for (const [browser, profile] of [
+    ["chrome", "Default"],
+    ["firefox", "Profile0"],
+    ["safari", ""],
+    ["default", ""],
+    ["arc", "Profile 2"],
+  ]) {
+    const result = plan(
+      {
+        actions: [
+          { type: "websites", urls: ["example.com"], browser, profile },
+        ],
+      },
+      "",
+      opts,
+    );
+    assert.equal(result.actions[0].browser, browser);
+    assert.equal(result.actions[0].profile, profile);
+  }
+  for (const [browser, profile] of [
+    ["ego", ""],
+    ["firefox", "Profile 1"],
+    ["default", "Default"],
+    ["safari", "Profile0"],
+    ["chrome", "../bad"],
+  ])
+    assert.equal(
+      plan(
+        {
+          actions: [
+            { type: "websites", urls: ["example.com"], browser, profile },
+          ],
+        },
+        "",
+        opts,
+      ),
+      null,
+    );
 });

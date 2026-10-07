@@ -51,8 +51,8 @@ function harness(t, { chat, transcribe, summaryCLI, shell, chromeLauncher, spawn
   };
   const context = {
     require: (name) =>
-      name === "./chrome-launch" && chromeLauncher
-        ? { launchChromeWebsites: chromeLauncher }
+      name === "./browser-launch" && chromeLauncher
+        ? { launchWebsites: chromeLauncher }
         : name === "node:child_process" && spawn
         ? { ...localRequire(name), spawn }
         : name === "./summary-cli"

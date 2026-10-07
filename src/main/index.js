@@ -394,7 +394,7 @@ async function beginRecording(mode = "dictation", toneId) {
   emit("recording-control", { action: "start", mode });
   indicator("starting", "Starting microphone…");
 }
-const { launchChromeWebsites } = require("./chrome-launch");
+const { launchWebsites } = require("./browser-launch");
 async function openUrl(url) {
   const parsed = new URL(url);
   if (!["http:", "https:", "mailto:"].includes(parsed.protocol))
@@ -522,7 +522,7 @@ async function runShortcut(text) {
     const plan = require("./shortcut-actions").planShortcutActions(shortcut, match.query || "");
     if (!plan) return null;
     await require("./shortcut-execution").executeShortcutPlan(plan.actions, {
-      openWebsites: launchChromeWebsites,
+      openWebsites: launchWebsites,
       launchApplication,
       openFolder: (folder) => shell.openPath(folder),
     });
@@ -1040,6 +1040,7 @@ const actions = {
     pasteText(
       store.data.history.find((x) => x.kind === "dictation")?.text || "",
     ),
+  "browser-catalog": async () => (await require("./browser-catalog").listBrowsers()).map(({ id, name, family, profiles }) => ({ id, name, family, profiles })),
   permissions: async () => {
     const status = await native.request("status").catch(() => ({}));
     const microphoneStatus =

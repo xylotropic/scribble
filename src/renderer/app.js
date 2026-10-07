@@ -847,14 +847,62 @@ document.addEventListener("mousedown", (event) => {
   if (event.target.closest('[data-action="rich-format"]'))
     event.preventDefault();
 });
+let shortcutBrowserCatalogue = [];
+let shortcutBrowserGeneration = 0;
+let shortcutBrowserLoading = false;
 function shortcutDrafts(item) {
-  const actions = Array.isArray(item.actions) ? item.actions : item.target || item.url ? [item.type === "app" ? {type:"application", name:item.target, folder:item.folder || ""} : item.type === "folder" ? {type:"folders", paths:[item.target]} : {type:"websites", urls:[item.target || item.url], profile:item.profile || ""}] : [];
-  return actions.map(action => ({type:action.type, urlsText:(action.urls || []).join("\n"), profile:action.profile || "", name:action.name || "", folder:action.folder || "", pathsText:(action.paths || []).join("\n")}));
+  const actions = Array.isArray(item.actions) ? item.actions : item.target || item.url ? [item.type === "app" ? {type:"application", name:item.target, folder:item.folder || ""} : item.type === "folder" ? {type:"folders", paths:[item.target]} : {type:"websites", urls:[item.target || item.url], browser:item.browser || "chrome", profile:item.profile || ""}] : [];
+  return actions.map(action => ({type:action.type, urlsText:(action.urls || []).join("\n"), browser:action.browser || "chrome", profile:action.profile || "", name:action.name || "", folder:action.folder || "", pathsText:(action.paths || []).join("\n")}));
+}
+function shortcutBrowserOptions(selected = "chrome") {
+  const options = [["default","System default browser"],...shortcutBrowserCatalogue.map(browser=>[browser.id,browser.name])];
+  if (!options.some(([id])=>id === selected)) options.push([selected,(selected === "chrome" ? "Google Chrome" : selected) + (shortcutBrowserLoading ? " (loading…)" : " (unavailable)")]);
+  return options;
+}
+function shortcutProfileOptions(browser,selected = "") {
+  const profiles = shortcutBrowserCatalogue.find(entry=>entry.id === browser)?.profiles || [];
+  const options = [["","Browser default profile"],...profiles.map(profile=>[profile.id,profile.name])];
+  if (selected && !options.some(([id])=>id === selected)) options.push([selected,selected + (shortcutBrowserLoading ? " (loading…)" : " (unavailable)")]);
+  return options;
+}
+function shortcutOptionsHTML(options,selected) {
+  return options.map(([id,name])=>`<option value="${esc(id)}" ${id === selected ? "selected" : ""}>${esc(name)}</option>`).join("");
+}
+function shortcutBrowserControls(action) {
+  const browser = action.browser || "chrome", profile = action.profile || "", profiles = shortcutProfileOptions(browser,profile);
+  return `<label class="field">Browser<select data-shortcut-field="browser">${shortcutOptionsHTML(shortcutBrowserOptions(browser),browser)}</select></label><label class="field">Browser profile<select data-shortcut-field="profile" ${profiles.length === 1 ? "disabled" : ""}>${shortcutOptionsHTML(profiles,profile)}</select></label>`;
+}
+function refreshShortcutBrowserMenus() {
+  for (const block of $$('#shortcut-actions [data-shortcut-type="websites"]')) {
+    const browser = block.querySelector('[data-shortcut-field="browser"]'), profile = block.querySelector('[data-shortcut-field="profile"]');
+    const previousBrowser = browser.value || "chrome", previousProfile = profile.value;
+    browser.innerHTML = shortcutOptionsHTML(shortcutBrowserOptions(previousBrowser),previousBrowser);
+    const options = shortcutProfileOptions(previousBrowser,previousProfile);
+    profile.innerHTML = shortcutOptionsHTML(options,previousProfile); profile.disabled = options.length === 1;
+  }
+}
+async function discoverShortcutBrowsers() {
+  const container = $("#shortcut-actions"), generation = ++shortcutBrowserGeneration;
+  shortcutBrowserLoading = true; refreshShortcutBrowserMenus();
+  const status = $("#shortcut-browser-status"); status.textContent = "Finding installed browsers and profiles…";
+  const current = () => generation === shortcutBrowserGeneration && $("#modal").open && $("#shortcut-actions") === container;
+  try {
+    const catalogue = await api.request("browser-catalog");
+    if (!current()) return;
+    if (!Array.isArray(catalogue)) throw Error("Browser discovery did not return a list.");
+    shortcutBrowserCatalogue = catalogue.filter(browser=>browser && typeof browser.id === "string" && browser.id !== "default" && typeof browser.name === "string").map(browser=>({id:browser.id,name:browser.name,family:browser.family,profiles:Array.isArray(browser.profiles)?browser.profiles.filter(profile=>profile && typeof profile.id === "string" && typeof profile.name === "string"):[]}));
+    shortcutBrowserLoading = false; refreshShortcutBrowserMenus();
+    status.textContent = shortcutBrowserCatalogue.length ? "Choose an installed browser and, when available, a profile." : "No supported browsers found. Saved unavailable choices are retained.";
+  } catch(error) {
+    if (!current()) return;
+    shortcutBrowserLoading = false; refreshShortcutBrowserMenus();
+    status.textContent = "Browser discovery unavailable: " + (error.message || "Unknown error");
+  }
 }
 function shortcutActionHTML(actions) {
   const titles = {websites:"Open websites", application:"Open an application", folders:"Open folders"};
   const input = (key,label,value,hint="",multiline=false) => `<label class="field">${esc(interfaceLabel(label))}${multiline ? `<textarea data-shortcut-field="${key}">${esc(value)}</textarea>` : `<input data-shortcut-field="${key}" value="${esc(value)}">`}${hint ? `<small>${esc(hint)}</small>` : ""}</label>`;
-  return actions.map((action,index) => `<section class="card" data-shortcut-action="${index}" data-shortcut-type="${esc(action.type)}" aria-label="Action ${index + 1}"><div class="row between"><h3>${index + 1}. ${esc(interfaceLabel(titles[action.type] || "Unsupported action"))}</h3><div class="row">${button("↑","shortcut-action-up","","small",`data-index="${index}" aria-label="Move action ${index + 1} up" ${index === 0 ? "disabled" : ""}`)}${button("↓","shortcut-action-down","","small",`data-index="${index}" aria-label="Move action ${index + 1} down" ${index === actions.length - 1 ? "disabled" : ""}`)}${button("Remove","shortcut-action-remove","close","small",`data-index="${index}" aria-label="Remove action ${index + 1}"`)}</div></div>${action.type === "websites" ? input("urlsText","Websites, one per line",action.urlsText,"Up to 16 websites. Use {{text}} to insert the spoken query.",true) + input("profile","Chrome profile directory (optional)",action.profile,"Use Default or Profile N, such as Profile 1. Leave blank for Chrome's normal launch behavior.") : action.type === "application" ? input("name","Application name",action.name) + input("folder","Open a folder with this application (optional)",action.folder,"Use an absolute folder path or ~/ for your home folder.") : action.type === "folders" ? input("pathsText","Folders, one per line",action.pathsText,"Up to 16 absolute folder paths or ~/ paths.",true) : '<p>Remove this unsupported action before saving.</p>'}</section>`).join("");
+  return actions.map((action,index) => `<section class="card" data-shortcut-action="${index}" data-shortcut-type="${esc(action.type)}" aria-label="Action ${index + 1}"><div class="row between"><h3>${index + 1}. ${esc(interfaceLabel(titles[action.type] || "Unsupported action"))}</h3><div class="row">${button("↑","shortcut-action-up","","small",`data-index="${index}" aria-label="Move action ${index + 1} up" ${index === 0 ? "disabled" : ""}`)}${button("↓","shortcut-action-down","","small",`data-index="${index}" aria-label="Move action ${index + 1} down" ${index === actions.length - 1 ? "disabled" : ""}`)}${button("Remove","shortcut-action-remove","close","small",`data-index="${index}" aria-label="Remove action ${index + 1}"`)}</div></div>${action.type === "websites" ? input("urlsText","Websites, one per line",action.urlsText,"Up to 16 websites. Use {{text}} to insert the spoken query.",true) + shortcutBrowserControls(action) : action.type === "application" ? input("name","Application name",action.name) + input("folder","Open a folder with this application (optional)",action.folder,"Use an absolute folder path or ~/ for your home folder.") : action.type === "folders" ? input("pathsText","Folders, one per line",action.pathsText,"Up to 16 absolute folder paths or ~/ paths.",true) : '<p>Remove this unsupported action before saving.</p>'}</section>`).join("");
 }
 function readShortcutDrafts() {
   return $$("#shortcut-actions [data-shortcut-action]").map(block => {
@@ -875,7 +923,7 @@ function editShortcutAction(button,action) {
   if (action === "shortcut-action-add") {
     if (drafts.length >= 32) throw Error("A shortcut can contain up to 32 actions.");
     if (!["websites","application","folders"].includes(button.dataset.actionType)) return;
-    drafts.push({type:button.dataset.actionType,urlsText:"",profile:"",name:"",folder:"",pathsText:""});
+    drafts.push({type:button.dataset.actionType,urlsText:"",browser:"chrome",profile:"",name:"",folder:"",pathsText:""});
     focusIndex = drafts.length - 1;
   } else {
     if (!Number.isInteger(focusIndex) || focusIndex < 0 || focusIndex >= drafts.length) return;
@@ -902,8 +950,9 @@ function shortcutActionsForSave() {
   return drafts.map(draft => {
     if (draft.type === "websites") {
       const profile = draft.profile.trim();
-      if (!/^$|^Default$|^Profile [0-9]{1,6}$/.test(profile)) throw Error("Chrome profile must be blank, Default, or Profile N (for example Profile 1).");
-      return {type:"websites",urls:list(draft.urlsText,"Websites"),profile};
+      const browser = draft.browser || "chrome";
+      if (!/^[a-zA-Z0-9._-]{1,100}$/.test(browser) || profile && (!/^[a-zA-Z0-9._ -]{1,200}$/.test(profile) || [".",".."].includes(profile))) throw Error("Choose a valid browser and browser profile.");
+      return {type:"websites",urls:list(draft.urlsText,"Websites"),browser,profile};
     }
     if (draft.type === "folders") return {type:"folders",paths:list(draft.pathsText,"Folders")};
     if (draft.type === "application") {
@@ -971,7 +1020,7 @@ function editItem(kind, id) {
           "",
         )}</div><div id="rich-editor" class="editor" contenteditable="true" role="textbox" aria-label="Replacement text"></div><small>Formatting is included when inserting through the clipboard. AI cleanup returns plain text. Variables: {date}, {time}, {clipboard}, {selection}.</small></label>`;
   if (kind === "shortcuts")
-    html = field("name", "Name", item.name) + field("trigger", "Trigger phrase", item.trigger) + `<label class="field">Aliases (comma-separated)<input name="aliases" value="${esc(Array.isArray(item.aliases) ? item.aliases.join(", ") : item.aliases || "")}"></label><h3>Actions</h3><p class="tip">Actions run in the numbered order. Websites open in Google Chrome.</p><div class="row wrap">${button("Add websites","shortcut-action-add","plus","small",'data-action-type="websites"')}${button("Add application","shortcut-action-add","plus","small",'data-action-type="application"')}${button("Add folders","shortcut-action-add","plus","small",'data-action-type="folders"')}</div><p id="shortcut-action-count" class="smallprint" role="status"></p><div id="shortcut-actions" class="stack"></div>`;
+    html = field("name", "Name", item.name) + field("trigger", "Trigger phrase", item.trigger) + `<label class="field">Aliases (comma-separated)<input name="aliases" value="${esc(Array.isArray(item.aliases) ? item.aliases.join(", ") : item.aliases || "")}"></label><h3>Actions</h3><p class="tip">Actions run in the numbered order. Choose where each website action opens.</p><div class="row wrap">${button("Add websites","shortcut-action-add","plus","small",'data-action-type="websites"')}${button("Add application","shortcut-action-add","plus","small",'data-action-type="application"')}${button("Add folders","shortcut-action-add","plus","small",'data-action-type="folders"')}</div><p id="shortcut-action-count" class="smallprint" role="status"></p><p id="shortcut-browser-status" class="smallprint" role="status"></p><div id="shortcut-actions" class="stack"></div>`;
   if (kind === "tones")
     html =
       field("name", "Tone name", item.name) +
@@ -1058,7 +1107,11 @@ function editItem(kind, id) {
       toast("Saved locally.");
     },
   );
-  if (kind === "shortcuts") updateShortcutActionControls(shortcutDrafts(item));
+  if (kind === "shortcuts") {
+    shortcutBrowserCatalogue = []; shortcutBrowserLoading = true;
+    updateShortcutActionControls(shortcutDrafts(item));
+    void discoverShortcutBrowsers();
+  }
   if (kind === "threads" || kind === "expansions")
     $("#rich-editor").innerHTML = safeRichHTML(
       item.html || "<p>" + esc(item.replacement || "") + "</p>",
@@ -2089,6 +2142,12 @@ document.addEventListener("click", async (e) => {
 document.addEventListener("change", async (e) => {
   const input = e.target;
   try {
+    if (input.matches('[data-shortcut-field="browser"]') && input.closest("#shortcut-actions")) {
+      const profile = input.closest("[data-shortcut-action]").querySelector('[data-shortcut-field="profile"]');
+      const options = shortcutProfileOptions(input.value, "");
+      profile.innerHTML = shortcutOptionsHTML(options, ""); profile.disabled = options.length === 1;
+      return;
+    }
     if (input.name === "historyKind") {
       historyKind = input.value;
       historyLimit = 100;
