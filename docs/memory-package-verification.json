@@ -1,0 +1,40 @@
+{
+  "verifiedAt": "2026-10-07T12:17:58.522Z",
+  "publicCommit": "5419146fc6c6563f5bde233dcd6a9c5891f46bcc",
+  "tree": "b30998f147d921806498a26b9b73158bc332007a",
+  "app": "/tmp/scribble-memory-package-20261007/mac-arm64/Scribble.app",
+  "architecture": "arm64",
+  "guard": {
+    "architectures": [
+      "arm64"
+    ],
+    "checkedExecutables": 6
+  },
+  "shippedAsarFilesByteIdentical": 53,
+  "runtimePackageMetadataMatched": [
+    "name",
+    "version",
+    "main",
+    "dependencies"
+  ],
+  "nativeModules": [
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.5.node",
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.7.dylib",
+    "Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node"
+  ],
+  "signature": {
+    "deepStrict": true,
+    "adHoc": true,
+    "hardenedRuntime": true,
+    "notarized": false
+  },
+  "runtimeSourceFilesAndLinksUnchanged": 83,
+  "packagedOllamaRelativeLinksChecked": 10,
+  "bridgeAndShareRebuilt": true,
+  "electronDistribution": "Existing cached electron-v44.6.0-darwin-arm64.zip supplied explicitly; no runtime setup/download commands invoked.",
+  "limitations": [
+    "No GUI launch or live microphone/screen-capture permission, recording, Memory provider or inference tests.",
+    "Pinned speech/media/Parakeet/Ollama runtimes reused; external Ollama service untouched.",
+    "Prior dependent minimum-OS/backend audit remains applicable."
+  ]
+}

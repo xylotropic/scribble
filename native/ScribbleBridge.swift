@@ -434,6 +434,58 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
         insertionTargets=insertionTargets.filter{now-$0.value.issued < 600 && now >= $0.value.issued}
         while insertionTargets.count >= 32, let oldest=insertionTargets.min(by:{$0.value.issued < $1.value.issued}) { insertionTargets.removeValue(forKey:oldest.key) }
     }
+    static func finderSelection<Node>(_ root:Node, equal:(Node,Node)->Bool, children:(Node)->[Node], selectedChildren:(Node)->[Node], isSelected:(Node)->Bool, role:(Node)->String, filePath:(Node)->String?) -> (paths:[String], bounded:Bool) {
+        var queue:[(Node,Int)]=[(root,0)], visited:[Node]=[], resolved:[Node]=[], paths:[String]=[], seen=Set<String>(), budget=0
+        let decorative:Set<String>=["AXCell","AXText","AXStaticText","AXImage","AXGroup"]
+        func resolve(_ selected:Node) -> Bool {
+            if resolved.contains(where:{equal($0,selected)}) {return true};resolved.append(selected)
+            var candidates:[(Node,Int)]=[(selected,0)], local:[Node]=[]
+            while !candidates.isEmpty {
+                let (node,depth)=candidates.removeFirst()
+                if local.contains(where:{equal($0,node)}) {continue};local.append(node);budget+=1
+                if budget>1024 {return false}
+                if let path=filePath(node) { if seen.insert(path).inserted {paths.append(path)};return paths.count<=32 }
+                if depth<4 {let items=children(node);if items.count>512 {return false};candidates.append(contentsOf:items.filter{decorative.contains(role($0))}.map{($0,depth+1)})}
+            }
+            return true
+        }
+        while !queue.isEmpty {
+            let (node,depth)=queue.removeFirst()
+            if isSelected(node), !resolve(node) {return([],false)}
+            let selected=selectedChildren(node);if selected.count>512 {return([],false)}
+            for item in selected {if !resolve(item) {return([],false)}}
+            if visited.contains(where:{equal($0,node)}) {continue};visited.append(node)
+            if visited.count>512 {return([],false)}
+            if depth<12 {let items=children(node);if items.count>512 || queue.count+items.count>1024 {return([],false)};queue.append(contentsOf:items.map{($0,depth+1)})}
+        }
+        return(paths,true)
+    }
+    static func selectedFilePath(_ value: Any) -> String? {
+        let url: URL?
+        if let candidate=value as? URL { url=candidate } else if let raw=value as? String, raw.count<=16384 { url=URL(string:raw) } else { return nil }
+        guard let url, url.isFileURL, url.host == nil || url.host == "" || url.host == "localhost", url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else { return nil }
+        guard let decoded=URLComponents(url:url,resolvingAgainstBaseURL:false)?.percentEncodedPath.removingPercentEncoding, !decoded.contains("\0") else { return nil }
+        let path=url.path
+        guard path.hasPrefix("/"), path.utf8.count<=4096, !path.contains("\0") else { return nil }
+        return path
+    }
+    func captureCommandContext() -> [String:Any] {
+        guard AXIsProcessTrusted(), let app=NSWorkspace.shared.frontmostApplication else { return ["text":"","selectedFiles":[],"available":false] }
+        let pid=app.processIdentifier, application=AXUIElementCreateApplication(pid)
+        let windowValue=attribute(application,kAXFocusedWindowAttribute as CFString)
+        let window:AXUIElement? = windowValue.flatMap { CFGetTypeID($0) == AXUIElementGetTypeID() ? ($0 as! AXUIElement) : nil }
+        var text=""
+        if let field=focused(), !secure(field) { var owner:Int32=0; if AXUIElementGetPid(field,&owner) == .success, owner == pid { text=String((attribute(field,kAXSelectedTextAttribute as CFString) as? String ?? "").prefix(100000)) } }
+        var paths:[String]=[], overflow=false, wrongOwner=false
+        if app.bundleIdentifier == "com.apple.finder", let window {
+            func owned(_ element:AXUIElement)->Bool { var owner:Int32=0;let valid=AXUIElementGetPid(element,&owner) == .success && owner == pid;if !valid {wrongOwner=true};return valid }
+            let result=Self.finderSelection(window,equal:{CFEqual($0,$1)},children:{element in guard owned(element) else {return []};return self.attribute(element,kAXChildrenAttribute as CFString) as? [AXUIElement] ?? []},selectedChildren:{element in guard owned(element) else {return []};return self.attribute(element,kAXSelectedChildrenAttribute as CFString) as? [AXUIElement] ?? []},isSelected:{element in guard owned(element) else {return false};return self.attribute(element,kAXSelectedAttribute as CFString) as? Bool == true},role:{element in self.attribute(element,kAXRoleAttribute as CFString) as? String ?? ""},filePath:{element in guard owned(element), let value=self.attribute(element,kAXURLAttribute as CFString) else {return nil};return Self.selectedFilePath(value)})
+            paths=result.paths;overflow = !result.bounded || wrongOwner
+        }
+        guard let current=NSWorkspace.shared.frontmostApplication, current.processIdentifier == pid, current.launchDate == app.launchDate else { return ["text":"","selectedFiles":[],"available":false] }
+        if let window { guard let currentWindow=attribute(application,kAXFocusedWindowAttribute as CFString), CFEqual(window,currentWindow) else { return ["text":"","selectedFiles":[],"available":false] } }
+        return ["pid":pid,"bundleId":app.bundleIdentifier ?? "","text":text,"selectedFiles":overflow ? []:paths,"available":!overflow]
+    }
     func captureInsertionTarget() throws -> [String:Any] {
         guard AXIsProcessTrusted(), let app=NSWorkspace.shared.frontmostApplication, let element=focused(), !secure(element) else { throw NSError(domain:"Scribble",code:20,userInfo:[NSLocalizedDescriptionKey:"An accessible non-password field is required for insertion"]) }
         var pid:Int32=0;guard AXUIElementGetPid(element,&pid) == .success, pid == app.processIdentifier else { throw NSError(domain:"Scribble",code:20,userInfo:[NSLocalizedDescriptionKey:"The insertion field no longer belongs to the active application"]) }
@@ -661,6 +713,7 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
                 startTap(); result = status()
             case "edit": result = try await edit(request, action: request["action"] as? String ?? "")
             case "undo", "redo", "selectAll", "find": result = try await edit(request, action: request["command"] as? String ?? "")
+            case "captureCommandContext": result = captureCommandContext()
             case "captureInsertionTarget": result = try captureInsertionTarget()
             case "paste":
                 let allowClipboardHistory = try requestedClipboardHistory(request)
@@ -775,6 +828,17 @@ if CommandLine.arguments.contains("--clipboard-history-self-test") {
 }
 if CommandLine.arguments.contains("--notch-controls-self-test") { emit(notchControlSelfTest()); exit(0) }
 if CommandLine.arguments.contains("--notch-indicator-self-test") { emit(notchIndicatorSelfTest()); exit(0) }
+if CommandLine.arguments.contains("--finder-selection-self-test") {
+    func run(_ kids:[Int:[Int]],_ selected:[Int:[Int]],_ urls:[Int:String],_ roles:[Int:String]=[:])->(paths:[String],bounded:Bool) {Bridge.finderSelection(0,equal:{$0==$1},children:{kids[$0] ?? []},selectedChildren:{selected[$0] ?? []},isSelected:{_ in false},role:{roles[$0] ?? "AXRow"},filePath:{urls[$0]})}
+    let folder=run([0:[1],1:[2]],[0:[1]],[1:"/folder",2:"/unselected"])
+    let decorative=run([0:[1],1:[2],2:[3]],[0:[1]],[3:"/decorated"],[2:"AXCell",3:"AXStaticText"])
+    let unselectedFirst=run([0:[1,2]],[2:[1]],[1:"/later-selected"])
+    let order=run([0:[1,2]],[0:[2,1]],[1:"/one",2:"/two"])
+    let overflow=run([0:Array(1...33)],[0:Array(1...33)],Dictionary(uniqueKeysWithValues:(1...33).map{($0,"/file\($0)")}))
+    let blocked=run([0:[1],1:[2]],[0:[1]],[2:"/unselected-child"])
+    emit(["expandedFolder":folder.paths == ["/folder"],"decorativeURL":decorative.paths == ["/decorated"],"visitedThenSelected":unselectedFirst.paths == ["/later-selected"],"order":order.paths == ["/two","/one"],"overflowAtomic":!overflow.bounded && overflow.paths.isEmpty,"unselectedRowExcluded":blocked.paths.isEmpty]);exit(0)
+}
+if CommandLine.arguments.contains("--finder-path-self-test") { emit(["local":Bridge.selectedFilePath("file:///tmp/one%20two.pdf") ?? "","remoteRejected":Bridge.selectedFilePath("file://remote/tmp/file") == nil,"webRejected":Bridge.selectedFilePath("https://example.test/file") == nil,"nulRejected":Bridge.selectedFilePath("file:///tmp/a%00b") == nil,"bounded":Bridge.selectedFilePath("file:///"+String(repeating:"x",count:4097)) == nil]);exit(0) }
 if CommandLine.arguments.contains("--context-url-self-test") { emit(["clean":contextURL("https://example.com/work?token=secret#fragment") ?? "", "credentialed":contextURL("https://user:secret@example.com") == nil, "nonWeb":contextURL("file:///private/notes") == nil]); exit(0) }
 if CommandLine.arguments.contains("--template-self-test") {
     let values = ["date":"October 7, 2026","time":"9:30 AM","clipboard":"<b>Clipboard & text</b>","selection":"Selected <words>","selected_text":"Selected <words>"]

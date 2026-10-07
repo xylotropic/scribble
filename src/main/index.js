@@ -432,9 +432,14 @@ async function beginRecording(mode = "dictation", toneId) {
     recordTarget = null;
     return;
   }
-  const commandTarget = mode === "command" ? await captureCommandTarget() : null;
+  let commandContext = null;
+  try { if(mode === "command") commandContext = await captureFileCommandContext() || {text:"",files:[]};
+    if(commandContext?.pid && front.pid && (commandContext.pid!==front.pid || commandContext.bundleId!==front.bundleId)) throw Error("The active application changed during command activation"); }
+  catch(error) { if(recordTarget === reservation) recordTarget=null; throw error; }
   if (recordTarget !== reservation) return;
-  recordTarget = { ...front, toneId, commandTarget, recordingToken };
+  const commandTarget = mode === "command" ? await captureCommandTarget(commandContext) : null;
+  if (recordTarget !== reservation) return;
+  recordTarget = { ...front, toneId, commandTarget, commandContext, recordingToken };
   activeMode = mode;
   emit("recording-control", { action: "start", mode, recordingToken });
   indicator("starting", "Starting microphone…");
@@ -635,12 +640,75 @@ async function pasteAIUtility(id) {
     throw error;
   }
 }
-async function captureCommandTarget() {
+async function runFileUtility({ operation, options = {} }, captured = null) {
+    const extensions = {
+      "image-convert": options.format || "webp",
+      "image-compress": options.format || "webp",
+      "image-palette": "json",
+      "audio-convert": options.format || "mp3",
+      "video-convert": options.format || "mp4",
+      "pdf-merge": "pdf",
+      "archive-create": "zip",
+      "archive-extract": "folder",
+      "config-convert": options.format || "json",
+      "markdown-pdf": "pdf",
+      "text-markdown": "md",
+    };
+    if (!Object.hasOwn(extensions, operation))
+      throw Error("Unknown file operation");
+    const selected = await selectedUtilityInputs(operation, captured);
+    const chosen = selected ? {filePaths:selected,canceled:false} : await dialog.showOpenDialog(window, {
+      properties:
+        operation === "archive-create"
+          ? ["openFile", "openDirectory", "multiSelections"]
+          : ["openFile", "multiSelections"],
+    });
+    if (chosen.canceled) return null;
+    const destination = await dialog.showSaveDialog(window, {
+      defaultPath: "Scribble-output." + extensions[operation],
+    });
+    if (destination.canceled) return null;
+    if(selected) await selectedUtilityInputs(operation, captured);
+    const result = await require("./utilities").performUtility({
+      operation,
+      files: chosen.filePaths,
+      output: destination.filePath,
+      options,
+    });
+    return result;
+}
+async function captureFileCommandContext() {
+  const value = await native.request("captureCommandContext").catch(() => null);
+  if (!value || value.available !== true || !Number.isInteger(value.pid) ||
+      typeof value.bundleId !== "string" || typeof value.text !== "string" || value.text.length > 100000 ||
+      !Array.isArray(value.selectedFiles) || value.selectedFiles.length > 32) return null;
+  const files=[];
+  if(value.bundleId === "com.apple.finder") for(const file of value.selectedFiles) {
+    if(typeof file !== "string" || !path.isAbsolute(file) || file.length>4096 || file.includes("\0") || files.some(x=>x.path===file)) return null;
+    const stat=await fsp.lstat(file).catch(()=>null);
+    if(!stat || stat.isSymbolicLink() || (!stat.isFile()&&!stat.isDirectory())) throw Error("Selected file is unavailable or unsupported");
+    files.push({path:file,dev:stat.dev,ino:stat.ino,size:stat.size,mtimeMs:stat.mtimeMs,ctimeMs:stat.ctimeMs,directory:stat.isDirectory()});
+  }
+  return {pid:value.pid,bundleId:value.bundleId,text:value.text,files};
+}
+async function selectedUtilityInputs(operation, captured) {
+  if(!captured?.files?.length) return null;
+  const files=captured.files;
+  if(files.length>32 || (operation!=="pdf-merge"&&operation!=="archive-create"&&files.length!==1) || (operation==="pdf-merge"&&files.length<2)) throw Error("Selected file count is invalid for this operation");
+  const formats={"image-convert":["png","jpg","jpeg","webp","avif","gif","tif","tiff","heic","heif","jfif"],"image-compress":["png","jpg","jpeg","webp","avif","gif","tif","tiff","heic","heif","jfif"],"image-palette":["png","jpg","jpeg","webp","avif","gif","tif","tiff","heic","heif","jfif"],"audio-convert":["mp3","wav","aac","flac","ogg","m4a","wma","opus","mp4","avi","mov","mkv","webm","flv","wmv"],"video-convert":["mp4","avi","mov","mkv","webm","flv","wmv"],"pdf-merge":["pdf"],"archive-extract":["zip"],"config-convert":["json","yaml","yml","toml","xml"],"markdown-pdf":["md","markdown"],"text-markdown":["txt","md","markdown"]};
+  for(const file of files) {
+    const stat=await fsp.lstat(file.path).catch(()=>null);
+    if(!stat || stat.isSymbolicLink() || stat.dev!==file.dev || stat.ino!==file.ino || stat.size!==file.size || stat.mtimeMs!==file.mtimeMs || stat.ctimeMs!==file.ctimeMs || stat.isDirectory()!==file.directory) throw Error("Selected file changed after command activation");
+    if(operation!=="archive-create" && (!stat.isFile() || !formats[operation]?.includes(path.extname(file.path).slice(1).toLowerCase()))) throw Error("Selected file format is unsupported for this operation");
+  }
+  return files.map(file=>file.path);
+}
+async function captureCommandTarget(expected = null) {
   const target = await native.request("captureInsertionTarget").catch(() => null);
-  return target?.token && target.bundleId !== "org.scribble.voice"
+  return target?.token && (!expected || !Number.isInteger(expected.pid) || (target.pid === expected.pid && target.bundleId === expected.bundleId)) && target.bundleId !== "org.scribble.voice"
     ? { token: target.token, expiresAt: Date.now() + 600000 } : null;
 }
-function attachCommandReview(result, target) {
+function attachCommandReview(result, target, captured = null) {
   if (result.kind !== "text") return result;
   if (typeof result.text !== "string" || result.text.length > 100000)
     throw Error("Command result is too large or invalid");
@@ -649,7 +717,7 @@ function attachCommandReview(result, target) {
   if (commandReviews.size >= 32) commandReviews.delete(commandReviews.keys().next().value);
   result.reviewId = crypto.randomUUID();
   result.canInsert = !!target?.token && target.expiresAt > Date.now();
-  commandReviews.set(result.reviewId, { result, target: result.canInsert ? target : null,
+  commandReviews.set(result.reviewId, { result, context: captured, target: result.canInsert ? target : null,
     expiresAt: target?.expiresAt || Date.now() + 600000 });
   return result;
 }
@@ -758,10 +826,10 @@ async function launchApplication(name, folder = "") {
     );
   });
 }
-async function runCommand(text, context = "", attachments = {}) {
+async function runCommand(text, context = "", attachments = {}, captured = null) {
   const fileCommand = require("./file-command").parseFileCommand(text);
   if (fileCommand) {
-    const result = await actions.utility(fileCommand);
+    const result = await (captured?.files?.length ? runFileUtility(fileCommand, captured) : actions.utility(fileCommand));
     if (!result)
       return { kind: "cancelled", text: "File operation cancelled." };
     return {
@@ -818,10 +886,10 @@ async function runCommand(text, context = "", attachments = {}) {
   }
   const target =
     (context + (attachments.text ? "\n\n" + attachments.text : "")).trim() ||
-    (await native
+    (captured ? captured.text : (await native
       .request("selection")
       .then((x) => x.text)
-      .catch(() => "")) ||
+      .catch(() => ""))) ||
     clipboard.readText();
   let result;
   if (parsed.type === "edit") {
@@ -869,7 +937,7 @@ async function runCommand(text, context = "", attachments = {}) {
             "You are Scribble, a precise writing assistant. Follow the user command using the provided text. Return only the requested final text. Never invent successful system actions. Reference material:\n" +
             memory,
         },
-        { role: "user", content: `Command: ${text}\n\nText:\n${target}` },
+        { role: "user", content: `Command: ${text}\n\nText:\n${target}${captured?.files?.length ? "\n\nSelected file paths (context only; no file action has run):\n" + JSON.stringify(captured.files.map(file=>file.path)) : ""}` },
       ],
       apiKey(),
       {
@@ -1027,7 +1095,7 @@ async function transcribeAndProcess(
     speechProvider: settings.speechProvider,
   };
   if (kind === "command") {
-    const command = attachCommandReview(await runCommand(text, "", attachments), recordTarget?.commandTarget);
+    const command = attachCommandReview(await runCommand(text, "", attachments, recordTarget?.commandContext), recordTarget?.commandTarget, recordTarget?.commandContext);
     entry.text = command.text;
     entry.command = text;
     entry.commandResult = command;
@@ -1608,41 +1676,7 @@ const actions = {
     emit("state", snapshot());
     return true;
   },
-  utility: async ({ operation, options = {} }) => {
-    const extensions = {
-      "image-convert": options.format || "webp",
-      "image-compress": options.format || "webp",
-      "image-palette": "json",
-      "audio-convert": options.format || "mp3",
-      "video-convert": options.format || "mp4",
-      "pdf-merge": "pdf",
-      "archive-create": "zip",
-      "archive-extract": "folder",
-      "config-convert": options.format || "json",
-      "markdown-pdf": "pdf",
-      "text-markdown": "md",
-    };
-    if (!Object.hasOwn(extensions, operation))
-      throw Error("Unknown file operation");
-    const chosen = await dialog.showOpenDialog(window, {
-      properties:
-        operation === "archive-create"
-          ? ["openFile", "openDirectory", "multiSelections"]
-          : ["openFile", "multiSelections"],
-    });
-    if (chosen.canceled) return null;
-    const destination = await dialog.showSaveDialog(window, {
-      defaultPath: "Scribble-output." + extensions[operation],
-    });
-    if (destination.canceled) return null;
-    const result = await require("./utilities").performUtility({
-      operation,
-      files: chosen.filePaths,
-      output: destination.filePath,
-      options,
-    });
-    return result;
-  },
+  utility: (options) => runFileUtility(options),
   models: () => speech.listModels(),
   "download-model": async ({ id }) => {
     const result = await speech.downloadModel(id);
@@ -1764,8 +1798,9 @@ const actions = {
     )
       throw Error("Command context is too large or invalid");
     const prior = reviewId ? commandReviews.get(reviewId) : null;
-    const target = reviewId ? (prior?.expiresAt > Date.now() ? prior.target : null) : await captureCommandTarget();
-    const result = attachCommandReview(await runCommand(text, String(context || ""), attachments), target);
+    const captured = reviewId ? (prior?.context || {text:"",files:[]}) : (await captureFileCommandContext() || {text:"",files:[]});
+    const target = reviewId ? (prior?.expiresAt > Date.now() ? prior.target : null) : await captureCommandTarget(captured);
+    const result = attachCommandReview(await runCommand(text, String(context || ""), attachments, captured), target, captured);
     if (reviewId) commandReviews.delete(reviewId);
     if (!store.data.settings.saveHistory) return result;
     const revision = {

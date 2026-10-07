@@ -9,7 +9,7 @@ const { createRequire } = require("node:module");
 async function waitUntil(predicate) { for(let i=0;i<100;i++){ if(predicate()) return; await new Promise(r=>setTimeout(r,5)); } assert.fail('Expected asynchronous shutdown to finish'); }
 const mainPath = path.resolve(__dirname, "../src/main/index.js"),
   localRequire = createRequire(mainPath);
-function harness(t, { cloudSilence, chat, transcribe, summaryCLI, shell, chromeLauncher, spawn, nativeRequest, nativeClose, closeAI, clipboardText = "clipboard", models = [] } = {}) {
+function harness(t, { dialog, utilities, cloudSilence, chat, transcribe, summaryCLI, shell, chromeLauncher, spawn, nativeRequest, nativeClose, closeAI, clipboardText = "clipboard", models = [] } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scribble-actions-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { Store } = localRequire("./store"),
@@ -17,6 +17,7 @@ function harness(t, { cloudSilence, chat, transcribe, summaryCLI, shell, chromeL
     events = [],
     nativeCalls = [], menus = [], trayState = {}, appEvents = {}, exits = [];
   const electron = {
+    dialog: dialog || {},
     Menu: { buildFromTemplate(template) { template.popup = () => menus.push(template); return template; }, setApplicationMenu(menu) { menus.push(menu); } },
     app: {
       setName() {},
@@ -53,6 +54,7 @@ function harness(t, { cloudSilence, chat, transcribe, summaryCLI, shell, chromeL
   };
   const context = {
     require: (name) =>
+      name === "./utilities" && utilities ? utilities :
       name === "./cloud-silence" && cloudSilence
         ? { analyzeCloudSilence: cloudSilence }
         : name === "./browser-launch" && chromeLauncher
@@ -85,7 +87,7 @@ function harness(t, { cloudSilence, chat, transcribe, summaryCLI, shell, chromeL
   vm.createContext(context);
   vm.runInContext(
     fs.readFileSync(mainPath, "utf8") +
-      "\nglobalThis.exposed={actions,processFile,runShortcut,runCommand,snapshot,initializeTray(t){tray=t;},initializeUtilityWindow(w){window=w;},initialize(s,sp,n,d){store=s;speech=sp;native=n;dataDir=d;memoryIndex=new (require('./memory-index').MemoryIndex)();}};",
+      "\nglobalThis.exposed={actions,processFile,runShortcut,runCommand,captureFileCommandContext,selectedUtilityInputs,beginRecording,snapshot,initializeTray(t){tray=t;},initializeUtilityWindow(w){window=w;},initialize(s,sp,n,d){store=s;speech=sp;native=n;dataDir=d;memoryIndex=new (require('./memory-index').MemoryIndex)();}};",
     context,
   );
   context.exposed.initialize(store, speech, native, directory);
@@ -664,4 +666,58 @@ test('microphone label IPC remembers only ranked display labels without requesti
  const h=harness(t);h.store.updateSettings({microphonePriority:['usb']});const before=h.nativeCalls.length;
  assert.deepEqual(h.actions['remember-microphone-labels']({labels:[{id:'usb',name:'Studio mic'},{id:'unranked',name:'Other'}]}),[{id:'usb',name:'Studio mic'}]);h.actions['remember-microphone-labels']({labels:[]});assert.equal(h.store.data.settings.microphoneLabels[0].name,'Studio mic');assert.equal(h.nativeCalls.length,before);
  const saved=fs.readFileSync(h.store.file,'utf8');assert.throws(()=>h.actions['remember-microphone-labels']({labels:[{id:'usb',name:'secret',capabilities:{}}]}),/microphone labels/);assert.equal(fs.readFileSync(h.store.file,'utf8'),saved);
+});
+
+ test('Finder command snapshot preserves native selection order, ignores renderer paths and rechecks identity after destination choice',async t=>{
+  let h, capturedCalls=0, chosenCalls=0, observed;
+  h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?(capturedCalls++,{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'second.pdf'),path.join(h.directory,'first.pdf')]}):{},dialog:{showOpenDialog:async()=>{chosenCalls++;throw Error('unexpected input picker');},showSaveDialog:async()=>({filePath:path.join(h.directory,'out.pdf')})},utilities:{performUtility:async value=>{observed=value;return{output:value.output};}}});
+  for(const name of ['first.pdf','second.pdf'])fs.writeFileSync(path.join(h.directory,name),'%PDF-fixture');
+  await h.actions.command({text:'merge these pdfs',attachments:{selectedFiles:['/untrusted'],files:['/untrusted']}});
+  assert.equal(capturedCalls,1);assert.equal(chosenCalls,0);assert.deepEqual(Array.from(observed.files),[path.join(h.directory,'second.pdf'),path.join(h.directory,'first.pdf')]);
+ });
+ test('changed Finder inputs refuse processing instead of silently choosing other files',async t=>{
+  let h, processed=0;
+  h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'one.txt')]}:{},dialog:{showSaveDialog:async()=>{fs.writeFileSync(path.join(h.directory,'one.txt'),'changed bytes');return{filePath:path.join(h.directory,'out.md')};}},utilities:{performUtility:async()=>{processed++;}}});
+  fs.writeFileSync(path.join(h.directory,'one.txt'),'original');
+  await assert.rejects(h.actions.command({text:'convert this text to markdown'}),/changed after command activation/);assert.equal(processed,0);
+ });
+ test('empty or unavailable Finder snapshot uses existing picker and destination cancellation remains explicit',async t=>{
+  let picks=0,processed=0;
+  const h=harness(t,{nativeRequest:async()=>({available:false,text:'',selectedFiles:[]}),dialog:{showOpenDialog:async()=>{picks++;return{canceled:false,filePaths:['/fixture.txt']};},showSaveDialog:async()=>({canceled:true})},utilities:{performUtility:async()=>{processed++;}}});
+  const result=await h.actions.command({text:'convert this text to markdown'});assert.equal(result.kind,'cancelled');assert.equal(picks,1);assert.equal(processed,0);
+ });
+ test('native context validates bounds and Finder ownership, and operation guards reject type/count before execution',async t=>{
+  let value={available:true,pid:9,bundleId:'com.apple.TextEdit',text:'Original context',selectedFiles:['/not-from-Finder']};
+  const h=harness(t,{nativeRequest:async()=>value});const first=await h.captureFileCommandContext();assert.equal(first.text,'Original context');assert.equal(first.files.length,0);
+  for(const bad of [{...value,selectedFiles:Array(33).fill('/tmp/x')},{...value,text:'x'.repeat(100001)},{...value,pid:'9'},{...value,bundleId:'com.apple.finder',selectedFiles:['relative']}]){value=bad;assert.equal(await h.captureFileCommandContext(),null);}
+  const one=path.join(h.directory,'one.txt');fs.writeFileSync(one,'text');value={available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[one]};const captured=await h.captureFileCommandContext();await assert.rejects(h.selectedUtilityInputs('pdf-merge',captured),/count/);await assert.rejects(h.selectedUtilityInputs('image-convert',captured),/format/);
+ });
+ test('command refinements retain captured text without rereading current selection',async t=>{
+  let captures=0,selection=0,prompts=[];
+  const h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?(captures++,{available:true,pid:9,bundleId:'com.apple.TextEdit',text:'Original selected context',selectedFiles:[]}):command==='selection'?(selection++,{text:'Different later selection'}):{},chat:async(_s,m)=>{prompts.push(m[1].content);return 'draft';}});
+  const first=await h.actions.command({text:'rewrite in a warm tone'});await h.actions.command({text:'make it shorter',reviewId:first.reviewId});assert.equal(captures,1);assert.equal(selection,0);assert.ok(prompts.every(p=>p.includes('Original selected context')));
+ });
+test('voice command captures selection once before start and keeps it after focus changes',async t=>{
+ let captures=0,now='Original voice selection',prompt='';
+ const h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?(captures++,{available:true,pid:9,bundleId:'com.apple.TextEdit',text:now,selectedFiles:[]}):command==='frontmost'?{pid:9,bundleId:'com.apple.TextEdit'}:{},transcribe:async()=>({text:'rewrite warmly',segments:[],duration:1}),chat:async(_s,m)=>{prompt=m[1].content;return 'Rewritten.';}});
+ await h.actions['start-recording']({mode:'command'});assert.equal(captures,1);now='New unrelated selection';await h.actions['save-recording']({bytes:Buffer.from('synthetic audio'),mode:'command'});assert.equal(captures,1);assert.match(prompt,/Original voice selection/);assert.doesNotMatch(prompt,/New unrelated selection/);assert.equal(h.nativeCalls.filter(call=>call.command==='selection').length,0);
+});
+test('cancel during pending command context capture never starts late recording',async t=>{
+ let resolve,started;const ready=new Promise(r=>started=r);
+ const h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?(started(),await new Promise(r=>resolve=r)):command==='frontmost'?{pid:9,bundleId:'com.apple.finder'}:{}});
+ const work=h.actions['start-recording']({mode:'command'});await ready;await h.actions['cancel-recording']();resolve({available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[]});assert.equal(await work,undefined);assert.equal(h.nativeCalls.filter(call=>call.command==='captureInsertionTarget').length,0);
+});
+
+test('text review cannot insert into a different application captured after context',async t=>{
+ const h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?{available:true,pid:9,bundleId:'com.apple.TextEdit',text:'Original',selectedFiles:[]}:command==='captureInsertionTarget'?{token:'wrong-target',pid:10,bundleId:'com.apple.Notes'}:{}});
+ const result=await h.actions.command({text:'rewrite warmly'});assert.equal(result.canInsert,false);await assert.rejects(h.actions['paste-command-result']({id:result.reviewId}),/No insertion target/);
+});
+
+test('unavailable voice snapshot is fixed empty context, never rereads later selection',async t=>{
+ let selections=0,prompt='';const h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?{available:false}:command==='selection'?(selections++,{text:'Later secret selection'}):{},transcribe:async()=>({text:'rewrite warmly',segments:[],duration:1}),chat:async(_s,m)=>{prompt=m[1].content;return 'draft';}});
+ await h.actions['start-recording']({mode:'command'});await h.actions['save-recording']({bytes:Buffer.from('fixture'),mode:'command'});assert.equal(selections,0);assert.doesNotMatch(prompt,/Later secret selection/);
+});
+test('voice activation ownership change refuses starting and releases reservation',async t=>{
+ const h=harness(t,{nativeRequest:async command=>command==='frontmost'?{pid:9,bundleId:'com.apple.finder'}:command==='captureCommandContext'?{available:true,pid:10,bundleId:'com.apple.TextEdit',text:'different owner',selectedFiles:[]}:{} });
+ await assert.rejects(h.actions['start-recording']({mode:'command'}),/active application changed/);assert.equal(h.nativeCalls.filter(call=>call.command==='captureInsertionTarget').length,0);assert.ok(await h.actions['start-recording']({mode:'dictation'}));await h.actions['cancel-recording']();
 });
