@@ -49,6 +49,7 @@ if (!lock) {
 }
 let window,
   overlay,
+  overlayPlacement,
   tray,
   store,
   speech,
@@ -210,6 +211,12 @@ function createOverlay() {
       sandbox: true,
     },
   });
+  overlayPlacement?.dispose();
+  overlayPlacement = require("./overlay-placement").createOverlayPlacement({
+    screen: require("electron").screen,
+    overlay,
+    getPosition: () => store.data.settings.indicatorPosition,
+  });
   overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlay.loadFile(path.join(__dirname, "../renderer/overlay.html"));
   overlay.webContents.on("did-finish-load", () =>
@@ -222,18 +229,9 @@ function indicator(state, text) {
     overlay.hide();
     return;
   }
-  const { screen } = require("electron");
-  const display = screen.getDisplayNearestPoint(
-    screen.getCursorScreenPoint(),
-  ).workArea;
-  overlay.setPosition(
-    Math.round(display.x + (display.width - 360) / 2),
-    store.data.settings.indicatorPosition === "top"
-      ? display.y + 15
-      : display.y + display.height - 110,
-  );
   if (state === "idle" && !store.data.settings.idleIndicator) overlay.hide();
   else overlay.showInactive();
+  overlayPlacement?.update();
   emit("recording-state", {
     state,
     text,
@@ -1924,6 +1922,7 @@ app.on("before-quit", (event) => {
   shutdownInProgress = true;
   quitting = true;
   activeProcess?.controller.abort();
+  overlayPlacement?.dispose();
   utilityResults.clear();
   native?.close();
   server?.close();
