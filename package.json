@@ -1,0 +1,80 @@
+{
+  "name": "scribble",
+  "version": "0.1.0",
+  "description": "Local-first voice workspace for macOS",
+  "private": true,
+  "license": "MIT",
+  "author": "Scribble contributors",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron .",
+    "build:native": "node scripts/build-native.mjs",
+    "setup:speech": "node scripts/setup-speech.mjs",
+    "setup": "npm run build:native && npm run setup:speech",
+    "test": "node --test test/*.test.js tests/*.test.js",
+    "icons": "node scripts/icons.cjs",
+    "package": "npm run build:native && npm run icons && electron-builder --mac dir",
+    "dist": "npm run build:native && npm run icons && electron-builder --mac dmg zip",
+    "setup:parakeet": "node scripts/setup-parakeet.mjs",
+    "setup:ai": "node scripts/setup-ai.mjs"
+  },
+  "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "1.1.0",
+    "@iarna/toml": "^2.2.5",
+    "@pdf-lib/fontkit": "^1.1.1",
+    "adm-zip": "^0.6.1",
+    "pdf-lib": "1.17.1",
+    "sharp": "0.34.5",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "electron": "44.6.0",
+    "electron-builder": "26.15.3",
+    "jsdom": "^30.1.2",
+    "prettier": "^3.9.9"
+  },
+  "build": {
+    "appId": "org.scribble.voice",
+    "productName": "Scribble",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json",
+      "native/Parakeet/models.json",
+      "scripts/scribble.cjs"
+    ],
+    "extraResources": [
+      {
+        "from": "release/native/scribble-bridge",
+        "to": "native/scribble-bridge"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/@ffmpeg-installer/**/*",
+      "node_modules/sharp/**/*",
+      "node_modules/@img/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "native/entitlements.plist",
+      "entitlementsInherit": "native/entitlements.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Scribble records your voice for local transcription.",
+        "NSScreenCaptureUsageDescription": "Scribble captures meeting system audio only when you start a meeting recording.",
+        "NSAppleEventsUsageDescription": "Scribble inserts your dictation in the application you are using."
+      }
+    }
+  },
+  "bin": {
+    "scribble": "scripts/scribble.cjs"
+  }
+}

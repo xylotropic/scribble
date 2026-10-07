@@ -1,0 +1,1 @@
+window.scribble.on(({event,data})=>{if(event==='recording-state')document.getElementById('text').textContent=data.text||'Ready to listen';});document.getElementById('stop').onclick=()=>window.scribble.request('stop-recording');document.getElementById('cancel').onclick=()=>window.scribble.request('cancel-recording');

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+release/
+.private-analysis/
+.DS_Store
+*.log
+**/.build/
+**/Package.resolved
