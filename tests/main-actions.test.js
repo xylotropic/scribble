@@ -488,3 +488,28 @@ test('refused utility insertion retains review text and removes the consumed ins
 });
 
  test('overlay tone menu opens localized tone management and preserves enabled choices',async t=>{const h=harness(t),sent=[];let shown=0,focused=0;h.store.data.settings.locale='ja';h.store.data.tones=[{id:'on',name:'Enabled',enabled:true},{id:'off',name:'Disabled',enabled:false}];h.initializeUtilityWindow({isDestroyed:()=>false,show(){shown++;},focus(){focused++;},webContents:{isLoading:()=>false,send(_channel,payload){sent.push(payload);}}});assert.equal(h.actions['show-tone-menu'](),true);const menu=h.menus.at(-1);assert.equal(menu.some(item=>item.label==='Disabled'),false);assert.equal(menu[1].label,'Enabled');const manage=menu.at(-1);assert.equal(manage.label,localRequire('../shared/i18n').t('ja','nav.tones'));await manage.click();assert.equal(shown,1);assert.equal(focused,1);assert.equal(sent.at(-1).event,'navigate');assert.equal(sent.at(-1).data.page,'tones');assert.equal(h.store.data.settings.pinnedToneId,'');});
+
+test('command review inserts only cached output at its captured target and cannot be replayed', async t => {
+ const h=harness(t,{chat:async()=> 'Reviewed fixture',nativeRequest:async(command,args)=>command==='captureInsertionTarget'?{token:'target-1',bundleId:'com.apple.TextEdit'}:command==='paste'?{dispatched:true}: {text:'input'}});
+ const result=await h.actions.command({text:'rewrite this',context:'input'});
+ assert.equal(result.canInsert,true);assert.ok(result.reviewId);assert.equal(JSON.stringify(result).includes('target-1'),false);
+ await h.actions['paste-command-result']({id:result.reviewId,text:'tampered'});
+ const paste=h.nativeCalls.find(x=>x.command==='paste');assert.equal(paste.args.text,'Reviewed fixture');assert.equal(paste.args.targetToken,'target-1');assert.equal(paste.args.activateTarget,true);assert.equal(paste.args.autoEnter,false);assert.equal(paste.args.allowClipboardHistory,false);
+ await assert.rejects(h.actions['paste-command-result']({id:result.reviewId}),/expired/);
+});
+test('refinement retains the original external target and revokes the superseded result', async t => {
+ let captures=0;
+ const h=harness(t,{chat:async()=> 'Refined fixture',nativeRequest:async(command)=>command==='captureInsertionTarget'?{token:'target-'+(++captures),bundleId:'external.app'}:command==='paste'?{inserted:true}:{text:'input'}});
+ const first=await h.actions.command({text:'rewrite this',context:'input'});
+ const second=await h.actions.command({text:'make it shorter',context:first.text,reviewId:first.reviewId,historyId:first.historyId});
+ assert.equal(captures,1);await assert.rejects(h.actions['paste-command-result']({id:first.reviewId}),/expired/);
+ await h.actions['paste-command-result']({id:second.reviewId});assert.equal(h.nativeCalls.find(x=>x.command==='paste').args.targetToken,'target-1');
+});
+test('own-app capture and native target refusal leave copy-only command review', async t => {
+ const own=harness(t,{nativeRequest:async command=>command==='captureInsertionTarget'?{token:'own',bundleId:'org.scribble.voice'}:{text:'input'}});
+ const result=await own.actions.command({text:'rewrite this',context:'input'});assert.equal(result.canInsert,false);await assert.rejects(own.actions['paste-command-result']({id:result.reviewId}),/No insertion target/);assert.equal(own.nativeCalls.some(x=>x.command==='paste'),false);
+ const failed=harness(t,{nativeRequest:async command=>command==='captureInsertionTarget'?{token:'external',bundleId:'external.app'}:command==='paste'?{inserted:false,reason:'Field changed'}:{text:'input'}});
+ failed.initializeUtilityWindow({isDestroyed:()=>false,webContents:{send(_channel,payload){failed.events.push(payload);}}});
+ const review=await failed.actions.command({text:'rewrite this',context:'input'});await assert.rejects(failed.actions['paste-command-result']({id:review.reviewId}),/Field changed/);assert.equal(failed.events.at(-1).event,'command-result');assert.equal(failed.events.at(-1).data.canInsert,false);
+ await assert.rejects(failed.actions['paste-command-result']({id:review.reviewId}),/No insertion target/);assert.equal(failed.nativeCalls.filter(x=>x.command==='paste').length,1);
+});

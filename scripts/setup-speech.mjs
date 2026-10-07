@@ -1,16 +1,32 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
-import { mkdir, access, readdir } from "node:fs/promises";
+import { mkdir, access, readdir, readFile, writeFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 const require = createRequire(import.meta.url);
 const { SpeechEngine, defaultDataDir, run } = require("../src/main/speech.js");
 const version = "v1.8.7";
 const expectedCommit = "48f628a84833905ee4a0658ee6d4a5c915ce1997";
-const dataDir = defaultDataDir();
+const requestedArch = process.env.SCRIBBLE_TARGET_ARCH || process.arch;
+const architecture = requestedArch === "x86_64" ? "x64" : requestedArch;
+if (!["arm64", "x64"].includes(architecture)) throw Error(`Unsupported speech architecture: ${requestedArch}`);
+if (architecture !== process.arch && !process.env.SCRIBBLE_SPEECH_DATA_DIR) throw Error("Cross-target speech builds require SCRIBBLE_SPEECH_DATA_DIR for isolation");
+const dataDir = path.resolve(process.env.SCRIBBLE_SPEECH_DATA_DIR || defaultDataDir());
+if (architecture !== process.arch && dataDir === path.resolve(defaultDataDir())) throw Error("Cross-target speech builds cannot reuse the installed data directory");
+try {
+  if (architecture !== process.arch && await realpath(dataDir) === await realpath(defaultDataDir())) throw Error("Cross-target speech directory resolves to installed data");
+} catch (error) { if (error.code !== "ENOENT") throw error; }
 const source = path.join(dataDir, "runtime", "whisper.cpp");
 const build = path.join(source, "build");
 await mkdir(path.dirname(source), { recursive: true });
+const marker = path.join(path.dirname(source), "speech-build-arch.json");
+try { if (JSON.parse(await readFile(marker, "utf8")).arch !== architecture) throw Error("Speech build directory belongs to another architecture; choose a fresh data directory"); } catch (error) { if (error.code !== "ENOENT") throw error; }
+try {
+  const cache = await readFile(path.join(source, "build", "CMakeCache.txt"), "utf8");
+  const prior = cache.match(/^CMAKE_OSX_ARCHITECTURES:[^=]*=(.+)$/m)?.[1];
+  if (prior && prior !== (architecture === "x64" ? "x86_64" : "arm64")) throw Error("Existing Whisper CMake cache belongs to another architecture");
+} catch (error) { if (error.code !== "ENOENT") throw error; }
+await writeFile(marker, JSON.stringify({ arch: architecture }));
 try {
   await access(path.join(source, ".git"));
   await run("git", [
@@ -60,7 +76,7 @@ try {
   );
 }
 console.log(
-  `Building whisper.cpp ${version} for ${process.platform}/${process.arch}. A C++ compiler is required (macOS: xcode-select --install).`,
+  `Building whisper.cpp ${version} for ${process.platform}/${architecture}. A C++ compiler is required (macOS: xcode-select --install).`,
 );
 const configureArgs = [
   "-S",
@@ -70,7 +86,7 @@ const configureArgs = [
   "-DCMAKE_BUILD_TYPE=Release",
   "-DBUILD_SHARED_LIBS=OFF",
   "-DGGML_NATIVE=OFF",
-  ...(process.platform === "darwin" ? ["-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0"] : []),
+  ...(process.platform === "darwin" ? ["-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0", `-DCMAKE_OSX_ARCHITECTURES=${architecture === "x64" ? "x86_64" : "arm64"}`, ...(process.env.SCRIBBLE_MACOS_SDK ? [`-DCMAKE_OSX_SYSROOT=${process.env.SCRIBBLE_MACOS_SDK}`] : [])] : []),
   "-DWHISPER_BUILD_TESTS=OFF",
   "-DWHISPER_BUILD_EXAMPLES=ON",
   "-DGGML_METAL_EMBED_LIBRARY=ON",
@@ -120,6 +136,11 @@ await run(
   ],
   { onData: (s) => process.stdout.write(s) },
 );
+const binary = path.join(build, "bin", "whisper-cli");
+if (process.platform === "darwin") {
+  const actual = (await run("/usr/bin/lipo", ["-archs", binary])).trim();
+  if (actual !== (architecture === "x64" ? "x86_64" : "arm64")) throw Error(`Speech architecture mismatch: ${actual}`);
+}
 const engine = new SpeechEngine({ dataDir });
 console.log("Runtime:", engine.runtimePath());
 if (!process.argv.includes("--no-model")) {

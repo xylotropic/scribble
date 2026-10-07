@@ -16,7 +16,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   clone = (x) => JSON.parse(JSON.stringify(x));
 async function fixture(
   t,
-  { notes = [], shortcuts = [], requestFailure, browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
+  { notes = [], shortcuts = [], requestFailure, pasteCommandPromise, browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
 ) {
   const dom = new JSDOM(
     fs.readFileSync(path.join(__dirname, "../src/renderer/index.html"), "utf8"),
@@ -78,6 +78,7 @@ async function fixture(
     async request(action, args = {}) {
       calls.push({ action, args });
       if (requestFailure?.action === action) throw new Error(requestFailure.message);
+      if (action === "paste-command-result" && pasteCommandPromise) return await pasteCommandPromise;
       if (action === "state") return clone(data);
       if (action === "browser-catalog") return browserPromise ? await browserPromise : clone(browserCatalogue);
       if (action === "permissions") return clone(setupPermissions);
@@ -1073,4 +1074,55 @@ test('Japanese shortcut/browser and utility forms translate display while preser
  h.input('[name="name"]','My original name');h.input('[name="trigger"]','search words');h.input('[data-shortcut-field="urlsText"]','https://example.org/{{text}}');h.input('[data-shortcut-field="profile"]','Profile 7');await h.submit();const item=clone(h.calls.find(c=>c.action==='save-item').args.item);assert.equal(item.name,'My original name');assert.equal(item.actions[0].urls[0],'https://example.org/{{text}}');assert.equal(item.actions[0].profile,'Profile 7');assert.equal(item.actions[0].browser,'chrome');
  await h.click('[data-page="ai"]');assert.match(h.w.document.querySelector('main').textContent,/AIツール/);await h.click('[data-action="add-ai-utility"]');assert.match(h.w.document.querySelector('#modal').textContent,/テキストの取得元/);const presets=h.w.document.querySelector('[name="preset"]');assert.equal(presets.querySelector('[value="grammar"]').textContent,'文法を修正');assert.equal(presets.value,'grammar');assert.equal(h.w.document.querySelector('[name="source"]').value,'selection');h.input('[name="name"]','Original utility');await h.submit();assert.equal(h.data.settings.aiUtilities.at(-1).name,'Original utility');assert.equal(h.data.settings.aiUtilities.at(-1).preset,'grammar');
  h.emit('utility-result',{id:'opaque',name:'Original utility',text:'Original result {{text}}',canInsert:false});assert.equal(h.w.document.querySelector('#utility-result').textContent,'Original result {{text}}');assert.match(h.w.document.querySelector('#utility-result').parentElement.textContent,/結果をコピーするか閉じて/);assert.equal(h.w.document.querySelector('[data-action="dismiss-ai-utility"]').textContent,'閉じる');
+});
+
+test('recording styles localize labels and preserve exact settings values', options, async t => {
+  const h = await fixture(t); h.data.settings.locale = 'ja'; h.data.settings.indicatorStyle = 'notch'; h.emit('state', h.data);
+  await h.click('[data-page="settings"]'); await h.click('[data-tab="recording"]');
+  const select = h.w.document.querySelector('[data-setting="indicatorStyle"]');
+  assert.equal(select.value, 'notch'); assert.deepEqual([...select.options].map(o => o.value), ['pill','notch','hidden']);
+  assert.equal(select.options[1].textContent, 'ネイティブノッチ');
+  select.value = 'hidden'; select.dispatchEvent(new h.w.Event('change', {bubbles:true})); await flush();
+  assert.equal(h.calls.filter(c => c.action === 'preferences').at(-1).args.indicatorStyle, 'hidden');
+  assert.equal(h.data.settings.indicatorStyle, 'hidden');
+});
+
+test('utility settings labels preserve and escape the user name and ID', options, async t => {
+  const h = await fixture(t); h.data.settings.locale='es'; h.data.settings.aiUtilities=[{id:'utility_safe',name:'<img src=x onerror=alert(1)> {name}'}];
+  h.data.settings.hotkeys=[{mode:'utility',utilityId:'utility_safe',keyCode:5,modifiers:['option'],toggle:true}]; h.emit('state',h.data);
+  await h.click('[data-page="settings"]'); await h.click('[data-tab="hotkeys"]');
+  assert.match(h.w.document.querySelector('.list-row strong').textContent,/Utilidad de IA · <img src=x onerror=alert\(1\)> \{name\}/);
+  assert.equal(h.w.document.querySelector('.list-row img'),null); assert.match(h.w.document.querySelector('.list-row p').textContent,/Pulsa para transformar texto/);
+  assert.equal(h.data.settings.hotkeys[0].utilityId,'utility_safe');
+});
+
+test('command reviews use opaque target IDs, copy-only gating, and backend dismissal', options, async t => {
+  const h=await fixture(t); await h.click('[data-page="command"]');
+  h.emit('command-result',{kind:'text',text:'Reviewed text',reviewId:'review-a',canInsert:false}); await flush();
+  assert.equal(h.w.document.querySelector('[data-action="paste-command"]'),null);
+  const result=h.w.document.querySelector('#command-result'); result.dispatchEvent(new h.w.KeyboardEvent('keydown',{key:'Tab',bubbles:true})); await flush();
+  assert.equal(h.calls.filter(c=>c.action==='paste-command-result').length,0);
+  h.emit('command-result',{kind:'text',text:'Reviewed text',reviewId:'review-b',canInsert:true}); await flush();
+  await h.click('[data-action="paste-command"]'); assert.deepEqual(clone(h.calls.find(c=>c.action==='paste-command-result').args),{id:'review-b'});
+  assert.equal(h.w.document.querySelector('#command-result'),null); assert.equal(h.calls.filter(c=>c.action==='paste').length,0);
+  h.emit('command-result',{kind:'text',text:'Dismiss',reviewId:'review-c',canInsert:true}); await flush();
+  h.w.document.dispatchEvent(new h.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true})); await flush();
+  assert.deepEqual(clone(h.calls.find(c=>c.action==='dismiss-command-result').args),{id:'review-c'});
+});
+
+
+test('pending command insertion preserves a newer review', options, async t => {
+  let resolve; const promise=new Promise(r=>{resolve=r}); const h=await fixture(t,{pasteCommandPromise:promise});
+  await h.click('[data-page="command"]'); h.emit('command-result',{kind:'text',text:'Old',reviewId:'old',canInsert:true}); await flush();
+  h.w.document.querySelector('[data-action="paste-command"]').click(); await flush();
+  h.emit('command-result',{kind:'text',text:'New',reviewId:'new',canInsert:false}); await flush(); resolve(true); await flush();
+  assert.equal(h.w.document.querySelector('#command-result').textContent,'New');
+});
+
+test('failed command insertion retains backend copy-only review', options, async t => {
+  const h=await fixture(t,{requestFailure:{action:'paste-command-result',message:'Target changed'}}); await h.click('[data-page="command"]');
+  h.emit('command-result',{kind:'text',text:'Keep me',reviewId:'failed',canInsert:true}); await flush(); await h.click('[data-action="paste-command"]');
+  h.emit('command-result',{kind:'text',text:'Keep me',reviewId:'failed',canInsert:false}); await flush();
+  assert.equal(h.w.document.querySelector('#command-result').textContent,'Keep me'); assert.equal(h.w.document.querySelector('[data-action="paste-command"]'),null);
+  await h.click('[data-action="copy-command"]'); assert.equal(h.calls.find(c=>c.action==='copy').args.text,'Keep me');
 });

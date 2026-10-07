@@ -50,6 +50,8 @@ if (!lock) {
 let window,
   overlay,
   overlayPlacement,
+  nativeIndicator,
+  indicatorPayload,
   tray,
   store,
   speech,
@@ -67,6 +69,7 @@ const timers = new Map(),
   allowedFiles = new Set(),
   pendingOpenFiles = [];
 const utilityResults = new Map();
+const commandReviews = new Map();
 function emit(event, data) {
   for (const w of [window, overlay])
     if (w && !w.isDestroyed())
@@ -217,6 +220,15 @@ function createOverlay() {
     overlay,
     getPosition: () => store.data.settings.indicatorPosition,
   });
+  nativeIndicator?.dispose();
+  nativeIndicator = require("./native-indicator").createNativeIndicator({
+    request: (command, args) => native.request(command, args),
+    showElectron: (visible) => {
+      if (!overlay || overlay.isDestroyed()) return;
+      if (visible) overlay.showInactive(); else overlay.hide();
+      overlayPlacement?.update();
+    },
+  });
   overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlay.loadFile(path.join(__dirname, "../renderer/overlay.html"));
   overlay.webContents.on("did-finish-load", () =>
@@ -225,25 +237,29 @@ function createOverlay() {
 }
 function indicator(state, text) {
   if (!overlay || overlay.isDestroyed()) return;
-  if (store.data.settings.indicatorPosition === "hidden") {
-    overlay.hide();
-    return;
-  }
-  if (state === "idle" && !store.data.settings.idleIndicator) overlay.hide();
-  else overlay.showInactive();
-  overlayPlacement?.update();
-  emit("recording-state", {
-    state,
-    text,
-    mode: activeMode,
-    style: store.data.settings.indicatorStyle,
-    position: store.data.settings.indicatorPosition,
-    tones: store.data.tones,
-    selectedTone: store.data.settings.pinnedToneId,
-    canSelectTone: true,
-    locale: store.data.settings.locale,
-  });
+  const settings = store.data.settings;
+  const visible = settings.indicatorPosition !== "hidden" && settings.indicatorStyle !== "hidden" &&
+    (state !== "idle" || settings.idleIndicator);
+  const statusKeys = {"Ready to listen":"overlay.ready", "Starting microphone…":"overlay.starting",
+    "Listening…":"overlay.listening", "Taking notes":"mode.note", "Paused":"state.paused",
+    "Microphone muted":"state.muted", "Transcribing locally…":"overlay.transcribing", "Recording failed":"overlay.failed"};
+  indicatorPayload = {
+    state, text: (statusKeys[text] ? interfaceText(statusKeys[text]) : text || interfaceText("overlay.ready")).slice(0,500),
+    mode: activeMode, style: settings.indicatorStyle, position: settings.indicatorPosition,
+    enabled: visible, level: 0, canSelectTone: state === "idle" && store.data.tones.some(t => t.enabled !== false),
+    tone: (store.data.tones.find(t => t.id === settings.pinnedToneId)?.name || interfaceText("tone.automatic")).slice(0,120),
+    labels: { dictate: interfaceText("tray.startDictation"), command: interfaceText("mode.command"),
+      note: interfaceText("tray.startNote"), stop: interfaceText("overlay.stopRecording"),
+      cancel: interfaceText("overlay.cancelRecording"), open: interfaceText("tray.open"),
+      tones: interfaceText("overlay.chooseTone"), status: interfaceText("overlay.microphoneLevel") },
+  };
+  if (nativeIndicator) nativeIndicator.update(indicatorPayload, visible);
+  else { if (visible) overlay.showInactive(); else overlay.hide(); overlayPlacement?.update(); }
+  emit("recording-state", { state, text, mode: activeMode, style: settings.indicatorStyle,
+    position: settings.indicatorPosition, tones: store.data.tones, selectedTone: settings.pinnedToneId,
+    canSelectTone: true, locale: settings.locale });
 }
+
 async function ensureAI(settings) {
   if (
     settings.aiProvider === "ollama" &&
@@ -353,6 +369,7 @@ function updateNative() {
     .catch((e) => emit("native-error", e.message));
   native
     .request("setExpansions", {
+      allowClipboardHistory: store.data.settings.clipboardHistory,
       expansions: store.data.settings.expansionsEnabled
         ? store.data.expansions
             .filter((x) => x.enabled !== false)
@@ -389,7 +406,9 @@ async function beginRecording(mode = "dictation", toneId) {
     recordTarget = null;
     return;
   }
-  recordTarget = { ...front, toneId };
+  const commandTarget = mode === "command" ? await captureCommandTarget() : null;
+  if (recordTarget !== reservation) return;
+  recordTarget = { ...front, toneId, commandTarget };
   activeMode = mode;
   emit("recording-control", { action: "start", mode });
   indicator("starting", "Starting microphone…");
@@ -419,6 +438,7 @@ async function pasteText(text, html) {
     return native.request("paste", {
       text,
       expectedPid: recordTarget?.pid,
+      allowClipboardHistory: store.data.settings.clipboardHistory,
       html: html ? domain.sanitizeRichHTML(html) : undefined,
       restoreClipboard: store.data.settings.restoreClipboard,
       autoEnter: store.data.settings.autoEnter,
@@ -559,7 +579,8 @@ async function pasteAIUtility(id) {
   if (!result.canInsert) throw Error("No insertion target was captured; copy this result instead");
   try {
     const pasted = await native.request("paste", { text: result.text, targetToken: result.targetToken,
-      activateTarget: true, restoreClipboard: store.data.settings.restoreClipboard, autoEnter: false });
+      activateTarget: true, restoreClipboard: store.data.settings.restoreClipboard, autoEnter: false,
+      allowClipboardHistory: store.data.settings.clipboardHistory });
     if (!pasted.inserted && !pasted.dispatched) throw Error(pasted.reason || "The result could not be inserted");
     utilityResults.delete(id);
     return pasted;
@@ -568,6 +589,44 @@ async function pasteAIUtility(id) {
     // but remove Insert instead of offering another attempt with a stale target.
     result.canInsert = false;
     emit("utility-result", { id: result.id, utilityId: result.utilityId, name: result.name, text: result.text, canInsert: false });
+    throw error;
+  }
+}
+async function captureCommandTarget() {
+  const target = await native.request("captureInsertionTarget").catch(() => null);
+  return target?.token && target.bundleId !== "org.scribble.voice"
+    ? { token: target.token, expiresAt: Date.now() + 600000 } : null;
+}
+function attachCommandReview(result, target) {
+  if (result.kind !== "text") return result;
+  if (typeof result.text !== "string" || result.text.length > 100000)
+    throw Error("Command result is too large or invalid");
+  for (const [id, value] of commandReviews)
+    if (value.expiresAt < Date.now()) commandReviews.delete(id);
+  if (commandReviews.size >= 32) commandReviews.delete(commandReviews.keys().next().value);
+  result.reviewId = crypto.randomUUID();
+  result.canInsert = !!target?.token && target.expiresAt > Date.now();
+  commandReviews.set(result.reviewId, { result, target: result.canInsert ? target : null,
+    expiresAt: target?.expiresAt || Date.now() + 600000 });
+  return result;
+}
+async function pasteCommandReview(id) {
+  const review = commandReviews.get(id);
+  if (!review || review.expiresAt < Date.now()) throw Error("This command result expired; copy it instead");
+  if (!review.result.canInsert || !review.target) throw Error("No insertion target was captured; copy this result instead");
+  // Consume permission before awaiting native insertion so concurrent clicks cannot reuse it.
+  review.result.canInsert = false;
+  try {
+    const pasted = await native.request("paste", { text: review.result.text,
+      targetToken: review.target.token, activateTarget: true,
+      restoreClipboard: store.data.settings.restoreClipboard, autoEnter: false,
+      allowClipboardHistory: store.data.settings.clipboardHistory });
+    if (!pasted.inserted && !pasted.dispatched) throw Error(pasted.reason || "The result could not be inserted");
+    commandReviews.delete(id);
+    return pasted;
+  } catch (error) {
+    review.target = null;
+    emit("command-result", review.result);
     throw error;
   }
 }
@@ -925,7 +984,7 @@ async function transcribeAndProcess(
     speechProvider: settings.speechProvider,
   };
   if (kind === "command") {
-    const command = await runCommand(text, "", attachments);
+    const command = attachCommandReview(await runCommand(text, "", attachments), recordTarget?.commandTarget);
     entry.text = command.text;
     entry.command = text;
     entry.commandResult = command;
@@ -1148,7 +1207,12 @@ const actions = {
     beginRecording(mode, toneId),
   "recording-level": ({ level }) => {
     if (!recordTarget || !Number.isFinite(level)) return false;
-    emit("recording-level", { level: Math.max(0, Math.min(1, level)) });
+    const normalizedLevel = Math.max(0, Math.min(1, level));
+    emit("recording-level", { level: normalizedLevel });
+    if (indicatorPayload && nativeIndicator && store.data.settings.indicatorStyle === "notch") {
+      indicatorPayload = { ...indicatorPayload, level: normalizedLevel };
+      nativeIndicator.update(indicatorPayload, indicatorPayload.enabled);
+    }
     return true;
   },
   "recording-paused": ({ paused = false, muted = false }) => {
@@ -1584,7 +1648,9 @@ const actions = {
     if (chosen.canceled) return null;
     return require("./command-context").prepareCommandFiles(chosen.filePaths);
   },
-  command: async ({ text, context, historyId, attachments = {} }) => {
+  "paste-command-result": ({ id }) => pasteCommandReview(id),
+  "dismiss-command-result": ({ id }) => commandReviews.delete(id),
+  command: async ({ text, context, historyId, reviewId, attachments = {} }) => {
     if (activeProcess) throw Error("Finish the current transcription first");
     text = String(text || "").trim();
     if (!text || text.length > 12000)
@@ -1601,7 +1667,10 @@ const actions = {
       !Array.isArray(attachments.images || [])
     )
       throw Error("Command context is too large or invalid");
-    const result = await runCommand(text, String(context || ""), attachments);
+    const prior = reviewId ? commandReviews.get(reviewId) : null;
+    const target = reviewId ? (prior?.expiresAt > Date.now() ? prior.target : null) : await captureCommandTarget();
+    const result = attachCommandReview(await runCommand(text, String(context || ""), attachments), target);
+    if (reviewId) commandReviews.delete(reviewId);
     if (!store.data.settings.saveHistory) return result;
     const revision = {
       instruction: text,
@@ -1736,6 +1805,12 @@ app
     speech.on("progress", (x) => emit("speech-progress", x));
     speech.on("download-progress", (x) => emit("model-download", x));
     speech.on("models-changed", () => emit("state", snapshot()));
+    native.on("indicator-action", (event) => {
+      const action = { dictate: ["start-recording", {mode:"dictation"}], command: ["start-recording", {mode:"command"}],
+        note: ["start-recording", {mode:"note"}], stop: ["stop-recording", {}], cancel: ["cancel-recording", {}],
+        open: ["show", {}], tones: ["show-tone-menu", {}] }[event.action];
+      if (action) void dispatch(...action).catch(error => notify("Scribble", error.message));
+    });
     native.on("hotkey", async (x) => {
       if (x.phase === "cancel") {
         await actions["cancel-recording"]({});
@@ -1933,7 +2008,9 @@ app.on("before-quit", (event) => {
   quitting = true;
   activeProcess?.controller.abort();
   overlayPlacement?.dispose();
+  nativeIndicator?.dispose();
   utilityResults.clear();
+  commandReviews.clear();
   native?.close();
   server?.close();
   for (const timer of timers.values()) clearTimeout(timer);

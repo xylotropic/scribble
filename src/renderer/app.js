@@ -573,7 +573,7 @@ function renderShortcuts() {
   return `${heading("A phrase. An action.", "Your voice is a shortcut.", "Search the web, launch an app, or open a folder. Built-in shortcuts work without an AI provider.", button("Add shortcut", "add-item", "plus", "primary", 'data-kind="shortcuts"'))}<div class="banner">Say “google best coffee near me” while dictating. Scribble routes the phrase instead of typing it.</div><div class="card">${state.shortcuts.map((s) => `<div class="list-row"><span class="list-icon">${icon(s.type === "folder" ? "folder" : "shortcut")}</span><div class="body"><strong>${esc(s.name || s.trigger)}</strong><p><span class="shortcut-trigger">${esc(s.trigger)}</span> ${esc(shortcutDescription(s))}</p></div>${s.builtin ? '<span class="badge">BUILT-IN</span>' : ""}<input type="checkbox" data-toggle-kind="shortcuts" data-id="${s.id}" ${s.enabled !== false ? "checked" : ""} aria-label="Enable ${esc(s.name)}">${!s.builtin ? button("", "edit-item", "edit", "ghost icon", `data-kind="shortcuts" data-id="${s.id}"`) + button("", "delete", "trash", "ghost icon danger", `data-kind="shortcuts" data-id="${s.id}"`) : ""}</div>`).join("")}</div><div class="card"><h3>Try a shortcut</h3><div class="row"><input class="inline-input" id="shortcut-test" placeholder="google public hiking trails">${button("Run", "test-shortcut", "play")}</div><p class="tip">Running a shortcut opens the selected app, folder, or browser destination.</p></div>`;
 }
 function renderCommand() {
-  return `${heading("Say what should happen", "Command Mode.", "Transform selected text, set a timer, or ask your own language model. Review a result before inserting it.")}<div class="card"><p class="eyebrow">Hold ⌥ ⌃ Space for a voice command</p><label class="field">What would you like to do?<input id="command-text" value="${esc(commandDraft)}" placeholder="Make this more concise, set a timer for 5 minutes…"></label>${area("command-context", "Text to work with", commandTextContext, "Leave empty to use the selected text or clipboard.")}<div class="row wrap">${["Clean up", "Formal", "Polish", "Summarize", "Bullets", "Email"].map((label) => button(label, "command-preset", "", "small", `data-preset="${label}"`)).join("")}</div><div class="row">${button("Choose context files", "command-files", "upload")}${button("Capture screen context", "command-screen", "image")}${commandAttachments.sources.length ? button("Clear files", "clear-command-files", "close", "ghost") + `<span class="muted">${commandAttachments.sources.map((source) => esc(source.name)).join(", ")}</span>` : ""}${button("Run command", "run-command", "spark", "primary")}${button("Speak a command", "record-command", "mic")}<span class="muted">Local utilities are ready. AI commands use your configured provider.</span></div>${commandResult ? `<div class="command-panel"><div class="command-result" id="command-result" tabindex="0">${esc(commandResult.text)}</div><div class="row">${button("Copy", "copy-command", "copy")}${commandResult.kind === "text" ? button("Insert", "paste-command", "arrow", "primary") : ""}</div>${commandResult.kind === "text" ? `<label class="field">Refine this result<input id="refine-command" placeholder="Make it shorter, change the tone…"></label>${button("Refine", "refine-command", "spark", "small")}` : ""}<p class="smallprint">Focus the result and press Tab to insert, or Escape to dismiss.</p></div>` : ""}</div>${state.timers.length ? `<div class="section-heading"><h2>Timers</h2></div><div class="grid three">${state.timers.map((t) => `<div class="card"><h3>${esc(t.title)}</h3><p class="number">${clock(Math.max(0, (t.endsAt - Date.now()) / 1000))}</p>${button("Cancel", "cancel-timer", "close", "small", `data-id="${t.id}"`)}</div>`).join("")}</div>` : ""}<div class="section-heading"><h2>A few things to try</h2></div><div class="grid three">${[
+  return `${heading("Say what should happen", "Command Mode.", "Transform selected text, set a timer, or ask your own language model. Review a result before inserting it.")}<div class="card"><p class="eyebrow">Hold ⌥ ⌃ Space for a voice command</p><label class="field">What would you like to do?<input id="command-text" value="${esc(commandDraft)}" placeholder="Make this more concise, set a timer for 5 minutes…"></label>${area("command-context", "Text to work with", commandTextContext, "Leave empty to use the selected text or clipboard.")}<div class="row wrap">${["Clean up", "Formal", "Polish", "Summarize", "Bullets", "Email"].map((label) => button(label, "command-preset", "", "small", `data-preset="${label}"`)).join("")}</div><div class="row">${button("Choose context files", "command-files", "upload")}${button("Capture screen context", "command-screen", "image")}${commandAttachments.sources.length ? button("Clear files", "clear-command-files", "close", "ghost") + `<span class="muted">${commandAttachments.sources.map((source) => esc(source.name)).join(", ")}</span>` : ""}${button("Run command", "run-command", "spark", "primary")}${button("Speak a command", "record-command", "mic")}<span class="muted">Local utilities are ready. AI commands use your configured provider.</span></div>${commandResult ? `<div class="command-panel"><div class="command-result" id="command-result" tabindex="0">${esc(commandResult.text)}</div><div class="row">${button("Copy", "copy-command", "copy")}${commandResult.kind === "text" && commandResult.canInsert ? button("Insert", "paste-command", "arrow", "primary") : ""}</div>${commandResult.kind === "text" ? `<label class="field">Refine this result<input id="refine-command" placeholder="Make it shorter, change the tone…"></label>${button("Refine", "refine-command", "spark", "small")}` : ""}<p class="smallprint">${esc(interfaceLabel(commandResult.kind === "text" && commandResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."))}</p></div>` : ""}</div>${state.timers.length ? `<div class="section-heading"><h2>Timers</h2></div><div class="grid three">${state.timers.map((t) => `<div class="card"><h3>${esc(t.title)}</h3><p class="number">${clock(Math.max(0, (t.endsAt - Date.now()) / 1000))}</p>${button("Cancel", "cancel-timer", "close", "small", `data-id="${t.id}"`)}</div>`).join("")}</div>` : ""}<div class="section-heading"><h2>A few things to try</h2></div><div class="grid three">${[
     [
       "clock",
       "“Set a timer for 5 minutes”",
@@ -654,6 +654,12 @@ const utilityPresets = [["grammar", "Fix grammar"], ["professional", "Profession
 function utilityBinding(id) { return (state.settings.hotkeys || []).find(h => h.mode === "utility" && h.utilityId === id); }
 function renderAIUtilities() {
   return `<div class="card"><div class="row between"><h2>${esc(interfaceLabel("AI utilities"))}</h2>${button("Add utility", "add-ai-utility", "plus")}</div><p class="muted">${esc(interfaceLabel("Transform selected text or clipboard text with your configured language model. Cloud providers receive this text and may charge for usage. Results stay available for review before insertion. An empty selection is never replaced with clipboard text."))}</p>${(state.settings.aiUtilities || []).map(u => `<div class="list-row"><div class="body"><strong>${esc(u.name)}</strong><p>${esc(interfaceLabel(utilityPresets.find(p => p[0] === u.preset)?.[1] || u.preset))} · ${esc(interfaceLabel(u.source === "clipboard" ? "Clipboard" : "Selected text"))}${utilityBinding(u.id) ? " · " + esc(utilityBinding(u.id).modifiers.join(" + ")) + " + " + esc(utilityBinding(u.id).keyCode) : " · " + esc(interfaceLabel("No shortcut"))}</p></div>${button(u.enabled !== false ? "Disable" : "Enable", "toggle-ai-utility", "", "small", `data-id="${esc(u.id)}"`)}${utilityBusy.has(u.id) ? button("Cancel", "cancel-ai-utility", "close", "small", `data-id="${esc(u.id)}"`) : button("Run", "run-ai-utility", "play", "small", `data-id="${esc(u.id)}" ${u.enabled === false ? "disabled" : ""}`)}${button("Edit", "edit-ai-utility", "edit", "small", `data-id="${esc(u.id)}"`)}${button("Delete", "delete-ai-utility", "trash", "small danger", `data-id="${esc(u.id)}"`)}</div>`).join("") || `<p class="muted">${esc(interfaceLabel("Add a utility to turn a keyboard shortcut into a text transformation."))}</p>`}${utilityResult ? `<div class="command-panel"><h3>${esc(utilityResult.name)}</h3><div class="command-result" id="utility-result" tabindex="0">${esc(utilityResult.text)}</div><div class="row">${button("Copy", "copy-ai-utility", "copy")}${utilityResult.canInsert ? button("Insert", "paste-ai-utility", "arrow", "primary") : ""}${button("Dismiss", "dismiss-ai-utility", "close")}</div><p class="smallprint">${esc(interfaceLabel(utilityResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."))}</p></div>` : ""}</div>`;
+}
+async function insertCommandResult() {
+  const result = commandResult;
+  if (result?.kind !== "text" || !result.canInsert || !result.reviewId) return;
+  await request("paste-command-result", {id: result.reviewId});
+  if (commandResult?.reviewId === result.reviewId) { commandResult = null; render(); }
 }
 async function insertAIUtility() {
   const result = utilityResult;
@@ -772,7 +778,7 @@ function renderSettings() {
       ],
     )}<p class="tip">Whisper .en models transcribe English only. Select Base or a larger multilingual model for other languages.</p>`;
   if (settingsTab === "recording")
-    body = `<h2>Stay in the flow.</h2>${setting("Auto-paste dictation", "Insert the result in the active application after speech ends.", "autoPaste")}${setting("Keep audio recordings", "Retain audio for playback and retry.", "saveAudio")}${setting("Keep voice log", "Store dictations in searchable history. Files and notes stay in the workspace.", "saveHistory")}${setting(
+    body = `<h2>Stay in the flow.</h2>${setting("Auto-paste dictation", "Insert the result in the active application after speech ends.", "autoPaste")}${setting("Keep audio recordings", "Retain audio for playback and retry.", "saveAudio")}${setting("Keep voice log", "Store dictations in searchable history. Files and notes stay in the workspace.", "saveHistory")}${setting("Indicator style", "Native notch uses the display cutout. Displays without a notch use the pill. Hidden removes the recording indicator.", "indicatorStyle", "select", [["pill", interfaceLabel("Pill")], ["notch", interfaceLabel("Native notch")], ["hidden", interfaceLabel("Hidden")]])}${setting(
       "Indicator position",
       "A small recording indicator follows the current display.",
       "indicatorPosition",
@@ -784,7 +790,7 @@ function renderSettings() {
       ],
     )}${setting("Idle indicator", "Keep a small ready indicator visible.", "idleIndicator")}${setting("Enhance with AI", "Clean up words using your configured language model.", "aiEnhance")}<div class="setting-row"><div><h3>Recordings folder</h3><p>${esc(s.recordingsDir || state.dataDir + "/recordings")}</p></div>${button("Choose folder", "recordings-folder", "folder")}</div><p class="tip">Changing folders applies to new recordings. Existing audio keeps its original path so playback and retries still work.</p>`;
   if (settingsTab === "hotkeys")
-    body = `<h2>A shortcut for every thought.</h2><p class="muted">Bindings are global when Accessibility access is enabled. Use hold for push-to-talk, or toggle for hands-free recording.</p>${s.hotkeys.map((h, i) => `<div class="list-row"><div class="body"><strong>${esc(h.mode === "utility" ? "AI utility · " + ((s.aiUtilities || []).find(u => u.id === h.utilityId)?.name || h.utilityId) : h.mode)}</strong><p>${h.mode === "utility" ? "Tap to transform text" : h.toggle ? "Tap to start / tap to stop" : "Hold to speak"}</p></div><kbd>${esc(h.modifiers.join(" + "))} + ${h.keyCode === 49 ? "Space" : h.keyCode === 37 ? "L" : h.keyCode === -1 ? "modifier" : h.keyCode >= 130 ? `M${h.keyCode - 127}` : h.keyCode}</kbd>${button("Edit", "edit-hotkey", "edit", "small", `data-index="${i}"`)}${button("Remove", "remove-hotkey", "trash", "small danger", `data-index="${i}"`)}</div>`).join("")}<div class="row">${button("Add binding", "add-hotkey", "plus")}${button("Restore defaults", "reset-hotkeys", "refresh")}</div><p class="tip">Escape cancels an active recording. Cmd+Shift+L can be configured to paste the last dictation.</p>${area("suppressed-apps", "Pause shortcuts in these applications", s.suppressedApps.join("\n"), "One bundle identifier per line.")} ${button("Save exclusions", "save-suppressed", "check")}`;
+    body = `<h2>A shortcut for every thought.</h2><p class="muted">Bindings are global when Accessibility access is enabled. Use hold for push-to-talk, or toggle for hands-free recording.</p>${s.hotkeys.map((h, i) => `<div class="list-row"><div class="body"><strong>${esc(h.mode === "utility" ? workflowText("AI utility · {name}", {name: (s.aiUtilities || []).find(u => u.id === h.utilityId)?.name || h.utilityId}) : h.mode)}</strong><p>${h.mode === "utility" ? esc(interfaceLabel("Tap to transform text")) : h.toggle ? "Tap to start / tap to stop" : "Hold to speak"}</p></div><kbd>${esc(h.modifiers.join(" + "))} + ${h.keyCode === 49 ? "Space" : h.keyCode === 37 ? "L" : h.keyCode === -1 ? "modifier" : h.keyCode >= 130 ? `M${h.keyCode - 127}` : h.keyCode}</kbd>${button("Edit", "edit-hotkey", "edit", "small", `data-index="${i}"`)}${button("Remove", "remove-hotkey", "trash", "small danger", `data-index="${i}"`)}</div>`).join("")}<div class="row">${button("Add binding", "add-hotkey", "plus")}${button("Restore defaults", "reset-hotkeys", "refresh")}</div><p class="tip">Escape cancels an active recording. Cmd+Shift+L can be configured to paste the last dictation.</p>${area("suppressed-apps", "Pause shortcuts in these applications", s.suppressedApps.join("\n"), "One bundle identifier per line.")} ${button("Save exclusions", "save-suppressed", "check")}`;
   if (settingsTab === "permissions")
     body = `<h2>Only what’s needed.</h2><p class="muted">Scribble needs microphone access for recording and Accessibility access for shortcuts, insertion, and expansions. Screen recording is optional for meeting audio.</p>${[
       ["microphone", "Microphone", "Record your voice."],
@@ -1909,6 +1915,7 @@ document.addEventListener("click", async (e) => {
           text: instruction,
           context: commandResult.text,
           historyId: commandResult.historyId,
+          reviewId: commandResult.reviewId,
         });
         render();
       } finally {
@@ -2002,8 +2009,7 @@ document.addEventListener("click", async (e) => {
       return;
     }
     if (a === "paste-command") {
-      await request("paste", { text: commandResult.text });
-      toast("Insertion requested.");
+      await insertCommandResult();
       return;
     }
     if (a === "ai-test") {
@@ -2370,6 +2376,7 @@ document.addEventListener("keydown", (e) => {
     if (utilityResult.canInsert && e.key === "Tab" && !e.shiftKey && e.target.id === "utility-result") { e.preventDefault(); insertAIUtility().catch(error => toast(error.message || interfaceLabel("Unable to insert result"))); return; }
   }
   if (page === "command" && commandResult && e.key === "Escape") {
+    request("dismiss-command-result", {id: commandResult.reviewId}).catch(() => {});
     commandResult = null;
     render();
     e.preventDefault();
@@ -2377,12 +2384,13 @@ document.addEventListener("keydown", (e) => {
   if (
     page === "command" &&
     commandResult?.kind === "text" &&
+    commandResult.canInsert &&
     e.key === "Tab" &&
     !e.shiftKey &&
     e.target.id === "command-result"
   ) {
     e.preventDefault();
-    request("paste", { text: commandResult.text }).catch(() => {});
+    insertCommandResult().catch(error => toast(error.message || interfaceLabel("Unable to insert result")));
   }
 });
 async function refreshPermissions() {

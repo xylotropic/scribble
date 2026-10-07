@@ -56,3 +56,16 @@ Native build scripts accept `SCRIBBLE_NATIVE_ARCH=arm64` or `x64` (`x86_64` is a
 The packaging `afterPack` hook verifies the Electron executable, bridge, Whisper, FFmpeg, Ollama and Share extension against the requested architecture and refuses a mismatched package. This is a bounded architecture check, not a complete dynamic-library dependency audit or runtime acceptance test. Optional Parakeet helpers remain Apple Silicon only.
 
 Both helper architectures compiled into isolated temporary outputs on October 7, 2026; both Share extensions passed strict signature verification. The existing ARM app passed the six-entry-point architecture check. Runtime preparation currently builds Whisper and FFmpeg for the host architecture; a complete Intel build requires matching Intel preparation and desktop verification. An Intel Electron target alone, or cross-compiling just the helpers, does not establish Intel product support.
+
+
+### Native indicator and review targets
+
+The native indicator uses a nonactivating NSPanel, safe-area and auxiliary top-screen geometry for a hardware notch, and a pill fallback within the visible screen area. A bottom position uses a pill even on a notched display. It follows cursor/display changes while visible and supports dictate, command, note, stop, cancel, open and tone actions. Main-process updates are serialized; stale replies cannot replace the latest desired surface. Hardware notch appearance and physical clicks still require MacBook desktop acceptance.
+
+Command review now caches an opaque review ID and exact output separately from a captured insertion target. Refinement retains the original target and revokes the superseded review. Explicit insertion uses the native single-use target check; refusal leaves copy-only review. Tokens are not serialized into history or exposed to the renderer. Dictation, command review, AI utilities and expansions pass the clipboard-history preference; private clipboard writes carry `org.nspasteboard.TransientType` in the same pasteboard transaction, and owned clipboard restoration preserves types. External clipboard-manager behavior remains a separate acceptance gate.
+
+### Isolated Intel runtime staging
+
+`SCRIBBLE_TARGET_ARCH=arm64|x64` selects speech/media targets (`x86_64` is an alias). Cross-target builds require separate `SCRIBBLE_SPEECH_DATA_DIR`, `SCRIBBLE_FFMPEG_BUILD_DIR` and `SCRIBBLE_RUNTIME_STAGE_DIR` values. Native helper target and runtime target must match. Architecture markers, existing caches and Mach-O inspections prevent mixing targets; FFmpeg source/licence/recipe records remain with the stage. Isolated Ollama staging verifies the existing pinned universal runtime before copying it.
+
+Actual Intel Whisper and FFmpeg were compiled and staged twice into an isolated directory with their source provenance. `mac-architecture-verification.json` records hashes and architecture inspection. This host lacks Rosetta, so Intel execution and a complete Intel app remain unverified. The tested ARM package and installed runtime were preserved.
