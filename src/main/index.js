@@ -835,7 +835,9 @@ async function transcribeAndProcess(
 const actions = {
   state: () => snapshot(),
   preferences: async (patch) => {
-    store.updateSettings(patch);
+    const proposed = { ...store.data.settings, ...patch };
+    const normalized = require("./speech-preferences").normalizeSpeechPreferences(proposed, speech.listModels());
+    store.updateSettings({ ...patch, ...normalized });
     if ("launchAtLogin" in patch)
       app.setLoginItemSettings({ openAtLogin: patch.launchAtLogin });
     if ("hideDock" in patch && app.dock)

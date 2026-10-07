@@ -757,3 +757,16 @@ test("auxiliary mouse shortcut selection persists and displays its button", opti
   const saved = h.calls.findLast((x) => x.action === 'preferences');
   assert.equal(saved.args.hotkeys.at(-1).keyCode, 130);
 });
+
+test('fixed-language models show an accurate disabled dictation selector', options, async (t) => {
+  const h = await fixture(t);
+  await h.click('[data-page="settings"]');
+  await h.click('[data-tab="language"]');
+  const control = h.w.document.querySelector('[data-setting="language"]');
+  assert.equal(control.disabled, true);
+  assert.equal(control.value, 'en');
+  h.data.settings.modelId = 'multilingual';
+  h.data.models.push({ id:'multilingual', name:'Multilingual' });
+  h.emit('state', h.data);
+  assert.equal(h.w.document.querySelector('[data-setting="language"]').disabled, false);
+});

@@ -614,15 +614,22 @@ function renderTones() {
 function renderMemory() {
   return `${heading("A little context goes a long way", "Remember what matters.", "Reference notes and files are indexed with your selected language model. Adding or re-indexing sends their text to that provider. Choose Ollama to keep indexing on this Mac.", button("Import file", "import-items", "upload", "", 'data-kind="memory"') + button("Add memory", "add-item", "plus", "primary", 'data-kind="memory"'))}<div class="card">${state.memory.length ? state.memory.map((m) => `<div class="list-row"><span class="list-icon">${icon("memory")}</span><div class="body"><strong>${esc(m.name)}</strong><p>${esc(m.status || "Not indexed")}${m.error ? " · " + esc(m.error) : ""}</p><p class="truncate">${esc((m.summary || m.content)?.slice(0, 180))}</p></div><input type="checkbox" data-toggle-kind="memory" data-id="${m.id}" ${m.enabled !== false ? "checked" : ""} aria-label="Include memory">${button("Edit", "edit-item", "edit", "small", `data-kind="memory" data-id="${m.id}"`)}${button("Re-index", "memory-reindex", "refresh", "small", `data-id="${m.id}"`)}${button("", "delete", "trash", "ghost icon danger", `data-kind="memory" data-id="${m.id}"`)}</div>`).join("") : empty("memory", "Your useful context, on hand.", "Names, project details, preferred writing style, or a reference document.")}</div>`;
 }
-function setting(label, description, key, type = "checkbox", options) {
+function setting(label, description, key, type = "checkbox", options, disabled = false) {
   const s = state.settings;
   let control =
     type === "checkbox"
-      ? `<input type="checkbox" data-setting="${key}" ${s[key] ? "checked" : ""} aria-label="${label}">`
+      ? `<input type="checkbox" data-setting="${key}" ${disabled ? "disabled" : ""} ${s[key] ? "checked" : ""} aria-label="${label}">`
       : type === "select"
         ? `<select data-setting="${key}" aria-label="${label}">${options.map(([v, l]) => `<option value="${esc(v)}" ${String(s[key]) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`
         : `<input data-setting="${key}" data-type="${type}" type="${type}" value="${esc(s[key])}" aria-label="${label}">`;
   return `<div class="setting-row"><div><h3>${label}</h3><p>${description}</p></div>${control}</div>`;
+}
+function renderSpeechLanguageSetting() {
+  const model = state.settings.speechProvider === "local" && state.models.find((m) => m.id === state.settings.modelId);
+  const fixed = model && (model.englishOnly ? "en" : model.language && model.language !== "auto" ? model.language : "");
+  if (!fixed) return setting("Dictation language", "Auto-detect works with multilingual speech models.", "language", "select", langList);
+  const label = langList.find(([code]) => code === fixed)?.[1] || fixed;
+  return `<div class="setting-row"><div><h3>Dictation language</h3><p>${esc(model.name)} transcribes ${esc(label)}. Choose a multilingual model to change languages.</p></div><select data-setting="language" aria-label="Dictation language" disabled><option value="${esc(fixed)}">${esc(label)}</option></select></div>`;
 }
 function renderSettings() {
   const s = state.settings;
@@ -669,7 +676,7 @@ function renderSettings() {
         ["automatic", "Automatic"],
         ["cpu", "CPU · reduced parallelism"],
       ],
-    )}${setting("Dictation language", "Auto-detect works with multilingual speech models.", "language", "select", langList)}${setting("Translate to English", "Whisper can translate other languages during transcription.", "translate")}${setting(
+    )}${renderSpeechLanguageSetting()}${setting("Translate to English", "Whisper can translate other languages during transcription.", "translate", "checkbox", undefined, state.settings.speechProvider !== "local" || ["parakeet", "catalog"].includes(state.models.find((m) => m.id === state.settings.modelId)?.engine))}${setting(
       "Summary language",
       "The language model writes notes in this language.",
       "summaryLanguage",
