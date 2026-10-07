@@ -930,6 +930,16 @@ async function transcribeAndProcess(
       prompt: store.data.dictionary.map((x) => x.word).join(", "),
     });
   else {
+    if (settings.enhancedSilenceDetection) {
+      const analysis = await require("./cloud-silence").analyzeCloudSilence(file, {
+        enabled: true,
+        sensitivity: settings.silenceSensitivity,
+        signal: activeProcess.controller.signal,
+      });
+      assertProcessing();
+      if (analysis.complete && analysis.decision === "skip")
+        throw Error("Cloud upload skipped: audio stayed below the configured silence threshold. Lower sensitivity or disable enhanced silence detection if this recording contains quiet speech.");
+    }
     const key = apiKey(settings.speechProvider);
     if (!key)
       throw Error("Configure an API key for the selected speech provider");

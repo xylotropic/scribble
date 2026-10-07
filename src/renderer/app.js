@@ -334,6 +334,34 @@ function openWorkspacePalette() {
   dialog.showModal();
   input.focus();
 }
+let timerTick = null;
+let rendererClosing = false;
+const timerNotices = [];
+let timerNoticeSequence = 0;
+function updateTimerCountdowns() {
+  for (const element of document.querySelectorAll('[data-timer-ends-at]')) {
+    const endsAt = Number(element.dataset.timerEndsAt);
+    const text = clock(Number.isFinite(endsAt) ? Math.max(0, Math.ceil((endsAt - Date.now()) / 1000)) : 0);
+    if (element.textContent !== text) element.textContent = text;
+  }
+}
+function syncTimerTick() {
+  const visible = !rendererClosing && !document.hidden && page === "command" && document.querySelector('[data-timer-ends-at]');
+  if (!visible && timerTick !== null) { clearInterval(timerTick); timerTick = null; }
+  if (visible) {
+    updateTimerCountdowns();
+    if (timerTick === null) timerTick = setInterval(updateTimerCountdowns, 250);
+  }
+}
+function renderTimerNotices() {
+  let container = document.querySelector('#timer-notices');
+  if (!container) { container = document.createElement('div'); container.id = 'timer-notices'; document.querySelector('#header').after(container); }
+  container.hidden = !timerNotices.length;
+  container.innerHTML = timerNotices.map(notice => `<div class="notice row between" role="alert"><span><strong>${esc(notice.title)}</strong> · ${esc(notice.body)}</span>${button("Dismiss", "dismiss-timer-notice", "close", "small", `data-id="${notice.id}"`)}</div>`).join('');
+}
+document.addEventListener('visibilitychange', syncTimerTick);
+window.addEventListener('pagehide', () => { rendererClosing = true; syncTimerTick(); });
+window.addEventListener('pageshow', () => { rendererClosing = false; syncTimerTick(); });
 function render() {
   if (!state) return;
   const active = document.activeElement,
@@ -375,6 +403,8 @@ function render() {
       input?.setSelectionRange?.(selection, selection);
   }
   if (page === "transcribe") setupDrop();
+  syncTimerTick();
+  if (timerNotices.length) renderTimerNotices();
 }
 function renderUtilities() {
   return `${heading("All on this Mac", "Make your files work for you.", "Choose a tool, select the inputs, then choose a new output. Your originals stay intact.")}<div class="grid two">${[
@@ -573,7 +603,7 @@ function renderShortcuts() {
   return `${heading("A phrase. An action.", "Your voice is a shortcut.", "Search the web, launch an app, or open a folder. Built-in shortcuts work without an AI provider.", button("Add shortcut", "add-item", "plus", "primary", 'data-kind="shortcuts"'))}<div class="banner">Say “google best coffee near me” while dictating. Scribble routes the phrase instead of typing it.</div><div class="card">${state.shortcuts.map((s) => `<div class="list-row"><span class="list-icon">${icon(s.type === "folder" ? "folder" : "shortcut")}</span><div class="body"><strong>${esc(s.name || s.trigger)}</strong><p><span class="shortcut-trigger">${esc(s.trigger)}</span> ${esc(shortcutDescription(s))}</p></div>${s.builtin ? '<span class="badge">BUILT-IN</span>' : ""}<input type="checkbox" data-toggle-kind="shortcuts" data-id="${s.id}" ${s.enabled !== false ? "checked" : ""} aria-label="Enable ${esc(s.name)}">${!s.builtin ? button("", "edit-item", "edit", "ghost icon", `data-kind="shortcuts" data-id="${s.id}"`) + button("", "delete", "trash", "ghost icon danger", `data-kind="shortcuts" data-id="${s.id}"`) : ""}</div>`).join("")}</div><div class="card"><h3>Try a shortcut</h3><div class="row"><input class="inline-input" id="shortcut-test" placeholder="google public hiking trails">${button("Run", "test-shortcut", "play")}</div><p class="tip">Running a shortcut opens the selected app, folder, or browser destination.</p></div>`;
 }
 function renderCommand() {
-  return `${heading("Say what should happen", "Command Mode.", "Transform selected text, set a timer, or ask your own language model. Review a result before inserting it.")}<div class="card"><p class="eyebrow">Hold ⌥ ⌃ Space for a voice command</p><label class="field">What would you like to do?<input id="command-text" value="${esc(commandDraft)}" placeholder="Make this more concise, set a timer for 5 minutes…"></label>${area("command-context", "Text to work with", commandTextContext, "Leave empty to use the selected text or clipboard.")}<div class="row wrap">${["Clean up", "Formal", "Polish", "Summarize", "Bullets", "Email"].map((label) => button(label, "command-preset", "", "small", `data-preset="${label}"`)).join("")}</div><div class="row">${button("Choose context files", "command-files", "upload")}${button("Capture screen context", "command-screen", "image")}${commandAttachments.sources.length ? button("Clear files", "clear-command-files", "close", "ghost") + `<span class="muted">${commandAttachments.sources.map((source) => esc(source.name)).join(", ")}</span>` : ""}${button("Run command", "run-command", "spark", "primary")}${button("Speak a command", "record-command", "mic")}<span class="muted">Local utilities are ready. AI commands use your configured provider.</span></div>${commandResult ? `<div class="command-panel"><div class="command-result" id="command-result" tabindex="0">${esc(commandResult.text)}</div><div class="row">${button("Copy", "copy-command", "copy")}${commandResult.kind === "text" && commandResult.canInsert ? button("Insert", "paste-command", "arrow", "primary") : ""}</div>${commandResult.kind === "text" ? `<label class="field">Refine this result<input id="refine-command" placeholder="Make it shorter, change the tone…"></label>${button("Refine", "refine-command", "spark", "small")}` : ""}<p class="smallprint">${esc(interfaceLabel(commandResult.kind === "text" && commandResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."))}</p></div>` : ""}</div>${state.timers.length ? `<div class="section-heading"><h2>Timers</h2></div><div class="grid three">${state.timers.map((t) => `<div class="card"><h3>${esc(t.title)}</h3><p class="number">${clock(Math.max(0, (t.endsAt - Date.now()) / 1000))}</p>${button("Cancel", "cancel-timer", "close", "small", `data-id="${t.id}"`)}</div>`).join("")}</div>` : ""}<div class="section-heading"><h2>A few things to try</h2></div><div class="grid three">${[
+  return `${heading("Say what should happen", "Command Mode.", "Transform selected text, set a timer, or ask your own language model. Review a result before inserting it.")}<div class="card"><p class="eyebrow">Hold ⌥ ⌃ Space for a voice command</p><label class="field">What would you like to do?<input id="command-text" value="${esc(commandDraft)}" placeholder="Make this more concise, set a timer for 5 minutes…"></label>${area("command-context", "Text to work with", commandTextContext, "Leave empty to use the selected text or clipboard.")}<div class="row wrap">${["Clean up", "Formal", "Polish", "Summarize", "Bullets", "Email"].map((label) => button(label, "command-preset", "", "small", `data-preset="${label}"`)).join("")}</div><div class="row">${button("Choose context files", "command-files", "upload")}${button("Capture screen context", "command-screen", "image")}${commandAttachments.sources.length ? button("Clear files", "clear-command-files", "close", "ghost") + `<span class="muted">${commandAttachments.sources.map((source) => esc(source.name)).join(", ")}</span>` : ""}${button("Run command", "run-command", "spark", "primary")}${button("Speak a command", "record-command", "mic")}<span class="muted">Local utilities are ready. AI commands use your configured provider.</span></div>${commandResult ? `<div class="command-panel"><div class="command-result" id="command-result" tabindex="0">${esc(commandResult.text)}</div><div class="row">${button("Copy", "copy-command", "copy")}${commandResult.kind === "text" && commandResult.canInsert ? button("Insert", "paste-command", "arrow", "primary") : ""}</div>${commandResult.kind === "text" ? `<label class="field">Refine this result<input id="refine-command" placeholder="Make it shorter, change the tone…"></label>${button("Refine", "refine-command", "spark", "small")}` : ""}<p class="smallprint">${esc(interfaceLabel(commandResult.kind === "text" && commandResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."))}</p></div>` : ""}</div>${state.timers.length ? `<div class="section-heading"><h2>Timers</h2></div><div class="grid three">${state.timers.map((t) => `<div class="card"><h3>${esc(t.title)}</h3><p class="number" data-timer-ends-at="${esc(t.endsAt)}">${clock(Math.max(0, Math.ceil((t.endsAt - Date.now()) / 1000)))}</p>${button("Cancel", "cancel-timer", "close", "small", `data-id="${t.id}"`)}</div>`).join("")}</div>` : ""}<div class="section-heading"><h2>A few things to try</h2></div><div class="grid three">${[
     [
       "clock",
       "“Set a timer for 5 minutes”",
@@ -727,6 +757,7 @@ function renderSettings() {
     permissions: "Permissions",
     privacy: "Privacy & data",
     developer: "Developer",
+    experimental: "Experimental",
   };
   let body = "";
   if (settingsTab === "general")
@@ -822,6 +853,10 @@ function renderSettings() {
             .join("")}`
         : ""
     }`;
+  if (settingsTab === "experimental") {
+    const sensitivity = Number.isFinite(s.silenceSensitivity) && s.silenceSensitivity >= 1 && s.silenceSensitivity <= 5 ? s.silenceSensitivity : 2;
+    body = `<h2>${esc(interfaceLabel("Experimental"))}</h2>${setting("Enhanced cloud silence detection", "Compare recorded audio with a measured noise baseline before cloud upload. Skip audio classified as silence.", "enhancedSilenceDetection")}${s.enhancedSilenceDetection ? `<div class="setting-row"><div><h3>${esc(interfaceLabel("Silence sensitivity"))}</h3><p>${esc(interfaceLabel("Higher values can skip quiet speech. This applies only to cloud speech; local transcription is unchanged."))}</p></div><label><input type="range" min="1" max="5" step="0.1" value="${sensitivity}" data-setting="silenceSensitivity" data-type="number" aria-label="${esc(interfaceLabel("Silence sensitivity"))}"><output id="silence-sensitivity-value">${sensitivity.toFixed(1)}×</output></label></div>` : ""}`;
+  }
   if (settingsTab === "developer")
     body = `<h2>A voice workspace you can build on.</h2>${setting("Prefer IPv4", "Try IPv4 addresses first for new provider and model-download connections. IPv6 fallback remains available; existing connections keep their current address.", "preferIPv4")}<p class="muted">Use the CLI to search your history, transcribe a file, manage vocabulary, or expose an MCP server to your coding agent.</p><div class="code">node scripts/scribble.cjs status\nnode scripts/scribble.cjs transcribe /path/to/audio.wav\nnode scripts/scribble.cjs search "meeting"\nnode scripts/scribble.cjs --mcp</div><h3>Speech runtime</h3><div class="code">${esc(state.speechStatus.runtime)}</div><p class="tip">Communication uses a local Unix socket with owner-only permissions. Scribble does not expose a public HTTP server.</p><p>Version ${esc(state.version)} · MIT licensed original source</p>`;
   return `${heading("Make it yours", "Small details. Better flow.", "Your preferences are saved locally and take effect immediately.")}<div class="settings-layout"><div class="settings-nav">${Object.entries(
@@ -2187,6 +2222,12 @@ document.addEventListener("click", async (e) => {
       await request("select-tone", { id });
       return;
     }
+    if (a === "dismiss-timer-notice") {
+      const index = timerNotices.findIndex(notice => String(notice.id) === id);
+      if (index >= 0) timerNotices.splice(index, 1);
+      renderTimerNotices();
+      return;
+    }
     if (a === "cancel-timer") {
       await request("cancel-timer", { id });
       return;
@@ -2290,6 +2331,10 @@ document.addEventListener("change", async (e) => {
   } catch {}
 });
 document.addEventListener("input", (e) => {
+  if (e.target.dataset.setting === "silenceSensitivity") {
+    const output = document.querySelector('#silence-sensitivity-value');
+    if (output) output.textContent = Number(e.target.value).toFixed(1) + "×";
+  }
   if (e.target.id === "command-text") commandDraft = e.target.value;
   if (e.target.name === "command-context") commandTextContext = e.target.value;
   if (e.target.id === "search") {
@@ -2430,7 +2475,13 @@ api.on(({ event, data }) => {
       recordingStop(true);
     }
   }
-  if (event === "notice") toast(data.body || data.title);
+  if (event === "notice") {
+    if (data?.title === "Reminder") {
+      timerNotices.push({id: ++timerNoticeSequence, title: String(data.title).slice(0, 200), body: String(data.body || "").slice(0, 1000)});
+      if (timerNotices.length > 5) timerNotices.shift();
+      renderTimerNotices();
+    } else toast(data.body || data.title);
+  }
   if (event === "speech-progress") {
     progress = data;
     toast(

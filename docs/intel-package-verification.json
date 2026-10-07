@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-10-07T11:19:30.870850+00:00",
+  "scope": "Isolated Intel packaging and static verification; no app or Intel binary execution",
+  "buildCheckout": "/tmp/scribble-intel-package",
+  "buildCommit": "8e6f5262efc306b5d742a65efafc66ad14033d5f",
+  "publicCommit": "4ab6f1e28e5c5b0e29be5aa79206f5bc6ac2b8f4",
+  "publicReferenceCheckout": "/tmp/scribble-public-verification-7ccd035",
+  "sourceEquivalence": {
+    "trackedSourceAssetsNativePackageFilesByteIdentical": 57,
+    "shippedAsarFilesByteIdentical": 48,
+    "shippedFileGroups": [
+      "src",
+      "assets",
+      "scripts/scribble.cjs",
+      "native/Parakeet/models.json",
+      "native/Parakeet/catalog-models.json"
+    ],
+    "runtimePackageMetadataMatched": [
+      "name",
+      "version",
+      "main",
+      "dependencies"
+    ],
+    "packageMetadataNote": "Electron-builder removes development scripts/build metadata from packaged package.json; byte equality is not claimed for package.json inside ASAR.",
+    "baselineNote": "Local and public commit histories differ. The 57 tracked implementation and package files were compared directly; documentation differences remain."
+  },
+  "outputApp": "/tmp/scribble-intel-package-output/mac/Scribble.app",
+  "targetArchitecture": "x64",
+  "architectureGuard": {
+    "passed": true,
+    "checkedEntrypoints": 6
+  },
+  "machOInspection": [
+    {
+      "path": "Contents/MacOS/Scribble",
+      "architectures": [
+        "x86_64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/native/scribble-bridge",
+      "architectures": [
+        "x86_64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/native/speech/whisper-cli",
+      "architectures": [
+        "x86_64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/native/ffmpeg",
+      "architectures": [
+        "x86_64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/runtime/ollama/ollama",
+      "architectures": [
+        "x86_64",
+        "arm64"
+      ]
+    },
+    {
+      "path": "Contents/PlugIns/ScribbleShare.appex/Contents/MacOS/ScribbleShare",
+      "architectures": [
+        "x86_64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-darwin-x64/lib/sharp-darwin-x64-0.35.5.node",
+      "architectures": [
+        "x86_64"
+      ]
+    },
+    {
+      "path": "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-libvips-darwin-x64/lib/libvips-cpp.8.18.7.dylib",
+      "architectures": [
+        "x86_64"
+      ]
+    }
+  ],
+  "signature": {
+    "command": [
+      "codesign",
+      "--verify",
+      "--deep",
+      "--strict",
+      "/tmp/scribble-intel-package-output/mac/Scribble.app"
+    ],
+    "passed": true,
+    "kind": "ad-hoc",
+    "hardenedRuntime": true,
+    "notarized": false
+  },
+  "ollamaSymlinks": {
+    "checks": 20,
+    "roots": [
+      "/tmp/scribble-intel-audit/stage/ollama",
+      "/tmp/scribble-intel-package-output/mac/Scribble.app/Contents/Resources/runtime/ollama"
+    ],
+    "verified": "Each link text exactly matches pinned scribble-runtime.json, is relative, and resolves inside its runtime root.",
+    "stagingRepair": "Initial isolated fs.cp rewrote relative links to absolute original-runtime paths. Only temporary stage links were restored from pinned provenance, then the package was rebuilt.",
+    "sourceFix": "Root added verbatimSymlinks:true to isolated staging copy after this discovery; that source fix was pending publication at verification time.",
+    "originalRuntimeIntegrity": "Original shared Ollama files and links were checked against pinned provenance and remained unchanged."
+  },
+  "runtimeStage": "/tmp/scribble-intel-audit/stage",
+  "parakeet": "Apple Silicon-only helpers omitted from Intel package; empty resource folder used for packaging.",
+  "limitations": [
+    "Rosetta is unavailable on this host; no Intel executable, inference, native-module load, or GUI launch was attempted.",
+    "No Intel functional acceptance or full feature parity is claimed by this static package proof.",
+    "Artifacts reside in temporary directories and may be removed."
+  ]
+}

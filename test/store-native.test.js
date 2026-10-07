@@ -309,3 +309,17 @@ test("utility bindings enforce references, physical chords and global conflicts"
   store.restore(validBackup);
   assert.equal(new Store(store.dir).data.settings.hotkeys[0].utilityId, "one");
 });
+
+test("cloud silence preferences are opt-in, bounded, atomic, and persisted", (t) => {
+  const store = workspace(t);
+  assert.equal(store.data.settings.enhancedSilenceDetection, false);
+  assert.equal(store.data.settings.silenceSensitivity, 2);
+  store.updateSettings({ enhancedSilenceDetection: true, silenceSensitivity: 3.7 });
+  assert.equal(new Store(store.dir).data.settings.silenceSensitivity, 3.7);
+  for (const value of [0, 5.1, NaN, Infinity, "2"])
+    assert.throws(() => store.updateSettings({ enhancedSilenceDetection: false, silenceSensitivity: value }));
+  assert.equal(store.data.settings.enhancedSilenceDetection, true);
+  assert.equal(store.data.settings.silenceSensitivity, 3.7);
+  store.updateSettings({ enhancedSilenceDetection: false });
+  assert.equal(new Store(store.dir).data.settings.silenceSensitivity, 3.7);
+});

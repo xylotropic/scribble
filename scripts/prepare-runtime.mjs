@@ -132,7 +132,7 @@ if (isolated) {
     if (item.link) { if (await fs.readlink(file) !== item.link) throw Error("Ollama runtime link mismatch"); }
     else if (crypto.createHash("sha256").update(await fs.readFile(file)).digest("hex") !== item.sha256) throw Error("Ollama runtime file hash mismatch");
   }
-  await fs.cp(from, path.join(destination, "ollama"), { recursive: true });
+  await fs.cp(from, path.join(destination, "ollama"), { recursive: true, verbatimSymlinks: true });
 } else await new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ["scripts/bundle-ai.mjs"], {
     stdio: "inherit",

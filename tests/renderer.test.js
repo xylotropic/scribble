@@ -16,7 +16,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   clone = (x) => JSON.parse(JSON.stringify(x));
 async function fixture(
   t,
-  { notes = [], shortcuts = [], requestFailure, pasteCommandPromise, browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
+  { notes = [], shortcuts = [], requestFailure, pasteCommandPromise, timerScheduler, browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
 ) {
   const dom = new JSDOM(
     fs.readFileSync(path.join(__dirname, "../src/renderer/index.html"), "utf8"),
@@ -175,6 +175,7 @@ async function fixture(
       this.onstop?.();
     }
   };
+  if (timerScheduler) { w.setInterval = timerScheduler.setInterval; w.clearInterval = timerScheduler.clearInterval; }
   w.eval(fs.readFileSync(path.join(__dirname, "../src/shared/i18n.js"), "utf8"));
   w.eval(fs.readFileSync(path.join(__dirname, "../src/shared/form-translations.js"), "utf8"));
   w.eval(
@@ -1125,4 +1126,44 @@ test('failed command insertion retains backend copy-only review', options, async
   h.emit('command-result',{kind:'text',text:'Keep me',reviewId:'failed',canInsert:false}); await flush();
   assert.equal(h.w.document.querySelector('#command-result').textContent,'Keep me'); assert.equal(h.w.document.querySelector('[data-action="paste-command"]'),null);
   await h.click('[data-action="copy-command"]'); assert.equal(h.calls.find(c=>c.action==='copy').args.text,'Keep me');
+});
+
+
+test('timer ticks update only countdown text and stop on hidden/page changes/teardown', options, async t => {
+  const callbacks=new Map(); let next=0; const scheduler={setInterval(fn,ms){assert.equal(ms,250); const id=++next; callbacks.set(id,fn); return id;},clearInterval(id){callbacks.delete(id);}};
+  const h=await fixture(t,{timerScheduler:scheduler}); h.data.timers=[{id:'timer-a',title:'Tea',endsAt:12500}]; h.emit('state',h.data);
+  assert.equal(callbacks.size,0); await h.click('[data-page="command"]'); assert.equal(callbacks.size,1);
+  const field=h.w.document.querySelector('#command-text'); field.value='Keep my draft'; field.focus(); field.setSelectionRange(2,6);
+  const countdown=h.w.document.querySelector('[data-timer-ends-at]'); assert.equal(countdown.textContent,'0:03');
+  h.advance(1000); [...callbacks.values()][0](); assert.equal(countdown.textContent,'0:02');
+  assert.equal(h.w.document.querySelector('#command-text'),field); assert.equal(field.value,'Keep my draft'); assert.equal(field.selectionStart,2); assert.equal(field.selectionEnd,6);
+  h.advance(5000); [...callbacks.values()][0](); assert.equal(countdown.textContent,'0:00');
+  Object.defineProperty(h.w.document,'hidden',{configurable:true,value:true}); h.w.document.dispatchEvent(new h.w.Event('visibilitychange')); assert.equal(callbacks.size,0);
+  Object.defineProperty(h.w.document,'hidden',{configurable:true,value:false}); h.w.document.dispatchEvent(new h.w.Event('visibilitychange')); assert.equal(callbacks.size,1);
+  await h.click('[data-page="home"]'); assert.equal(callbacks.size,0); await h.click('[data-page="command"]'); assert.equal(callbacks.size,1);
+  h.w.dispatchEvent(new h.w.Event('pagehide')); assert.equal(callbacks.size,0); h.w.dispatchEvent(new h.w.Event('pageshow')); assert.equal(callbacks.size,1);
+  h.data.timers=[]; h.emit('state',h.data); assert.equal(callbacks.size,0);
+});
+
+test('timer completion notices are bounded, escaped, persistent across state/page changes, and dismissible', options, async t => {
+  const h=await fixture(t); for(let i=0;i<7;i++) h.emit('notice',{title:'Reminder',body:`Task ${i} <img src=x onerror=alert(1)>`});
+  const container=h.w.document.querySelector('#timer-notices'); assert.equal(container.querySelectorAll('[role="alert"]').length,5); assert.equal(container.querySelector('img'),null);
+  assert.doesNotMatch(container.textContent,/Task 0|Task 1/); assert.match(container.textContent,/Task 6 <img/);
+  h.emit('state',h.data); await h.click('[data-page="command"]'); assert.equal(container.querySelectorAll('[role="alert"]').length,5);
+  await h.click('[data-action="dismiss-timer-notice"]'); assert.equal(container.querySelectorAll('[role="alert"]').length,4);
+  for(let i=0;i<4;i++) await h.click('[data-action="dismiss-timer-notice"]'); assert.equal(container.hidden,true);
+});
+
+test('experimental cloud silence settings are opt-in, localized and persist numeric sensitivity only', options, async t => {
+  const h=await fixture(t); h.data.settings.locale='ja'; h.data.settings.enhancedSilenceDetection=false; h.data.settings.silenceSensitivity=2; h.emit('state',h.data);
+  await h.click('[data-page="settings"]'); await h.click('[data-tab="experimental"]');
+  assert.equal(h.w.document.querySelector('[data-tab="experimental"]').textContent,'実験的機能');
+  assert.equal(h.w.document.querySelector('[data-setting="silenceSensitivity"]'),null);
+  const checkbox=h.w.document.querySelector('[data-setting="enhancedSilenceDetection"]'); assert.equal(checkbox.checked,false); checkbox.click(); await flush();
+  assert.equal(h.calls.filter(c=>c.action==='preferences').at(-1).args.enhancedSilenceDetection,true);
+  let slider=h.w.document.querySelector('[data-setting="silenceSensitivity"]'); assert.equal(slider.type,'range'); assert.equal(slider.min,'1'); assert.equal(slider.max,'5'); assert.equal(slider.step,'0.1'); assert.equal(slider.value,'2');
+  const originalLanguage=h.data.settings.language; slider.value='3.7'; slider.dispatchEvent(new h.w.Event('input',{bubbles:true}));
+  assert.equal(h.w.document.querySelector('#silence-sensitivity-value').textContent,'3.7×'); slider.dispatchEvent(new h.w.Event('change',{bubbles:true})); await flush();
+  const saved=h.calls.filter(c=>c.action==='preferences').at(-1).args; assert.equal(saved.silenceSensitivity,3.7); assert.equal(typeof saved.silenceSensitivity,'number'); assert.deepEqual(Object.keys(saved),['silenceSensitivity']); assert.equal(h.data.settings.language,originalLanguage);
+  h.w.document.querySelector('[data-setting="enhancedSilenceDetection"]').click(); await flush(); assert.equal(h.w.document.querySelector('[data-setting="silenceSensitivity"]'),null); assert.equal(h.data.settings.silenceSensitivity,3.7);
 });

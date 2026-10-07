@@ -8,7 +8,7 @@ const test = require("node:test"),
 const { createRequire } = require("node:module");
 const mainPath = path.resolve(__dirname, "../src/main/index.js"),
   localRequire = createRequire(mainPath);
-function harness(t, { chat, transcribe, summaryCLI, shell, chromeLauncher, spawn, nativeRequest, clipboardText = "clipboard", models = [] } = {}) {
+function harness(t, { cloudSilence, chat, transcribe, summaryCLI, shell, chromeLauncher, spawn, nativeRequest, clipboardText = "clipboard", models = [] } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scribble-actions-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { Store } = localRequire("./store"),
@@ -52,7 +52,9 @@ function harness(t, { chat, transcribe, summaryCLI, shell, chromeLauncher, spawn
   };
   const context = {
     require: (name) =>
-      name === "./browser-launch" && chromeLauncher
+      name === "./cloud-silence" && cloudSilence
+        ? { analyzeCloudSilence: cloudSilence }
+        : name === "./browser-launch" && chromeLauncher
         ? { launchWebsites: chromeLauncher }
         : name === "node:child_process" && spawn
         ? { ...localRequire(name), spawn }
@@ -512,4 +514,34 @@ test('own-app capture and native target refusal leave copy-only command review',
  failed.initializeUtilityWindow({isDestroyed:()=>false,webContents:{send(_channel,payload){failed.events.push(payload);}}});
  const review=await failed.actions.command({text:'rewrite this',context:'input'});await assert.rejects(failed.actions['paste-command-result']({id:review.reviewId}),/Field changed/);assert.equal(failed.events.at(-1).event,'command-result');assert.equal(failed.events.at(-1).data.canInsert,false);
  await assert.rejects(failed.actions['paste-command-result']({id:review.reviewId}),/No insertion target/);assert.equal(failed.nativeCalls.filter(x=>x.command==='paste').length,1);
+});
+
+test("enabled cloud silence rejection saves an explicit failure before credentials or upload", async (t) => {
+  let analyzed = 0;
+  const h = harness(t, { cloudSilence: async (_file, options) => {
+    analyzed++;
+    assert.equal(options.enabled, true);
+    assert.equal(options.sensitivity, 3.7);
+    return { complete: true, decision: "skip" };
+  }});
+  h.store.updateSettings({ speechProvider: "openai", enhancedSilenceDetection: true, silenceSensitivity: 3.7 });
+  await assert.rejects(h.processFile("/fixture.wav"), /Cloud upload skipped/);
+  assert.equal(analyzed, 1);
+  assert.match(h.store.data.history[0].error, /quiet speech/);
+});
+test("local transcription never invokes the cloud silence gate", async (t) => {
+  const h = harness(t, { cloudSilence: async () => { throw Error("unexpected cloud gate"); } });
+  h.store.updateSettings({ enhancedSilenceDetection: true });
+  await h.processFile("/fixture.wav");
+  assert.equal(h.store.data.history[0].error, undefined);
+});
+test("disabled or inconclusive cloud gate proceeds to normal credential validation", async (t) => {
+  let analyzed = 0;
+  const h = harness(t, { cloudSilence: async () => { analyzed++; return { complete:false, decision:"upload" }; } });
+  h.store.updateSettings({ speechProvider: "openai" });
+  await assert.rejects(h.processFile("/fixture.wav"), /Configure an API key/);
+  assert.equal(analyzed, 0);
+  h.store.updateSettings({ enhancedSilenceDetection:true });
+  await assert.rejects(h.processFile("/fixture.wav"), /Configure an API key/);
+  assert.equal(analyzed, 1);
 });

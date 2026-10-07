@@ -1,8 +1,8 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const forms=require('../src/shared/form-translations.js');
-test('every original form catalogue covers all 294 labels with matching parameters and plain text',()=>{
-  assert.equal(forms.labels.length,294);assert.equal(new Set(forms.labels).size,294);assert.deepEqual(forms.locales.slice().sort(),['en','bg','cs','de','es','fr','it','ja','ko','pl','pt','ru','sv','tr','uk','vi','zh','zh-TW'].sort());
+test('every original form catalogue covers all 299 labels with matching parameters and plain text',()=>{
+  assert.equal(forms.labels.length,299);assert.equal(new Set(forms.labels).size,299);assert.deepEqual(forms.locales.slice().sort(),['en','bg','cs','de','es','fr','it','ja','ko','pl','pt','ru','sv','tr','uk','vi','zh','zh-TW'].sort());
   const parameters=text=>[...text.matchAll(/\{[^}]+\}/g)].map(x=>x[0]).sort();
   for(const locale of forms.locales){assert.deepEqual(Object.keys(forms.catalogues[locale]),forms.labels);for(const label of forms.labels){const text=forms.translate(locale,label);assert.ok(text.trim(),`${locale}: ${label}`);assert.doesNotMatch(text,/<[^>]*>/);assert.deepEqual(parameters(text),parameters(label));if(label.endsWith('%'))assert.ok(text.endsWith('%'));if(locale==='en')assert.equal(text,label);}}
 });
@@ -28,7 +28,7 @@ test('settings descriptions and hints preserve technical facts and template vari
 });
 test('new prose is present rather than relying on fallback for every locale',()=>{
   const prose=forms.labels.filter(label=>label.length>100);
-  assert.equal(prose.length,13);
+  assert.equal(prose.length,15);
   for(const locale of forms.locales){for(const label of prose){assert.ok(Object.hasOwn(forms.catalogues[locale],label));if(locale!=='en')assert.notEqual(forms.catalogues[locale][label],label);}}
   assert.equal(forms.translate('es','Leave empty to use the selected text or clipboard.'),'Déjalo vacío para usar el texto seleccionado o el portapapeles.');
   assert.equal(forms.translate('ja','Keep a small ready indicator visible.'),'小さな待機インジケーターを表示しておきます。');
@@ -58,4 +58,9 @@ test('bounded shortcut/browser/utility labels and instructions have explicit eig
  for(const key of observed)for(const locale of forms.locales)assert.ok(Object.hasOwn(forms.catalogues[locale],key),`${locale}: ${key}`);
  for(const key of ['{count} / 32 actions','Move action {number} up','Browser discovery unavailable: {error}','Up to 16 websites. Use {{text}} to insert the spoken query.'])for(const locale of forms.locales){assert.notEqual(forms.translate(locale,key),'');if(locale!=='en' && !(locale==='fr' && key==='{count} / 32 actions'))assert.notEqual(forms.translate(locale,key),key);}
  assert.equal(forms.translate('ja','System default browser'),'システムの既定ブラウザー');
+});
+
+test('experimental silence controls have original eighteen-locale labels and explicit scope',()=>{
+  const keys=['Experimental','Enhanced cloud silence detection','Compare recorded audio with a measured noise baseline before cloud upload. Skip audio classified as silence.','Silence sensitivity','Higher values can skip quiet speech. This applies only to cloud speech; local transcription is unchanged.'];
+  for(const locale of forms.locales) for(const key of keys) { assert.ok(Object.hasOwn(forms.catalogues[locale],key)); if(locale!=='en' && !(['es','pt'].includes(locale) && key==='Experimental')) assert.notEqual(forms.translate(locale,key),key); }
 });

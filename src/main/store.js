@@ -11,6 +11,8 @@ const SETTINGS = {
   resourceMode: "automatic",
   speechCloudModel: "",
   speechCloudVersion: "2026-08-14",
+  enhancedSilenceDetection: false,
+  silenceSensitivity: 2,
   language: "auto",
   summaryLanguage: "en",
   summaryProvider: "configured-ai",
@@ -196,6 +198,9 @@ class Store {
           patch.microphonePriority.length)
     )
       throw Error("Invalid microphone priority");
+    if (patch.silenceSensitivity !== undefined &&
+      (!Number.isFinite(patch.silenceSensitivity) || patch.silenceSensitivity < 1 || patch.silenceSensitivity > 5))
+      throw Error("Silence sensitivity must be from 1 to 5");
     if (patch.locale !== undefined && !require("../shared/i18n").locales.some((locale) => locale.id === patch.locale)) throw Error("Unsupported interface language");
     for (const [k, v] of Object.entries(patch)) {
       if (!Object.hasOwn(SETTINGS, k)) throw Error("Unknown preference: " + k);
