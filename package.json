@@ -100,7 +100,7 @@
       "entitlementsInherit": "native/entitlements.plist",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Scribble records your voice for local transcription.",
-        "NSScreenCaptureUsageDescription": "Scribble captures meeting system audio only when you start a meeting recording.",
+        "NSScreenCaptureUsageDescription": "Scribble captures meeting system audio when you start a meeting recording and screen images when you enable Command Mode screen context.",
         "NSAppleEventsUsageDescription": "Scribble inserts your dictation in the application you are using."
       },
       "minimumSystemVersion": "14.0.0",
