@@ -14,8 +14,9 @@ function harness(t, { chat, transcribe } = {}) {
   const { Store } = localRequire("./store"),
     store = new Store(directory),
     events = [],
-    nativeCalls = [];
+    nativeCalls = [], menus = [], trayState = {};
   const electron = {
+    Menu: { buildFromTemplate(template) { return template; }, setApplicationMenu(menu) { menus.push(menu); } },
     app: {
       setName() {},
       requestSingleInstanceLock: () => true,
@@ -72,11 +73,11 @@ function harness(t, { chat, transcribe } = {}) {
   vm.createContext(context);
   vm.runInContext(
     fs.readFileSync(mainPath, "utf8") +
-      "\nglobalThis.exposed={actions,processFile,snapshot,initialize(s,sp,n,d){store=s;speech=sp;native=n;dataDir=d;memoryIndex=new (require('./memory-index').MemoryIndex)();}};",
+      "\nglobalThis.exposed={actions,processFile,snapshot,initializeTray(t){tray=t;},initialize(s,sp,n,d){store=s;speech=sp;native=n;dataDir=d;memoryIndex=new (require('./memory-index').MemoryIndex)();}};",
     context,
   );
   context.exposed.initialize(store, speech, native, directory);
-  return { ...context.exposed, store, nativeCalls, directory, events };
+  return { ...context.exposed, store, nativeCalls, directory, events, menus, trayState };
 }
 test("cancel during AI cleanup never inserts or saves a late result", async (t) => {
   let started;
@@ -276,4 +277,17 @@ test("CPU resource mode disables Whisper GPU and caps worker threads", async (t)
     () => h.store.updateSettings({ resourceMode: "pretend" }),
     /Invalid resource mode/,
   );
+});
+
+test('interface language preferences rebuild tray and application Settings labels immediately', async t => {
+  const h=harness(t), tray={setContextMenu(menu){h.trayState.menu=menu;},setToolTip(text){h.trayState.tooltip=text;}};
+  h.initializeTray(tray);
+  await h.actions.preferences({locale:'ja'});
+  const {t:translate}=require('../src/shared/i18n');
+  assert.equal(h.trayState.menu[0].label,translate('ja','tray.open'));
+  assert.equal(typeof h.trayState.menu[1].click,'function');
+  assert.equal(h.menus.at(-1)[0].submenu[1].label,translate('ja','nav.settings'));
+  assert.equal(h.trayState.tooltip,'Scribble · '+translate('ja','tray.tagline'));
+  await h.actions.preferences({locale:'en'});
+  assert.equal(h.trayState.menu[0].label,'Open Scribble');
 });

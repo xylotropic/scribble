@@ -78,6 +78,60 @@ function show() {
   window.show();
   window.focus();
 }
+function interfaceText(key, params) { return require("../shared/i18n").t(store.data.settings.locale, key, params); }
+function refreshInterfaceMenus() {
+  if (!tray) return;
+  tray.setToolTip("Scribble · " + interfaceText("tray.tagline"));
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: interfaceText("tray.open"), click: show },
+        { label: interfaceText("tray.startDictation"), click: () => beginRecording() },
+        {
+          label: interfaceText("tray.startNote"),
+          click: () => {
+            show();
+            emit("navigate", { page: "notes", record: true });
+          },
+        },
+        { label: interfaceText("tray.pasteLast"), click: () => actions["paste-last"]() },
+        { type: "separator" },
+        {
+          label: interfaceText("tray.quit"),
+          click: () => {
+            quitting = true;
+            app.quit();
+          },
+        },
+      ]),
+    );
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        {
+          label: "Scribble",
+          submenu: [
+            { role: "about" },
+            {
+              label: interfaceText("nav.settings"),
+              accelerator: "CmdOrCtrl+,",
+              click: () => {
+                show();
+                emit("navigate", { page: "settings" });
+              },
+            },
+            { type: "separator" },
+            { role: "hide" },
+            { role: "hideOthers" },
+            { role: "unhide" },
+            { type: "separator" },
+            { role: "quit" },
+          ],
+        },
+        { role: "editMenu" },
+        { role: "viewMenu" },
+        { role: "windowMenu" },
+      ]),
+    );
+}
 function snapshot() {
   return {
     ...store.data,
@@ -187,6 +241,7 @@ function indicator(state, text) {
     tones: store.data.tones,
     selectedTone: store.data.settings.pinnedToneId,
     canSelectTone: true,
+    locale: store.data.settings.locale,
   });
 }
 async function ensureAI(settings) {
@@ -840,6 +895,7 @@ const actions = {
     store.validateSettings({ ...patch, ...normalized });
     if ("preferIPv4" in patch) require("./network-preferences").applyNetworkPreferences(proposed);
     store.updateSettings({ ...patch, ...normalized });
+    if ("locale" in patch) refreshInterfaceMenus();
     if ("launchAtLogin" in patch)
       app.setLoginItemSettings({ openAtLogin: patch.launchAtLogin });
     if ("hideDock" in patch && app.dock)
@@ -854,7 +910,7 @@ const actions = {
     const selected = store.data.settings.pinnedToneId;
     Menu.buildFromTemplate([
       {
-        label: "Automatic tone",
+        label: interfaceText("tone.automatic"),
         type: "radio",
         checked: !selected,
         click: () => actions["select-tone"]({ id: "" }),
@@ -1637,56 +1693,8 @@ app
         : icon,
     );
     tray.setToolTip("Scribble · Speak your mind");
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: "Open Scribble", click: show },
-        { label: "Start dictation", click: () => beginRecording() },
-        {
-          label: "Start a note",
-          click: () => {
-            show();
-            emit("navigate", { page: "notes", record: true });
-          },
-        },
-        { label: "Paste last dictation", click: () => actions["paste-last"]() },
-        { type: "separator" },
-        {
-          label: "Quit Scribble",
-          click: () => {
-            quitting = true;
-            app.quit();
-          },
-        },
-      ]),
-    );
+    refreshInterfaceMenus();
     tray.on("click", show);
-    Menu.setApplicationMenu(
-      Menu.buildFromTemplate([
-        {
-          label: "Scribble",
-          submenu: [
-            { role: "about" },
-            {
-              label: "Settings",
-              accelerator: "CmdOrCtrl+,",
-              click: () => {
-                show();
-                emit("navigate", { page: "settings" });
-              },
-            },
-            { type: "separator" },
-            { role: "hide" },
-            { role: "hideOthers" },
-            { role: "unhide" },
-            { type: "separator" },
-            { role: "quit" },
-          ],
-        },
-        { role: "editMenu" },
-        { role: "viewMenu" },
-        { role: "windowMenu" },
-      ]),
-    );
     const socket = path.join(dataDir, "scribble.sock");
     try {
       fs.unlinkSync(socket);

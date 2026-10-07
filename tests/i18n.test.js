@@ -31,3 +31,11 @@ test('parameters are single-pass literal text; no markup interpretation or impli
   assert.equal(i18n.plural('en',1,{one:'{name}: {count}'},{name:hostile}),hostile+': 1');
   assert.equal(i18n.t('fr','action.copy'),'Copier');
 });
+test('tray and overlay state/control labels exist independently in every catalogue',()=>{
+  const keys=['tray.open','tray.startDictation','tray.startNote','tray.pasteLast','tray.quit','tray.tagline','overlay.ready','mode.dictation','mode.command','mode.note','state.recording','state.processing','state.paused','state.muted','overlay.cancelRecording','overlay.stopRecording','overlay.chooseTone','tone.automatic','overlay.microphoneLevel'];
+  assert.equal(Object.keys(i18n.catalogues.en).length,61);
+  for(const locale of i18n.locales){for(const key of keys){assert.ok(Object.hasOwn(i18n.catalogues[locale.id],key));assert.notEqual(i18n.t(locale.id,key),key);assert.ok(i18n.t(locale.id,key).trim());}assert.notEqual(i18n.t(locale.id,'overlay.cancelRecording'),i18n.t(locale.id,'overlay.stopRecording'));assert.notEqual(i18n.t(locale.id,'state.recording'),i18n.t(locale.id,'state.processing'));assert.match(i18n.t(locale.id,'tray.open'),/Scribble/);assert.match(i18n.t(locale.id,'tray.quit'),/Scribble/);}
+  assert.equal(i18n.t('es','tray.startNote'),'Iniciar una nota');assert.equal(i18n.t('ja','state.paused'),'一時停止中');assert.equal(i18n.t('zh-TW','overlay.microphoneLevel'),'麥克風音量');assert.equal(i18n.t('invalid','tray.pasteLast'),'Paste last dictation');
+});
+
+test('recording lifecycle messages remain provider neutral with identical level parameters',()=>{for(const locale of i18n.locales){for(const key of ['overlay.starting','overlay.listening','overlay.transcribing','overlay.failed'])assert.ok(Object.hasOwn(i18n.catalogues[locale.id],key));assert.equal(i18n.t(locale.id,'overlay.level',{level:42}),'42%');assert.equal(i18n.t(locale.id,'overlay.level'),'\u007blevel\u007d%');assert.doesNotMatch(i18n.t(locale.id,'overlay.transcribing'),/local|cloud/i);}});
