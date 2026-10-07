@@ -14,14 +14,15 @@ function harness(t, { chat, transcribe } = {}) {
   const { Store } = localRequire("./store"),
     store = new Store(directory),
     events = [],
-    nativeCalls = [], menus = [], trayState = {};
+    nativeCalls = [], menus = [], trayState = {}, appEvents = {}, exits = [];
   const electron = {
     Menu: { buildFromTemplate(template) { return template; }, setApplicationMenu(menu) { menus.push(menu); } },
     app: {
       setName() {},
       requestSingleInstanceLock: () => true,
       whenReady: () => new Promise(() => {}),
-      on() {},
+      on(event, listener) { appEvents[event] = listener; },
+      exit(code) { exits.push(code); },
       getVersion: () => "test",
     },
     protocol: { registerSchemesAsPrivileged() {} },
@@ -40,6 +41,7 @@ function harness(t, { chat, transcribe } = {}) {
   };
   const native = {
     available: true,
+    close() { nativeCalls.push({ command:"close" }); },
     request: async (command, args) => {
       nativeCalls.push({ command, args });
       return command === "selection"
@@ -77,7 +79,7 @@ function harness(t, { chat, transcribe } = {}) {
     context,
   );
   context.exposed.initialize(store, speech, native, directory);
-  return { ...context.exposed, store, nativeCalls, directory, events, menus, trayState };
+  return { ...context.exposed, store, nativeCalls, directory, events, menus, trayState, appEvents, exits };
 }
 test("cancel during AI cleanup never inserts or saves a late result", async (t) => {
   let started;
@@ -290,4 +292,18 @@ test('interface language preferences rebuild tray and application Settings label
   assert.equal(h.trayState.tooltip,'Scribble · '+translate('ja','tray.tagline'));
   await h.actions.preferences({locale:'en'});
   assert.equal(h.trayState.menu[0].label,'Open Scribble');
+});
+
+test('unavailable Accessibility capture is stopped and reports the required permission', async t=> {
+ const h=harness(t);
+ await assert.rejects(h.actions['capture-hotkey-start'](),/Accessibility/);
+ assert.deepEqual(h.nativeCalls.slice(-2).map(x=>x.command),['hotkeyCaptureStart','hotkeyCaptureStop']);
+});
+
+test('graceful quit closes native services then exits rather than restarting quit negotiation', async t=> {
+ const h=harness(t);let prevented=0;
+ h.appEvents['before-quit']({preventDefault(){prevented++;}});
+ assert.equal(prevented,1);assert.ok(h.nativeCalls.some(x=>x.command==='close'));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(h.exits,[0]);
 });

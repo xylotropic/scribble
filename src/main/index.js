@@ -889,6 +889,13 @@ async function transcribeAndProcess(
 }
 const actions = {
   state: () => snapshot(),
+  "capture-hotkey-start": async () => {
+    if (recordTarget || activeProcess) throw Error("Finish recording before capturing a shortcut");
+    const result = await native.request("hotkeyCaptureStart");
+    if (!result.available) { await native.request("hotkeyCaptureStop").catch(() => {}); throw Error("Allow Accessibility access before capturing a shortcut"); }
+    return result;
+  },
+  "capture-hotkey-stop": () => native.request("hotkeyCaptureStop"),
   preferences: async (patch) => {
     const proposed = { ...store.data.settings, ...patch };
     const normalized = require("./speech-preferences").normalizeSpeechPreferences(proposed, speech.listModels());
@@ -1626,6 +1633,7 @@ app
       if (x.phase === "start") await beginRecording(x.mode, x.toneId);
       else await actions["stop-recording"]();
     });
+    for (const event of ["hotkey-captured", "hotkey-capture-cancelled", "hotkey-capture-ended"]) native.on(event, (data) => emit(event, data));
     native.on("clipboard", (x) => {
       if (!store.data.settings.clipboardHistory) return;
       store.data.clipboard.unshift({
@@ -1809,7 +1817,7 @@ app.on("before-quit", (event) => {
     .closeLocalAI()
     .finally(() => {
       quitAllowed = true;
-      app.quit();
+      app.exit(0);
     });
 });
 app.on("window-all-closed", () => {});

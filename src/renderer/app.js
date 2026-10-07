@@ -55,7 +55,7 @@ const esc = (v) =>
   );
 const interfaceLabel = (label) => {
   const key = Object.keys(ScribbleI18n.catalogues.en).find((key) => ScribbleI18n.catalogues.en[key] === label);
-  return key ? ScribbleI18n.t(state?.settings.locale, key) : label;
+  return key ? ScribbleI18n.t(state?.settings.locale, key) : ScribbleFormTranslations.translate(state?.settings.locale, label);
 };
 const date = (v) =>
     new Date(v).toLocaleDateString(ScribbleI18n.formattingLocale(state?.settings.locale), {
@@ -85,6 +85,8 @@ const pages = {
   utilities: ["File tools", "settings"],
   help: ["Help", "help"],
 };
+let hotkeyCaptureActive = false;
+async function stopHotkeyCapture() { if (!hotkeyCaptureActive) return; hotkeyCaptureActive = false; await request("capture-hotkey-stop").catch(() => {}); }
 let state = null,
   page = "home",
   tab = "overview",
@@ -247,26 +249,27 @@ function button(label, action, ico, cls = "", data = "") {
   return `<button type="button" class="${cls}" data-action="${action}" ${data}>${ico ? icon(ico) : ""}${interfaceLabel(label)}</button>`;
 }
 function field(name, label, value = "", type = "text", hint = "") {
-  return `<label class="field">${label}<input name="${name}" type="${type}" value="${esc(value)}" ${type === "password" ? 'autocomplete="off"' : ""}>${hint ? `<small>${hint}</small>` : ""}</label>`;
+  return `<label class="field">${esc(interfaceLabel(label))}<input name="${name}" type="${type}" value="${esc(value)}" ${type === "password" ? 'autocomplete="off"' : ""}>${hint ? `<small>${hint}</small>` : ""}</label>`;
 }
 function area(name, label, value = "", hint = "") {
-  return `<label class="field">${label}<textarea name="${name}">${esc(value)}</textarea>${hint ? `<small>${hint}</small>` : ""}</label>`;
+  return `<label class="field">${esc(interfaceLabel(label))}<textarea name="${name}">${esc(value)}</textarea>${hint ? `<small>${hint}</small>` : ""}</label>`;
 }
 function select(name, label, options, value, disabled = false) {
-  return `<label class="field">${label}<select name="${name}" ${disabled ? "disabled" : ""}>${options.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(value) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+  return `<label class="field">${esc(interfaceLabel(label))}<select name="${name}" ${disabled ? "disabled" : ""}>${options.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(value) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
 }
 function check(name, label, value = false) {
-  return `<label class="row"><input name="${name}" type="checkbox" ${value ? "checked" : ""}>${label}</label>`;
+  return `<label class="row"><input name="${name}" type="checkbox" ${value ? "checked" : ""}>${esc(interfaceLabel(label))}</label>`;
 }
 function heading(eyebrow, title, subtitle, actions = "") {
-  return `<div class="page-heading"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p class="lead">${subtitle}</p></div><div class="row wrap">${actions}</div></div>`;
+  return `<div class="page-heading"><div><p class="eyebrow">${esc(interfaceLabel(eyebrow))}</p><h1>${esc(interfaceLabel(title))}</h1><p class="lead">${subtitle}</p></div><div class="row wrap">${actions}</div></div>`;
 }
 function empty(ico, title, description, action = "") {
   return `<div class="empty">${icon(ico)}<h3>${title}</h3><p>${description}</p>${action}</div>`;
 }
 function showModal(title, html, onSubmit) {
+  void stopHotkeyCapture();
   const dialog = $("#modal");
-  dialog.innerHTML = `<form method="dialog"><div class="row between"><h2>${title}</h2>${button("", "close-modal", "close", "ghost icon")}</div>${html}<div class="dialog-footer">${button("Cancel", "close-modal", "", "ghost")}<button type="submit" class="primary">Save</button></div></form>`;
+  dialog.innerHTML = `<form method="dialog"><div class="row between"><h2>${esc(interfaceLabel(title))}</h2>${button("", "close-modal", "close", "ghost icon")}</div>${html}<div class="dialog-footer">${button("Cancel", "close-modal", "", "ghost")}<button type="submit" class="primary">${esc(interfaceLabel("Save"))}</button></div></form>`;
   dialog.querySelector("form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = e.target;
@@ -275,6 +278,7 @@ function showModal(title, html, onSubmit) {
       .querySelectorAll("input[type=checkbox]")
       .forEach((i) => (values[i.name] = i.checked));
     try {
+      await stopHotkeyCapture();
       await onSubmit(values);
       dialog.close();
     } catch (error) {
@@ -630,11 +634,11 @@ function setting(label, description, key, type = "checkbox", options, disabled =
   const s = state.settings;
   let control =
     type === "checkbox"
-      ? `<input type="checkbox" data-setting="${key}" ${disabled ? "disabled" : ""} ${s[key] ? "checked" : ""} aria-label="${label}">`
+      ? `<input type="checkbox" data-setting="${key}" ${disabled ? "disabled" : ""} ${s[key] ? "checked" : ""} aria-label="${esc(interfaceLabel(label))}">`
       : type === "select"
-        ? `<select data-setting="${key}" aria-label="${label}">${options.map(([v, l]) => `<option value="${esc(v)}" ${String(s[key]) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`
-        : `<input data-setting="${key}" data-type="${type}" type="${type}" value="${esc(s[key])}" aria-label="${label}">`;
-  return `<div class="setting-row"><div><h3>${label}</h3><p>${description}</p></div>${control}</div>`;
+        ? `<select data-setting="${key}" aria-label="${esc(interfaceLabel(label))}">${options.map(([v, l]) => `<option value="${esc(v)}" ${String(s[key]) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`
+        : `<input data-setting="${key}" data-type="${type}" type="${type}" value="${esc(s[key])}" aria-label="${esc(interfaceLabel(label))}">`;
+  return `<div class="setting-row"><div><h3>${esc(interfaceLabel(label))}</h3><p>${description}</p></div>${control}</div>`;
 }
 function renderSpeechLanguageSetting() {
   const model = state.settings.speechProvider === "local" && state.models.find((m) => m.id === state.settings.modelId);
@@ -1008,6 +1012,7 @@ function editHotkey(index) {
         ],
         h.toggle ? "toggle" : "hold",
       ) +
+      `<div class="row">${button("Capture binding", "capture-hotkey", "keyboard")}<span id="capture-hotkey-status" role="status">Press a key, modifier chord or auxiliary mouse button.</span></div>` +
       field(
         "modifiers",
         "Modifiers (comma-separated)",
@@ -1382,7 +1387,14 @@ document.addEventListener("click", async (e) => {
       render();
       return;
     }
+    if (a === "capture-hotkey") {
+      await stopHotkeyCapture();
+      hotkeyCaptureActive = true;
+      try { await request("capture-hotkey-start"); if (hotkeyCaptureActive && $("#capture-hotkey-status")) $("#capture-hotkey-status").textContent = "Listening for a binding… Escape cancels. Capture expires after 30 seconds."; } catch (error) { hotkeyCaptureActive = false; throw error; }
+      return;
+    }
     if (a === "close-modal") {
+      await stopHotkeyCapture();
       $("#modal").close();
       return;
     }
@@ -2139,7 +2151,22 @@ async function refreshPermissions() {
   permissions = await request("permissions").catch(() => ({}));
   if (page === "settings" && settingsTab === "permissions") render();
 }
+$("#modal").addEventListener("close", () => void stopHotkeyCapture());
 api.on(({ event, data }) => {
+  if (event === "hotkey-captured" && hotkeyCaptureActive) {
+    hotkeyCaptureActive = false;
+    const form = $("#modal form");
+    if (form?.elements.keyCode && Number.isInteger(data.keyCode)) {
+      form.elements.keyCode.value = data.keyCode;
+      form.elements.modifiers.value = (data.modifiers || []).join(", ");
+      form.elements.mouseButton.value = data.keyCode >= 130 ? String(data.keyCode) : "";
+      $("#capture-hotkey-status").textContent = "Captured: " + (data.modifiers || []).join(" + ") + (data.keyCode < 0 ? "" : " + " + (data.label || data.keyCode));
+    }
+  }
+  if (["hotkey-capture-cancelled", "hotkey-capture-ended"].includes(event) && hotkeyCaptureActive) {
+    hotkeyCaptureActive = false;
+    const label = $("#capture-hotkey-status"); if (label) label.textContent = data.reason === "timeout" ? "Capture expired. Try again." : "Capture cancelled.";
+  }
   if (event === "open-files") {
     page = "transcribe";
     addFiles(data);

@@ -88,6 +88,47 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     }
     func matchesSides(_ binding:Binding) -> Bool { (currentSideFlags & binding.sideFlags) == binding.sideFlags }
 
+    var hotkeyCaptureActive = false
+    var hotkeyCaptureTimer: Timer?
+    var captureModifiers: [String] = []
+    var captureOwnedKeys = Set<Int64>()
+    var captureOwnedMouse = Set<Int64>()
+    func captureModifierNames(_ flags:CGEventFlags) -> [String] {
+        var names=modifierSides.filter{currentSideFlags & $0.bit != 0 && flags.contains($0.family)}.map{$0.name}
+        for (name,family) in [("control",CGEventFlags.maskControl),("shift",.maskShift),("command",.maskCommand),("option",.maskAlternate)] { if flags.contains(family) && !modifierSides.contains(where:{$0.family==family && currentSideFlags & $0.bit != 0}) { names.append(name) } }
+        if flags.contains(.maskSecondaryFn) { names.append("fn") };return names
+    }
+    func stopHotkeyCapture() { hotkeyCaptureActive=false;hotkeyCaptureTimer?.invalidate();hotkeyCaptureTimer=nil;captureModifiers=[];typed="";expansionSelection="" }
+    func captureTimedOut() { guard hotkeyCaptureActive else{return};stopHotkeyCapture();emit(["event":"hotkey-capture-ended","reason":"timeout"]) }
+    func startHotkeyCapture() {
+        stopHotkeyCapture(); snapshotModifierSides(); hotkeyCaptureActive=true
+        for i in bindings.indices { if bindings[i].held { emitHotkey("cancel",bindings[i]);bindings[i].held=false } }
+        hotkeyCaptureTimer=Timer.scheduledTimer(withTimeInterval:30,repeats:false){[weak self] _ in self?.captureTimedOut()}
+    }
+    func captureLabel(_ code:Int64,_ event:CGEvent,_ mouse:Bool)->String {
+        if mouse { return code == 130 ? "Middle mouse" : "Mouse \(code-127)" }
+        let special:[Int64:String]=[49:"Space",36:"Return",48:"Tab",51:"Backspace",117:"Delete",123:"Left",124:"Right",125:"Down",126:"Up"]
+        if let name=special[code]{return name};var chars=[UniChar](repeating:0,count:16);var count=0;event.keyboardGetUnicodeString(maxStringLength:16,actualStringLength:&count,unicodeString:&chars)
+        let text=String(utf16CodeUnits:chars,count:count).trimmingCharacters(in:.whitespacesAndNewlines);return text.isEmpty ? "Key \(code)" : text.uppercased()
+    }
+    func captureEvent(_ type:CGEventType,_ event:CGEvent,_ code:Int64,_ mouse:Bool) -> Unmanaged<CGEvent>? {
+        updateModifierSides(type,event);lastModifierFlags=event.flags.intersection(relevantFlags)
+        if type == .keyDown && code == 53 { captureOwnedKeys.insert(code);stopHotkeyCapture();emit(["event":"hotkey-capture-cancelled","reason":"escape"]);return nil }
+        if type == .flagsChanged {
+            let names=captureModifierNames(lastModifierFlags)
+            if !names.isEmpty { if names.count >= captureModifiers.count { captureModifiers=names } }
+            else if !captureModifiers.isEmpty { let names=captureModifiers;stopHotkeyCapture();emit(["event":"hotkey-captured","keyCode":-1,"modifiers":names,"inputKind":"modifiers","label":names.joined(separator:" + ")]) }
+            return Unmanaged.passUnretained(event)
+        }
+        if type == .keyDown || type == .otherMouseDown {
+            if !mouse && event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return nil }
+            if mouse { captureOwnedMouse.insert(code-128) } else { captureOwnedKeys.insert(code) }
+            let modifiers=captureModifierNames(lastModifierFlags),label=captureLabel(code,event,mouse)
+            stopHotkeyCapture();emit(["event":"hotkey-captured","keyCode":code,"modifiers":modifiers,"inputKind":mouse ? "mouse":"keyboard","label":label]);return nil
+        }
+        return Unmanaged.passUnretained(event)
+    }
+
     let relevantFlags: CGEventFlags = [.maskAlternate, .maskCommand, .maskControl, .maskShift, .maskSecondaryFn]
     var expansions: [[String: String]] = []
     var typed = ""
@@ -102,7 +143,7 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     var recordingPath: String?
     let audioQueue = DispatchQueue(label: "scribble.audio")
     var pasteboardCount = NSPasteboard.general.changeCount
-    func status() -> [String: Any] { ["accessibility": AXIsProcessTrusted(), "screenRecording": CGPreflightScreenCaptureAccess(), "microphone": AVCaptureDevice.authorizationStatus(for: .audio).rawValue, "hotkeys": tap != nil, "hotkeyBindings": bindings.map { ["keyCode":$0.key, "inputKind":$0.key >= 130 ? "mouse" : ($0.key < 0 ? "modifiers" : "keyboard"), "modifierFlags":$0.flags.rawValue, "sideModifierFlags":$0.sideFlags, "mode":$0.mode, "toggle":$0.toggle, "active":$0.held, "toneId":$0.toneId ?? ""] as [String:Any] }, "systemRecording": stream != nil, "systemPaused": systemPaused, "permissionIdentity": ["pid": ProcessInfo.processInfo.processIdentifier, "executable": CommandLine.arguments.first ?? "", "bundleId": Bundle.main.bundleIdentifier ?? "", "microphoneSource": "native-helper-AVCaptureDevice"]] }
+    func status() -> [String: Any] { ["accessibility": AXIsProcessTrusted(), "screenRecording": CGPreflightScreenCaptureAccess(), "microphone": AVCaptureDevice.authorizationStatus(for: .audio).rawValue, "hotkeys": tap != nil, "hotkeyCaptureActive":hotkeyCaptureActive, "hotkeyBindings": bindings.map { ["keyCode":$0.key, "inputKind":$0.key >= 130 ? "mouse" : ($0.key < 0 ? "modifiers" : "keyboard"), "modifierFlags":$0.flags.rawValue, "sideModifierFlags":$0.sideFlags, "mode":$0.mode, "toggle":$0.toggle, "active":$0.held, "toneId":$0.toneId ?? ""] as [String:Any] }, "systemRecording": stream != nil, "systemPaused": systemPaused, "permissionIdentity": ["pid": ProcessInfo.processInfo.processIdentifier, "executable": CommandLine.arguments.first ?? "", "bundleId": Bundle.main.bundleIdentifier ?? "", "microphoneSource": "native-helper-AVCaptureDevice"]] }
     func focused() -> AXUIElement? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &value) == .success else { return nil }
@@ -230,6 +271,12 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
         let button = event.getIntegerValueField(.mouseEventButtonNumber)
         if mouse && !(2...31).contains(button) { return Unmanaged.passUnretained(event) }
         let code = mouse ? 128 + button : event.getIntegerValueField(.keyboardEventKeycode)
+        if mouse && captureOwnedMouse.contains(button) { if type == .otherMouseUp { captureOwnedMouse.remove(button) };return nil }
+        if !mouse && captureOwnedKeys.contains(code) && (type == .keyDown || type == .keyUp) { if type == .keyUp { captureOwnedKeys.remove(code) };return nil }
+        if hotkeyCaptureActive {
+            if type == .leftMouseDown || type == .leftMouseUp || type == .rightMouseDown || type == .rightMouseUp { return Unmanaged.passUnretained(event) }
+            return captureEvent(type,event,code,mouse)
+        }
         if type == .otherMouseDown, consumedMouseButtons.contains(button) { return nil }
         if type == .keyDown, code == 53 {
             for i in bindings.indices { bindings[i].held = false }
@@ -324,6 +371,8 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
             case "undo", "redo", "selectAll", "find": result = try await edit(request, action: request["command"] as? String ?? "")
             case "paste": result = paste(request["text"] as? String ?? "", html: request["html"] as? String, restore: request["restoreClipboard"] as? Bool ?? true, enter: request["autoEnter"] as? Bool ?? false, expectedPid: (request["expectedPid"] as? NSNumber)?.int32Value, dryRun: request["dryRun"] as? Bool ?? false)
             case "selection": var value: CFTypeRef?; if let field = focused(), !secure(field) { AXUIElementCopyAttributeValue(field, kAXSelectedTextAttribute as CFString, &value) }; result = ["text": value as? String ?? ""]
+            case "hotkeyCaptureStart": startHotkeyCapture();startTap();result=["capturing":true,"available":tap != nil,"timeoutMs":30000]
+            case "hotkeyCaptureStop": stopHotkeyCapture();result=["capturing":false]
             case "frontmost": result = frontmostContext()
             case "setHotkeys":
                 let configured = request["hotkeys"] as? [[String: Any]] ?? [request]
@@ -397,6 +446,18 @@ if CommandLine.arguments.contains("--clipboard-self-test") { let passed = clipbo
 let bridge = Bridge()
 if CommandLine.arguments.contains("--status") { emit(bridge.status()); exit(0) }
 if CommandLine.arguments.contains("--hotkey-tone-self-test") { let binding = Bridge.Binding(key:49,flags:.maskAlternate,mode:"dictation",toggle:false,toneId:"tone-fixture"); bridge.emitHotkey("start",binding); bridge.emitHotkey("stop",binding); exit(0) }
+if CommandLine.arguments.contains("--hotkey-capture-self-test") {
+    func event(_ type:CGEventType,key:Int64=49,button:Int64=2,flags:CGEventFlags=[],repeatKey:Bool=false)->CGEvent { let e=CGEvent(source:nil)!;e.type=type;e.flags=flags;e.setIntegerValueField(.keyboardEventKeycode,value:key);e.setIntegerValueField(.mouseEventButtonNumber,value:button);e.setIntegerValueField(.keyboardEventAutorepeat,value:repeatKey ? 1:0);return e }
+    bridge.startHotkeyCapture();let repeatIgnored=bridge.handle(.keyDown,event(.keyDown,repeatKey:true))==nil && bridge.hotkeyCaptureActive
+    let capturedKey=bridge.handle(.keyDown,event(.keyDown,flags:CGEventFlags(rawValue:CGEventFlags.maskAlternate.rawValue|0x40)))==nil && !bridge.hotkeyCaptureActive
+    let releasedKey=bridge.handle(.keyUp,event(.keyUp))==nil
+    bridge.startHotkeyCapture();let primaryPassed=bridge.handle(.leftMouseDown,event(.leftMouseDown,button:0)) != nil
+    let capturedMouse=bridge.handle(.otherMouseDown,event(.otherMouseDown,button:5))==nil;let releasedMouse=bridge.handle(.otherMouseUp,event(.otherMouseUp,button:5))==nil
+    bridge.startHotkeyCapture();_=bridge.handle(.flagsChanged,event(.flagsChanged,key:56,flags:CGEventFlags(rawValue:CGEventFlags.maskShift.rawValue|0x2)));_=bridge.handle(.flagsChanged,event(.flagsChanged,key:59,flags:CGEventFlags(rawValue:CGEventFlags.maskShift.rawValue|CGEventFlags.maskControl.rawValue|0x3)));_=bridge.handle(.flagsChanged,event(.flagsChanged,key:56,flags:CGEventFlags(rawValue:CGEventFlags.maskControl.rawValue|0x1)));_=bridge.handle(.flagsChanged,event(.flagsChanged,key:59));let capturedModifiers = !bridge.hotkeyCaptureActive
+    bridge.startHotkeyCapture();let escaped=bridge.handle(.keyDown,event(.keyDown,key:53))==nil && !bridge.hotkeyCaptureActive;_=bridge.handle(.keyUp,event(.keyUp,key:53))
+    bridge.startHotkeyCapture();bridge.captureTimedOut();let timedOut = !bridge.hotkeyCaptureActive;bridge.stopHotkeyCapture();bridge.stopHotkeyCapture()
+    emit(["selfTest":"hotkey-capture","repeatIgnored":repeatIgnored,"capturedKey":capturedKey,"releasedKey":releasedKey,"primaryPassed":primaryPassed,"capturedMouse":capturedMouse,"releasedMouse":releasedMouse,"capturedModifiers":capturedModifiers,"escaped":escaped,"timedOut":timedOut,"ownedReleasesCleared":bridge.captureOwnedKeys.isEmpty && bridge.captureOwnedMouse.isEmpty]);exit(0)
+}
 if CommandLine.arguments.contains("--modifier-side-self-test") {
     func event(_ type:CGEventType,_ key:Int64,_ flags:CGEventFlags,_ sides:UInt64)->CGEvent { let value=CGEvent(source:nil)!;value.type=type;value.flags=CGEventFlags(rawValue:flags.rawValue|sides);value.setIntegerValueField(.keyboardEventKeycode,value:key);value.setIntegerValueField(.mouseEventButtonNumber,value:2);return value }
     bridge.bindings=[Bridge.Binding(key:49,flags:.maskAlternate,mode:"dictation",toggle:false,sideFlags:0x20),Bridge.Binding(key:49,flags:.maskAlternate,mode:"command",toggle:false,sideFlags:0x40)]

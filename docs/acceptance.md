@@ -6,7 +6,7 @@ Scope: original, open-source Mac product covering every publicly reachable Vowen
 
 | Requirement | Evidence needed before completion | Current evidence |
 |---|---|---|
-| Accessible open-source repository | Public repository URL; clone from clean directory; licence and contributor/build documentation; no private/proprietary asset/code inclusion | Source published at https://github.com/xylotropic/scribble ; remote/local tree SHA 5be920b6919c8fafa5fbb90fec82f645dffee754 matches. README/MIT/notices present. Initial public revision clean-clone dependency install, native build and tests passed; latest source update/clean-clone verification pending. |
+| Accessible open-source repository | Public repository URL; clone from clean directory; licence and contributor/build documentation; no private/proprietary asset/code inclusion | Source published at https://github.com/xylotropic/scribble ; README/MIT/notices present. Successive public revisions were clean-clone tested; localization surface revision5d42f95 passed211 tests after the native helper rebuild. Public revision1096317 tree2f615fafa0a64fbaa861734047b4c9ca6746e517 was packaged and35 tracked src/assets files matched archived bytes. Latest capture/translation work still requires publication and clean-clone verification. |
 | Runs on Mac initially | Clean dependency install/build; packaged Mac app; launch, permissions, recording and insertion on supported Intel/Apple-Silicon targets, or accurately scoped architecture limits | Not verified |
 | Complete feature coverage, not cheap copy | Every free feature in public-features.md matched to observed source runtime and working Scribble acceptance case; no fake backend controls | Not verified |
 | Significant UI coverage | Rendered sidebar pages, onboarding, settings, editor dialogs, file/note/history detail, overlay; light/dark; keyboard paths; empty/error/loading/success states | Not verified |
@@ -127,3 +127,13 @@ Public Vowen engine coverage exceeds a Whisper-only implementation. NVIDIA's [Pa
 - Finder selected the isolated public JFK WAV fixture and enabled Share. Its actual Share popover displayed `Unlock Mac to continue with Siri request` instead of destinations, corroborated by AX and screenshot. No Share handoff success is claimed; session unlock is needed to continue this desktop check.
 
 - Added searchable workspace navigation through the header and Cmd+K/Ctrl+K. A renderer interaction test filters to File tools and uses Enter to navigate, closing the palette. Other physical keyboard paths remain under desktop verification.
+
+## Current packaged language verification
+
+Public revision1096317 (tree2f615fafa0a64fbaa861734047b4c9ca6746e517) was packaged after terminating the stale test host through Activity Monitor. Deep strict code-signature verification passed;35 tracked source/asset files matched the app archive exactly. The fresh app socket reported nativeAvailable:true and Whisper/Parakeet/catalog runtimes ready.
+
+The actual Settings selector switched from English to Japanese. AX showed Japanese navigation, common buttons and tabs, and the native application Settings menu changed to 設定. The interface was restored to English visibly. Language settings then showed the base.en selector disabled with English selected and the correct model explanation. This verifies these bounded packaged behaviors, not complete localization, native recording or insertion. Microphone remained Not yet requested; Accessibility remained Not yet allowed.
+
+## Physical shortcut capture implementation
+
+The native capture protocol accepts keyboard, side-specific modifier, modifier-only and auxiliary mouse bindings. Capture suspends normal hotkey/expansion handling, ignores repeat events, consumes owned releases, allows primary clicks, cancels on Escape and expires after30 seconds. Renderer tests verify capture fills/persists a right-option+M4 binding and closing the editor stops capture. Main actions reject capture without actual tap availability and stop the pending mode. Native synthetic events and compilation passed; physical desktop capture remains unverified.

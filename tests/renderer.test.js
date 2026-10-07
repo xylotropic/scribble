@@ -171,6 +171,7 @@ async function fixture(
     }
   };
   w.eval(fs.readFileSync(path.join(__dirname, "../src/shared/i18n.js"), "utf8"));
+  w.eval(fs.readFileSync(path.join(__dirname, "../src/shared/form-translations.js"), "utf8"));
   w.eval(
     fs.readFileSync(path.join(__dirname, "../src/renderer/app.js"), "utf8"),
   );
@@ -787,4 +788,32 @@ test('interface language changes navigation and common actions without changing 
   assert.equal(h.w.document.querySelector('[data-page="home"]').textContent.trim(), 'ホーム');
   await h.click('[data-page="command"]');
   assert.equal(h.w.document.querySelector('#command-text').value, 'Keep this unsent request');
+});
+
+test('physical binding capture fills side modifiers and mouse button, then persists the result', options, async t => {
+ const h=await fixture(t);
+ await h.click('[data-page="settings"]'); await h.click('[data-tab="hotkeys"]'); await h.click('[data-action="add-hotkey"]'); await h.click('[data-action="capture-hotkey"]');
+ h.emit('hotkey-captured',{keyCode:131,modifiers:['right-option'],label:'M4',inputKind:'mouse'});
+ assert.equal(h.w.document.querySelector('[name="mouseButton"]').value,'131');
+ await h.submit();
+ const saved=h.calls.findLast(x=>x.action==='preferences');
+ assert.equal(saved.args.hotkeys.at(-1).keyCode,131);
+ assert.deepEqual(Array.from(saved.args.hotkeys.at(-1).modifiers),['right-option']);
+});
+test('closing shortcut editor stops native capture before leaving the dialog', options, async t => {
+ const h=await fixture(t);
+ await h.click('[data-page="settings"]'); await h.click('[data-tab="hotkeys"]'); await h.click('[data-action="add-hotkey"]'); await h.click('[data-action="capture-hotkey"]'); await h.click('[data-action="close-modal"]');
+ assert.ok(h.calls.some(x=>x.action==='capture-hotkey-stop'));
+ assert.equal(h.w.document.querySelector('#modal').open,false);
+});
+
+test('Japanese shortcut dialog localizes literal labels while leaving entered values unchanged', options, async t=> {
+ const h=await fixture(t);h.data.settings.locale='ja';h.emit('state',h.data);
+ await h.click('[data-page="settings"]');await h.click('[data-tab="hotkeys"]');await h.click('[data-action="add-hotkey"]');
+ const forms=h.w.ScribbleFormTranslations;
+ assert.equal(h.w.document.querySelector('#modal h2').textContent,forms.translate('ja','Shortcut'));
+ const input=h.w.document.querySelector('[name="modifiers"]');h.input('[name="modifiers"]','right-option');
+ assert.ok(input.parentElement.textContent.includes(forms.translate('ja','Modifiers (comma-separated)')));
+ assert.equal(input.value,'right-option');
+ assert.equal(h.w.document.querySelector('#modal button[type="submit"]').textContent,h.w.ScribbleI18n.t('ja','action.save'));
 });
