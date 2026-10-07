@@ -137,3 +137,7 @@ The actual Settings selector switched from English to Japanese. AX showed Japane
 ## Physical shortcut capture implementation
 
 The native capture protocol accepts keyboard, side-specific modifier, modifier-only and auxiliary mouse bindings. Capture suspends normal hotkey/expansion handling, ignores repeat events, consumes owned releases, allows primary clicks, cancels on Escape and expires after30 seconds. Renderer tests verify capture fills/persists a right-option+M4 binding and closing the editor stops capture. Main actions reject capture without actual tap availability and stop the pending mode. Native synthetic events and compilation passed; physical desktop capture remains unverified.
+
+## Packaged shutdown regression
+
+The older tested host reproducibly stopped its native bridge/socket on Quit but remained alive, confirmed by read-only process inventory after the menu action. Shutdown now performs the existing cleanup and uses Electron app.exit(0) after the owned AI runtime cleanup completes. A main-process test verifies ordering. The rebuilt capture/form package was launched and quit through its actual application menu; subsequent process inventory found no Scribble host or bridge, while the pre-existing external Ollama PID23381 remained running. Strict deep signature verification passed. This proves the bounded idle shutdown regression, not shutdown during recording or provider activity.
