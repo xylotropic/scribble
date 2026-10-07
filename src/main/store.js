@@ -236,7 +236,7 @@ class Store {
             !item ||
             !Number.isInteger(item.keyCode) ||
             item.keyCode < -1 ||
-            item.keyCode > 127 ||
+            (item.keyCode > 127 && (item.keyCode < 130 || item.keyCode > 159)) ||
             !Array.isArray(item.modifiers) ||
             item.modifiers.some(
               (x) =>

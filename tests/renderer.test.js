@@ -746,3 +746,14 @@ test(
     assert.equal(h.w.document.querySelector("#modal").open, false);
   },
 );
+
+test("auxiliary mouse shortcut selection persists and displays its button", options, async (t) => {
+  const h = await fixture(t);
+  await h.click('[data-page="settings"]');
+  await h.click('[data-tab="hotkeys"]');
+  await h.click('[data-action="add-hotkey"]');
+  h.input('[name="mouseButton"]', '130');
+  await h.submit();
+  const saved = h.calls.findLast((x) => x.action === 'preferences');
+  assert.equal(saved.args.hotkeys.at(-1).keyCode, 130);
+});

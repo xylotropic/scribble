@@ -698,7 +698,7 @@ function renderSettings() {
       ],
     )}${setting("Idle indicator", "Keep a small ready indicator visible.", "idleIndicator")}${setting("Enhance with AI", "Clean up words using your configured language model.", "aiEnhance")}<div class="setting-row"><div><h3>Recordings folder</h3><p>${esc(s.recordingsDir || state.dataDir + "/recordings")}</p></div>${button("Choose folder", "recordings-folder", "folder")}</div><p class="tip">Changing folders applies to new recordings. Existing audio keeps its original path so playback and retries still work.</p>`;
   if (settingsTab === "hotkeys")
-    body = `<h2>A shortcut for every thought.</h2><p class="muted">Bindings are global when Accessibility access is enabled. Use hold for push-to-talk, or toggle for hands-free recording.</p>${s.hotkeys.map((h, i) => `<div class="list-row"><div class="body"><strong>${esc(h.mode)}</strong><p>${h.toggle ? "Tap to start / tap to stop" : "Hold to speak"}</p></div><kbd>${esc(h.modifiers.join(" + "))} + ${h.keyCode === 49 ? "Space" : h.keyCode === 37 ? "L" : h.keyCode === -1 ? "modifier" : h.keyCode}</kbd>${button("Edit", "edit-hotkey", "edit", "small", `data-index="${i}"`)}${button("Remove", "remove-hotkey", "trash", "small danger", `data-index="${i}"`)}</div>`).join("")}<div class="row">${button("Add binding", "add-hotkey", "plus")}${button("Restore defaults", "reset-hotkeys", "refresh")}</div><p class="tip">Escape cancels an active recording. Cmd+Shift+L can be configured to paste the last dictation.</p>${area("suppressed-apps", "Pause shortcuts in these applications", s.suppressedApps.join("\n"), "One bundle identifier per line.")} ${button("Save exclusions", "save-suppressed", "check")}`;
+    body = `<h2>A shortcut for every thought.</h2><p class="muted">Bindings are global when Accessibility access is enabled. Use hold for push-to-talk, or toggle for hands-free recording.</p>${s.hotkeys.map((h, i) => `<div class="list-row"><div class="body"><strong>${esc(h.mode)}</strong><p>${h.toggle ? "Tap to start / tap to stop" : "Hold to speak"}</p></div><kbd>${esc(h.modifiers.join(" + "))} + ${h.keyCode === 49 ? "Space" : h.keyCode === 37 ? "L" : h.keyCode === -1 ? "modifier" : h.keyCode >= 130 ? `M${h.keyCode - 127}` : h.keyCode}</kbd>${button("Edit", "edit-hotkey", "edit", "small", `data-index="${i}"`)}${button("Remove", "remove-hotkey", "trash", "small danger", `data-index="${i}"`)}</div>`).join("")}<div class="row">${button("Add binding", "add-hotkey", "plus")}${button("Restore defaults", "reset-hotkeys", "refresh")}</div><p class="tip">Escape cancels an active recording. Cmd+Shift+L can be configured to paste the last dictation.</p>${area("suppressed-apps", "Pause shortcuts in these applications", s.suppressedApps.join("\n"), "One bundle identifier per line.")} ${button("Save exclusions", "save-suppressed", "check")}`;
   if (settingsTab === "permissions")
     body = `<h2>Only what’s needed.</h2><p class="muted">Scribble needs microphone access for recording and Accessibility access for shortcuts, insertion, and expansions. Screen recording is optional for meeting audio.</p>${[
       ["microphone", "Microphone", "Record your voice."],
@@ -967,7 +967,7 @@ function editHotkey(index) {
     toggle: false,
   };
   showModal(
-    "Keyboard shortcut",
+    "Shortcut",
     select(
       "mode",
       "Action",
@@ -996,6 +996,12 @@ function editHotkey(index) {
         "text",
         "option, command, control, shift, fn",
       ) +
+      select(
+        "mouseButton",
+        "Mouse button (overrides keyboard code)",
+        [["", "Use keyboard code"], ...Array.from({ length: 30 }, (_, i) => [String(130 + i), `M${i + 3}${i === 0 ? " (middle button)" : ""}`])],
+        h.keyCode >= 130 ? String(h.keyCode) : "",
+      ) +
       field(
         "keyCode",
         "macOS key code",
@@ -1017,7 +1023,7 @@ function editHotkey(index) {
           .split(",")
           .map((x) => x.trim())
           .filter(Boolean),
-        keyCode: Number(v.keyCode),
+        keyCode: Number(v.mouseButton || v.keyCode),
         toneId: v.toneId || undefined,
       };
       const keys = state.settings.hotkeys.slice();

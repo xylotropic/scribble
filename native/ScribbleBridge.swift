@@ -64,6 +64,8 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
         var toneId: String? = nil
     }
     var bindings = [Binding(key: 49, flags: .maskAlternate, mode: "dictation", toggle: false)]
+    // Only auxiliary down events consumed by a binding own their corresponding up.
+    var consumedMouseButtons = Set<Int64>()
     let relevantFlags: CGEventFlags = [.maskAlternate, .maskCommand, .maskControl, .maskShift, .maskSecondaryFn]
     var expansions: [[String: String]] = []
     var typed = ""
@@ -78,7 +80,7 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     var recordingPath: String?
     let audioQueue = DispatchQueue(label: "scribble.audio")
     var pasteboardCount = NSPasteboard.general.changeCount
-    func status() -> [String: Any] { ["accessibility": AXIsProcessTrusted(), "screenRecording": CGPreflightScreenCaptureAccess(), "microphone": AVCaptureDevice.authorizationStatus(for: .audio).rawValue, "hotkeys": tap != nil, "hotkeyBindings": bindings.map { ["keyCode":$0.key, "mode":$0.mode, "toggle":$0.toggle, "active":$0.held, "toneId":$0.toneId ?? ""] as [String:Any] }, "systemRecording": stream != nil, "systemPaused": systemPaused, "permissionIdentity": ["pid": ProcessInfo.processInfo.processIdentifier, "executable": CommandLine.arguments.first ?? "", "bundleId": Bundle.main.bundleIdentifier ?? "", "microphoneSource": "native-helper-AVCaptureDevice"]] }
+    func status() -> [String: Any] { ["accessibility": AXIsProcessTrusted(), "screenRecording": CGPreflightScreenCaptureAccess(), "microphone": AVCaptureDevice.authorizationStatus(for: .audio).rawValue, "hotkeys": tap != nil, "hotkeyBindings": bindings.map { ["keyCode":$0.key, "inputKind":$0.key >= 130 ? "mouse" : ($0.key < 0 ? "modifiers" : "keyboard"), "modifierFlags":$0.flags.rawValue, "mode":$0.mode, "toggle":$0.toggle, "active":$0.held, "toneId":$0.toneId ?? ""] as [String:Any] }, "systemRecording": stream != nil, "systemPaused": systemPaused, "permissionIdentity": ["pid": ProcessInfo.processInfo.processIdentifier, "executable": CommandLine.arguments.first ?? "", "bundleId": Bundle.main.bundleIdentifier ?? "", "microphoneSource": "native-helper-AVCaptureDevice"]] }
     func focused() -> AXUIElement? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &value) == .success else { return nil }
@@ -191,7 +193,7 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     }
     func startTap() {
         guard eventTapAllowed, tap == nil, AXIsProcessTrusted() else { return }
-        let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
+        let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.otherMouseDown.rawValue) | (1 << CGEventType.otherMouseUp.rawValue)
         tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: CGEventMask(mask), callback: { _, type, event, ref in
             let bridge = Unmanaged<Bridge>.fromOpaque(ref!).takeUnretainedValue()
             return bridge.handle(type, event)
@@ -201,7 +203,11 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput { if let tap { CGEvent.tapEnable(tap: tap, enable: true) }; return Unmanaged.passUnretained(event) }
         if event.getIntegerValueField(.eventSourceUserData) == 0x534352 { return Unmanaged.passUnretained(event) }
-        let code = event.getIntegerValueField(.keyboardEventKeycode)
+        let mouse = type == .otherMouseDown || type == .otherMouseUp
+        let button = event.getIntegerValueField(.mouseEventButtonNumber)
+        if mouse && !(2...31).contains(button) { return Unmanaged.passUnretained(event) }
+        let code = mouse ? 128 + button : event.getIntegerValueField(.keyboardEventKeycode)
+        if type == .otherMouseDown, consumedMouseButtons.contains(button) { return nil }
         if type == .keyDown, code == 53 {
             for i in bindings.indices { bindings[i].held = false }
             emit(["event":"hotkey", "phase":"cancel", "mode":"dictation"])
@@ -210,8 +216,9 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
         let currentFlags = event.flags.intersection(relevantFlags)
         for i in bindings.indices {
             let binding = bindings[i]
-            let pressed = binding.key < 0 ? (type == .flagsChanged && currentFlags == binding.flags) : (type == .keyDown && code == binding.key && currentFlags == binding.flags)
-            if pressed && event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+            let pressed = binding.key < 0 ? (type == .flagsChanged && currentFlags == binding.flags) : ((binding.key >= 130 ? type == .otherMouseDown : type == .keyDown) && code == binding.key && currentFlags == binding.flags)
+            if pressed && (mouse || event.getIntegerValueField(.keyboardEventAutorepeat) == 0) {
+                if mouse { consumedMouseButtons.insert(button) }
                 if binding.toggle || binding.mode == "paste-last" {
                     bindings[i].held.toggle()
                     emitHotkey(bindings[i].held ? "start":"stop",binding)
@@ -219,11 +226,13 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
                 } else if !binding.held { bindings[i].held = true; emitHotkey("start",binding) }
                 return binding.key < 0 ? Unmanaged.passUnretained(event) : nil
             }
-            if !binding.toggle, binding.held, (type == .keyUp && code == binding.key || type == .flagsChanged && !currentFlags.isSuperset(of: binding.flags)) {
+            let released = (binding.key >= 130 ? type == .otherMouseUp : type == .keyUp) && code == binding.key
+            if !binding.toggle, binding.held, (released || type == .flagsChanged && !currentFlags.isSuperset(of: binding.flags)) {
                 bindings[i].held = false; emitHotkey("stop",binding)
-                if code == binding.key { return nil }
+                if released { if mouse { consumedMouseButtons.remove(button) }; return nil }
             }
         }
+        if type == .otherMouseUp, consumedMouseButtons.remove(button) != nil { return nil }
         if type == .keyDown, event.flags.contains(.maskCommand) || event.flags.contains(.maskControl) { typed = ""; expansionSelection = "" }
         if type == .keyDown, !event.flags.contains(.maskCommand), !event.flags.contains(.maskControl) {
             guard let field = focused(), !secure(field) else { typed = ""; return Unmanaged.passUnretained(event) }
@@ -295,9 +304,12 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
                 let allowedModifiers = ["option", "alt", "command", "meta", "cmd", "control", "ctrl", "shift", "fn"]
                 let candidate: [Binding] = try configured.map { item in
                     let modifiers = item["modifiers"] as? [String] ?? ["option"]
+                    if let supplied = item["keyCode"] {
+                        guard let numeric = supplied as? NSNumber, CFGetTypeID(numeric) != CFBooleanGetTypeID(), numeric.doubleValue.isFinite, numeric.doubleValue == Double(numeric.int64Value) else { throw NSError(domain:"Scribble",code:12,userInfo:[NSLocalizedDescriptionKey:"Hotkey keyCode must be an integer"]) }
+                    }
                     let key = (item["keyCode"] as? NSNumber)?.int64Value ?? 49
                     let mode = item["mode"] as? String ?? "dictation"
-                    guard key >= -1, key <= 127, modifiers.allSatisfy({allowedModifiers.contains($0)}), ["dictation", "command", "shortcut", "meeting", "note", "paste-last"].contains(mode), !(key == -1 && modifiers.isEmpty) else { throw NSError(domain:"Scribble", code:12, userInfo:[NSLocalizedDescriptionKey:"Invalid hotkey binding"]) }
+                    guard ((-1...127).contains(key) || (130...159).contains(key)), modifiers.allSatisfy({allowedModifiers.contains($0)}), ["dictation", "command", "shortcut", "meeting", "note", "paste-last"].contains(mode), !(key == -1 && modifiers.isEmpty) else { throw NSError(domain:"Scribble", code:12, userInfo:[NSLocalizedDescriptionKey:"Invalid hotkey binding"]) }
                     var flags: CGEventFlags = []
                     for modifier in modifiers {
                         switch modifier { case "option", "alt": flags.insert(.maskAlternate); case "command", "meta", "cmd": flags.insert(.maskCommand); case "control", "ctrl": flags.insert(.maskControl); case "shift": flags.insert(.maskShift); case "fn": flags.insert(.maskSecondaryFn); default: break }
@@ -357,6 +369,28 @@ if CommandLine.arguments.contains("--clipboard-self-test") { let passed = clipbo
 let bridge = Bridge()
 if CommandLine.arguments.contains("--status") { emit(bridge.status()); exit(0) }
 if CommandLine.arguments.contains("--hotkey-tone-self-test") { let binding = Bridge.Binding(key:49,flags:.maskAlternate,mode:"dictation",toggle:false,toneId:"tone-fixture"); bridge.emitHotkey("start",binding); bridge.emitHotkey("stop",binding); exit(0) }
+if CommandLine.arguments.contains("--mouse-hotkey-self-test") {
+    func event(_ type: CGEventType, button: Int64 = 2, flags: CGEventFlags = []) -> CGEvent {
+        let value = CGEvent(source:nil)!; value.type = type; value.flags = flags
+        value.setIntegerValueField(.mouseEventButtonNumber,value:button)
+        return value
+    }
+    bridge.bindings = [Bridge.Binding(key:130,flags:.maskAlternate,mode:"dictation",toggle:false),Bridge.Binding(key:131,flags:[],mode:"command",toggle:true),Bridge.Binding(key:159,flags:[],mode:"meeting",toggle:false)]
+    let holdDown = bridge.handle(.otherMouseDown,event(.otherMouseDown,flags:.maskAlternate)) == nil
+    let repeatedDown = bridge.handle(.otherMouseDown,event(.otherMouseDown,flags:.maskAlternate)) == nil
+    let modifierReleasePassed = bridge.handle(.flagsChanged,event(.flagsChanged)) != nil
+    let releasedHold = !bridge.bindings[0].held
+    let holdUp = bridge.handle(.otherMouseUp,event(.otherMouseUp)) == nil
+    var toggleConsumed = true
+    for _ in 0..<2 {
+        toggleConsumed = (bridge.handle(.otherMouseDown,event(.otherMouseDown,button:3)) == nil) && toggleConsumed
+        toggleConsumed = (bridge.handle(.otherMouseUp,event(.otherMouseUp,button:3)) == nil) && toggleConsumed
+    }
+    let unboundPassed = bridge.handle(.otherMouseDown,event(.otherMouseDown,button:4)) != nil && bridge.handle(.otherMouseUp,event(.otherMouseUp,button:4)) != nil
+    let primaryPassed = bridge.handle(.leftMouseDown,event(.leftMouseDown,button:0)) != nil && bridge.handle(.rightMouseDown,event(.rightMouseDown,button:1)) != nil
+    let highestConsumed = bridge.handle(.otherMouseDown,event(.otherMouseDown,button:31)) == nil && bridge.handle(.otherMouseUp,event(.otherMouseUp,button:31)) == nil
+    emit(["selfTest":"mouse-hotkeys", "holdConsumed":holdDown && holdUp, "repeatConsumed":repeatedDown, "modifierReleasePassed":modifierReleasePassed, "releasedHold":releasedHold, "toggleConsumed":toggleConsumed, "toggleInactive":!bridge.bindings[1].held, "unboundPassed":unboundPassed, "primaryPassed":primaryPassed, "highestConsumed":highestConsumed, "consumedCount":bridge.consumedMouseButtons.count]); exit(0)
+}
 bridge.startTap()
 DispatchQueue.global().async { while let line = readLine() { guard let data = line.data(using:.utf8), let object = try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { emit(["ok":false,"error":"Invalid JSON"]); continue }; DispatchQueue.main.async { Task { await bridge.command(object) } } }; DispatchQueue.main.async { Task { if let stream = bridge.stream, !bridge.systemPaused { try? await stream.stopCapture() }; bridge.audioQueue.sync { bridge.audioFile = nil }; exit(0) } } }
 RunLoop.main.run()

@@ -170,3 +170,14 @@ test("equivalent duplicate shortcut chords cannot be saved", (t) => {
   );
   assert.equal(JSON.stringify(store.data.settings), previous);
 });
+
+test("auxiliary bindings persist while primary mouse sentinel codes are rejected", (t) => {
+  const store = workspace(t);
+  const binding = { keyCode: 130, modifiers: [], mode: 'dictation', toggle: true };
+  store.updateSettings({ hotkeys: [binding] });
+  assert.deepEqual(new Store(path.dirname(store.file)).data.settings.hotkeys, [binding]);
+  for (const keyCode of [128, 129, 160, 130.5]) {
+    assert.throws(() => store.updateSettings({ hotkeys: [{ ...binding, keyCode }] }), /hotkey/);
+    assert.deepEqual(store.data.settings.hotkeys, [binding]);
+  }
+});
