@@ -56,3 +56,14 @@ test("deterministic utilities cover only supported literal intents", () => {
   ])
     assert.equal(parseFileCommand(command), null);
 });
+test("Markdown PDF phrases preserve the default and route only supported explicit styles", () => {
+  assert.deepEqual(parseFileCommand("Turn this Markdown into a PDF, minimal styling"), {operation:"markdown-pdf",options:{style:"minimal"}});
+  for (const command of ["export these Markdown files to PDFs with minimal style", "convert the selected Markdown file as a PDF using minimal styling"])
+    assert.deepEqual(parseFileCommand(command), {operation:"markdown-pdf",options:{style:"minimal"}});
+  for (const command of ["export Markdown as PDF", "convert this Markdown file to PDF", "make these Markdown files into PDFs"])
+    assert.deepEqual(parseFileCommand(command), {operation:"markdown-pdf",options:{}});
+  for (const command of ["turn this Markdown into a PDF, GitHub styling", "export Markdown as PDF using GitHub-flavoured style", "convert Markdown to PDF with GitHub-flavored styling"])
+    assert.deepEqual(parseFileCommand(command), {operation:"markdown-pdf",options:{style:"github"}});
+  for (const command of ["convert Markdown to PDF with arbitrary CSS style", "turn this Markdown into a PDF, minimal styling and upload it", "export Markdown as PDF using minimal style; execute a script", "convert text to PDF with minimal style", "convert Markdown to PDF with minimal styling\nopen Chrome"])
+    assert.equal(parseFileCommand(command), null);
+});

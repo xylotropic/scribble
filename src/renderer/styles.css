@@ -978,3 +978,15 @@ dialog h2 {
 .mic-rank[draggable="true"] { cursor: grab; }
 #mic-input-meter { width: 100px; height: 16px; }
 .meeting-microphones { margin-bottom: 16px; }
+
+.markdown-result { white-space: normal; overflow-wrap: anywhere; }
+.markdown-result > :first-child { margin-top: 0; }
+.markdown-result > :last-child { margin-bottom: 0; }
+.markdown-result h1, .markdown-result h2, .markdown-result h3 { line-height: 1.3; margin: 1.2em 0 .5em; }
+.markdown-result ul, .markdown-result ol { padding-left: 1.7em; }
+.markdown-result pre { white-space: pre; overflow-x: auto; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.markdown-result code { font-family: monospace; }
+.markdown-result blockquote { border-left: 3px solid var(--line); margin-left: 0; padding-left: 16px; color: var(--muted); }
+.markdown-result table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
+.markdown-result th, .markdown-result td { border: 1px solid var(--line); padding: 6px 10px; }
+.markdown-result a { color: var(--ink); text-decoration: underline; }

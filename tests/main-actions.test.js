@@ -866,3 +866,72 @@ test('batch cancellation returns completed outputs while stopping future transfo
  for(const name of ['a.txt','b.txt'])fs.writeFileSync(path.join(h.directory,name),'Text');const result=await h.actions.command({text:'convert these text files to markdown'});
  assert.equal(calls,1);assert.equal(result.kind,'file');assert.equal(result.details.cancelled,true);assert.equal(result.outputs.length,1);assert.match(result.text,/1 of 2/);assert.equal(h.store.data.history[0].commandResult.outputs.length,1);
 });
+test('documented app aliases and selected editor paths launch through separated macOS app-bundle arguments',async(t)=>{
+ const launches=[];const {EventEmitter}=require('node:events');let h;
+ h=harness(t,{spawn:(executable,args,options)=>{launches.push({executable,args,options});const child=new EventEmitter();queueMicrotask(()=>child.emit('exit',0));return child;},nativeRequest:async command=>command==='captureCommandContext'?{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'folder $(literal)')]}:{}});
+ fs.mkdirSync(path.join(h.directory,'folder $(literal)'));await h.actions.command({text:'open this folder in Cursor'});
+ assert.equal(launches[0].executable,'/usr/bin/open');assert.deepEqual(Array.from(launches[0].args),['-a','Cursor',path.join(h.directory,'folder $(literal)')]);assert.equal(launches[0].options.shell,false);
+ for(const name of ['Chrome','Word','Excel','PowerPoint','Outlook','Teams','Photoshop','VLC','code'])await h.runCommand('launch '+name);
+ assert.deepEqual(launches.slice(1).map(value=>value.args[1]),['Google Chrome','Microsoft Word','Microsoft Excel','Microsoft PowerPoint','Microsoft Outlook','Microsoft Teams','Adobe Photoshop','VLC','Visual Studio Code']);
+});
+test('Settings commands route fixed URIs and never request native permission grants',async(t)=>{
+ const opened=[];const h=harness(t,{shell:{openExternal:async uri=>opened.push(uri),openPath:async()=>''}});
+ const result=await h.runCommand('open microphone settings');assert.deepEqual(opened,['x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone']);assert.match(result.text,/does not grant permissions/);assert.equal(h.nativeCalls.length,0);
+ await assert.rejects(h.runCommand('open microphone settings?foo=bar'),/Invalid/);await assert.rejects(h.runCommand('open unknown settings'),/Unknown/);assert.equal(opened.length,1);
+});
+test('custom shortcut precedence and disabled open families prevent editor/settings/app fallback launches',async(t)=>{
+ const calls=[];const {EventEmitter}=require('node:events');const h=harness(t,{spawn:(_exe,args)=>{calls.push(Array.from(args));const child=new EventEmitter();queueMicrotask(()=>child.emit('exit',0));return child;},shell:{openExternal:async uri=>calls.push(uri),openPath:async()=>''}});
+ h.store.upsert('shortcuts',{trigger:'open microphone settings',name:'My override',type:'app',target:'TextEdit'});assert.equal((await h.runCommand('open microphone settings')).kind,'shortcut');assert.equal(calls[0][1],'TextEdit');
+ h.store.data.shortcuts.find(value=>value.trigger==='open microphone settings').enabled=false;await h.runCommand('open microphone settings');assert.equal(calls.length,1);
+ h.store.data.shortcuts.find(value=>value.builtin&&value.target==='folder').enabled=false;
+ await h.runCommand('open Chrome');await h.runCommand('open this folder in Cursor');assert.equal(calls.length,1);
+ await h.runCommand('launch Chrome');assert.equal(calls[1][1],'Google Chrome');
+});
+test('editor refinement uses original selected files and refuses changed identity without rereading Finder',async(t)=>{
+ let h,captures=0;const launched=[];const {EventEmitter}=require('node:events');
+ h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?(captures++,{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'first.txt'),path.join(h.directory,'second.txt')]}):{},spawn:(_exe,args)=>{launched.push(Array.from(args));const child=new EventEmitter();queueMicrotask(()=>child.emit('exit',0));return child;}});
+ for(const name of ['first.txt','second.txt'])fs.writeFileSync(path.join(h.directory,name),'original');
+ const initial=await h.actions.command({text:'describe the selected files'});
+ const result=await h.actions.command({text:'open these files in VS Code',reviewId:initial.reviewId,historyId:initial.historyId});assert.equal(result.kind,'action');assert.equal(captures,1);assert.deepEqual(launched[0],['-a','Visual Studio Code',path.join(h.directory,'first.txt'),path.join(h.directory,'second.txt')]);
+ const another=await h.actions.command({text:'describe the selected files'});fs.writeFileSync(path.join(h.directory,'second.txt'),'changed bytes');
+ await assert.rejects(h.actions.command({text:'open these files in Cursor',reviewId:another.reviewId,historyId:another.historyId}),/changed after command activation/);assert.equal(captures,2);assert.equal(launched.length,1);
+});
+test('screen palette uses an owned native capture locally without AI, images in history or permission grants',async(t)=>{
+ const bytes=await require('sharp')({create:{width:64,height:48,channels:3,background:'#ff0000'}}).jpeg({quality:100}).toBuffer();let ai=0;
+ const h=harness(t,{chat:async()=>{ai++;return 'unexpected';},nativeRequest:async(command,args)=>{
+  if(command==='commandScreenStart')return {token:args.token,dragRegions:false,started:true,status:'ready'};
+  if(command==='commandScreenFinish')return {token:args.token,source:'display',regionCount:0,images:[{mimeType:'image/jpeg',data:bytes.toString('base64'),width:64,height:48}]};
+  if(command==='commandScreenCancel')return {token:args.token,cancelled:true};return {};
+ }});
+ // A typed palette is its own explicit capture, even when AI context is region-only.
+ await h.actions.preferences({commandScreenContext:true,commandDragRegions:true});
+ const result=await h.actions.command({text:'Get the color palette on the screen'});
+ assert.equal(result.kind,'action');assert.equal(ai,0);assert.equal(result.palette.sourceCount,1);assert.ok(result.palette.colors[0].rgb[0]>245);assert.match(result.text,/100\.0%/);
+ assert.equal(h.nativeCalls.filter(call=>call.command==='commandScreenStart').length,1);
+ assert.equal(h.nativeCalls.some(call=>call.command==='requestPermissions'),false);
+ assert.equal(JSON.stringify(result).includes(bytes.toString('base64')),false);assert.equal(JSON.stringify(h.store.data.history).includes(bytes.toString('base64')),false);
+});
+test('screen palette permission failure refuses the operation and does not call AI or save success',async(t)=>{
+ let ai=0;const h=harness(t,{chat:async()=>{ai++;return 'unexpected';},nativeRequest:async(command,args)=>{
+ if(command==='commandScreenStart')throw Error('Screen Recording permission is required');
+ if(command==='commandScreenCancel')return {token:args.token,cancelled:false};return {};
+ }});
+ await assert.rejects(h.actions.command({text:'Extract the color palette from the screen'}),/permission is required/);assert.equal(ai,0);assert.equal(h.store.data.history.length,0);
+});
+test('canceling palette capture discards a late frame and saves no result',async(t)=>{
+ let resolveFinish,started;const ready=new Promise(resolve=>{started=resolve;});
+ const h=harness(t,{nativeRequest:async(command,args)=>{
+ if(command==='commandScreenStart')return {token:args.token,dragRegions:false,started:true,status:'ready'};
+ if(command==='commandScreenFinish'){started();return new Promise(resolve=>{resolveFinish=()=>resolve({token:args.token,source:'display',regionCount:0,images:[]});});}
+ if(command==='commandScreenCancel')return {token:args.token,cancelled:true};return {};
+ }});
+ const work=h.actions.command({text:'Get the color palette on the screen'});await ready;await h.actions.preferences({commandEnabled:false});resolveFinish();
+ await assert.rejects(work,/canceled|disabled/i);assert.equal(h.store.data.history.length,0);
+});
+test('safe result preview is ephemeral while copy and insertion keep original Markdown text',async(t)=>{
+ const text='# Result\n\n- **One**\n- [Source](https://example.com)';let pasted;
+ const h=harness(t,{chat:async()=>text,nativeRequest:async(command,args)=>command==='captureInsertionTarget'?{token:'target',bundleId:'com.apple.TextEdit'}:command==='paste'?(pasted=args.text,{inserted:true}):{}});
+ const result=await h.actions.command({text:'draft a response'});assert.equal(result.preview.format,'markdown');assert.match(result.preview.html,/<h1>Result/);
+ assert.equal(h.store.data.history[0].commandResult.preview,undefined);
+ await h.actions['paste-command-result']({id:result.reviewId});assert.equal(pasted,text);
+});

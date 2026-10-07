@@ -18,3 +18,9 @@ Bundled FFmpeg uses explicit codecs and containers. OGG uses the bundled experim
 XML configuration data uses an original bounded parser with no external resource resolution. Ordinary XML becomes a `$xml` tree of element names, attributes and ordered children; text children use `{$text: ...}` records, so mixed content also round-trips through TOML. Comments and declarations are not configuration data. CDATA/entity spellings become character data with XML newline rules. JSON types and arbitrary keys use a typed XML namespace (`urn:scribble:config:v1`). `xmlTyped: true` forces typed encoding when a JSON object deliberately uses the reserved `$xml` wrapper. DTDs, custom entities and processing instructions are refused. Limits are 16 MiB, depth 64 and 100000 nodes. Fixtures verify XML through JSON, YAML and TOML and back, including mixed text, attributes, repeated elements, whitespace and Unicode.
 
 Actual Finder selection, spoken operation, packaged Intel execution and desktop acceptance remain unverified. The public tool list also includes spoken editor/settings navigation, screen palettes and Markdown PDF style choices; this file does not claim those remaining behaviors are complete.
+
+## Additional command and presentation support
+
+Markdown PDF exports now accept `style: "github"` (default) or `style: "minimal"`; the utility UI and spoken command parser expose both choices. For example, “Turn this Markdown into a PDF, minimal styling” selects the minimal style. Command results display a sanitized Markdown preview while copy/insertion use the unchanged source text.
+
+Editor and Settings commands have synthetic routing coverage. Screen palette commands have local sampling and cancellation coverage using generated frames, but actual screen capture is not accepted yet. Live desktop checks and combined-output default naming remain outstanding.

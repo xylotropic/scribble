@@ -46,6 +46,8 @@ function parseFileCommand(text) {
   if (textMarkdown) return { operation: "text-markdown", options: textMarkdown[1] ? { firstLineHeading: false } : {} };
   const compression = command.match(/^(?:compress|optimize) (?:this |these |the selected )?(?:image|images|photo|photos)(?: to| at) (\d{1,3})(?: percent|%| quality)$/);
   if (compression) return Number(compression[1]) >= 1 && Number(compression[1]) <= 100 ? {operation:"image-compress",options:{quality:Number(compression[1])}} : null;
+  const markdownPDF = command.match(/^(?:convert|export|turn|make) (?:this |these |the selected )?markdown(?: files?)? (?:to|into|as) (?:a )?pdfs?(?:,? (?:with |using )?(minimal|github|github-flavou?red) (?:style|styling))?$/);
+  if (markdownPDF) return { operation: "markdown-pdf", options: markdownPDF[1] ? {style:markdownPDF[1] === "minimal" ? "minimal" : "github"} : {} };
   const commands = [
     [
       /^(?:compress|optimize) (?:this |these |the selected )?(?:image|images|photo|photos)$/,
@@ -66,10 +68,6 @@ function parseFileCommand(text) {
     [
       /^(?:convert|make|turn) (?:this |the selected )?(?:text|text file)(?: to| into| as) markdown$/,
       "text-markdown",
-    ],
-    [
-      /^(?:convert|export) (?:this |the selected )?(?:markdown|markdown file)(?: to| as) (?:a )?pdf$/,
-      "markdown-pdf",
     ],
     [
       /^(?:extract|generate|create|make) (?:a |the )?(?:color |colour )?palette(?: from)? (?:this |the selected )?(?:image|photo)$/,

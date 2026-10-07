@@ -16,7 +16,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   clone = (x) => JSON.parse(JSON.stringify(x));
 async function fixture(
   t,
-  { settings = {}, notes = [], shortcuts = [], requestFailure, pasteCommandPromise, timerScheduler, browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
+  { settings = {}, notes = [], shortcuts = [], requestFailure, pasteCommandPromise, timerScheduler, browserPromise, browserCatalogue = [{id:"chrome",name:"Google Chrome",family:"chromium",profiles:[{id:"Default",name:"Personal"},{id:"Profile 12",name:"Research"},{id:"Profile 7",name:"Work"}]}], mediaPromise, commandFiles, utilityResult, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
 ) {
   const dom = new JSDOM(
     fs.readFileSync(path.join(__dirname, "../src/renderer/index.html"), "utf8"),
@@ -109,6 +109,7 @@ async function fixture(
         emit("state", data);
         return true;
       }
+      if (action === "utility") return clone(utilityResult ?? null);
       if (action === "screen-context") return clone(screens);
       if (action === "crop-screen-context")
         return {
@@ -968,7 +969,7 @@ test('Japanese File tools translate cards while preserving operation and format 
   const forms=h.w.ScribbleFormTranslations;
   assert.ok([...h.w.document.querySelectorAll('.card h3')].some(el=>el.textContent===forms.translate('ja','Convert an image')));
   const select=h.w.document.querySelector('[data-format-for="image-convert"]');
-  assert.deepEqual([...select.options].map(o=>o.value),['webp','jpg','png']);
+  assert.deepEqual([...select.options].map(o=>o.value),['webp','jpg','png','avif','gif','tiff','heic','heif','jfif']);
   assert.ok(select.parentElement.textContent.includes(forms.translate('ja','Output format')));
   assert.ok(h.w.document.querySelector('[data-action="utility"][data-operation="image-convert"]'));
 });
@@ -1398,3 +1399,35 @@ test('Command controls preserve screen opt-ins but require explicit permission a
  control('commandEnabled').checked=true;control('commandEnabled').dispatchEvent(new h.w.Event('change',{bubbles:true}));await flush();control('commandScreenContext').checked=false;control('commandScreenContext').dispatchEvent(new h.w.Event('change',{bubbles:true}));await flush();assert.equal(control('commandDragRegions').disabled,true);assert.equal(control('commandDragRegions').checked,true);assert.equal(h.calls.findLast(call=>call.action==='preferences').args.commandScreenContext,false);
 });
 test('Japanese and German Command controls disclose provider sharing with translated permission actions',options,async t=>{for(const [locale,label,privacy] of [['ja','コマンドモードを有効にする',/設定したAI提供者に送信/],['de','Befehlsmodus aktiviert',/konfigurierten KI-Anbieter gesendet/]]){const h=await fixture(t,{settings:{locale}});await h.click('[data-page="command"]');const text=h.w.document.querySelector('#command-options').textContent;assert.ok(text.includes(label));assert.match(text,privacy);assert.doesNotMatch(text,/Include a screen image|Allow Screen Recording|Refresh screen permission/);assert.equal(h.calls.some(call=>call.action==='request-permissions'),false);}});
+test('File tools expose actual formats and compression sends quality without converting format',options,async t=>{const h=await fixture(t);await h.click('[data-page="utilities"]');for(const [operation,formats] of Object.entries({'image-convert':['webp','jpg','png','avif','gif','tiff','heic','heif','jfif'],'audio-convert':['mp3','wav','aac','flac','ogg','m4a','wma','opus'],'video-convert':['mp4','avi','mov','mkv','webm','flv','wmv'],'config-convert':['json','yaml','toml','xml']}))assert.deepEqual([...h.w.document.querySelector(`[data-format-for="${operation}"]`).options].map(x=>x.value),formats);assert.equal(h.w.document.querySelector('[data-format-for="image-compress"]'),null);const quality=h.w.document.querySelector('[data-quality-for="image-compress"]');assert.equal(quality.value,'80');await h.click('[data-action="utility"][data-operation="image-compress"]');assert.deepEqual(clone(h.calls.at(-1).args),{operation:'image-compress',options:{quality:80}});for(const invalid of ['0','101','2.5','']){quality.value=invalid;const before=h.calls.filter(x=>x.action==='utility').length;await h.click('[data-action="utility"][data-operation="image-compress"]');assert.equal(h.calls.filter(x=>x.action==='utility').length,before);}quality.value='1';await h.click('[data-action="utility"][data-operation="image-compress"]');assert.equal(h.calls.at(-1).args.options.quality,1);});
+test('PDF style and Markdown heading controls keep provider-free IDs and defaults',options,async t=>{const h=await fixture(t);await h.click('[data-page="utilities"]');await h.click('[data-action="utility"][data-operation="markdown-pdf"]');assert.deepEqual(clone(h.calls.at(-1).args.options),{style:'github'});h.input('[data-style-for="markdown-pdf"]','minimal');await h.click('[data-action="utility"][data-operation="markdown-pdf"]');assert.deepEqual(clone(h.calls.at(-1).args.options),{style:'minimal'});await h.click('[data-action="utility"][data-operation="text-markdown"]');assert.deepEqual(clone(h.calls.at(-1).args.options),{firstLineHeading:true});h.w.document.querySelector('[data-heading-for="text-markdown"]').checked=false;await h.click('[data-action="utility"][data-operation="text-markdown"]');assert.deepEqual(clone(h.calls.at(-1).args.options),{firstLineHeading:false});});
+test('persistent batch results show every completed failed skipped entry and escaped paths',options,async t=>{const h=await fixture(t,{utilityResult:{kind:'file',items:[{input:'/tmp/<img src=x>',output:'/tmp/a.png',status:'completed'},{input:'/tmp/b.png',output:'/tmp/b.webp',status:'failed',error:'Broken <script>bad()</script>'},{input:'/tmp/c.png',output:'/tmp/c.webp',status:'skipped',reason:'Not processed after failure'}],details:{cancelled:false}}});await h.click('[data-page="utilities"]');await h.click('[data-action="utility"][data-operation="image-convert"]');const modal=h.w.document.querySelector('#modal');assert.equal(modal.open,true);assert.match(modal.textContent,/Saved 1 of 3 outputs/);for(const value of ['Completed','Failed','Skipped','/tmp/<img src=x>','Broken <script>bad()</script>','/tmp/c.webp'])assert.ok(modal.textContent.includes(value));assert.equal(modal.querySelector('img,script'),null);assert.doesNotMatch(h.w.document.querySelector('#toast').textContent,/undefined/);await h.click('#modal [data-action="close-modal"]');assert.equal(modal.open,false);});
+test('cancelled zero-output batch and dismissed picker never claim files saved',options,async t=>{const h=await fixture(t,{utilityResult:{kind:'file',items:[{input:'/tmp/a.png',output:'/tmp/a.webp',status:'skipped',reason:'Cancelled before processing'}],details:{cancelled:true}}});await h.click('[data-page="utilities"]');await h.click('[data-action="utility"][data-operation="image-convert"]');assert.match(h.w.document.querySelector('#modal').textContent,/Cancelled/);assert.match(h.w.document.querySelector('#modal').textContent,/No files were saved/);assert.match(h.w.document.querySelector('#modal').textContent,/Saved 0 of 1/);const empty=await fixture(t);await empty.click('[data-page="utilities"]');await empty.click('[data-action="utility"][data-operation="image-convert"]');assert.equal(empty.w.document.querySelector('#modal').open,false);assert.doesNotMatch(empty.w.document.querySelector('#toast').textContent,/Saved/);});
+test('Japanese new file controls and batch statuses translate while format IDs and paths remain unchanged',options,async t=>{const h=await fixture(t,{settings:{locale:'ja'},utilityResult:{kind:'file',items:[{status:'completed',input:'/tmp/original.md',output:'/tmp/日本語.pdf'}],details:{cancelled:false}}});await h.click('[data-page="utilities"]');assert.match(h.w.document.querySelector('main').textContent,/画像形式を保持/);assert.match(h.w.document.querySelector('main').textContent,/品質（1–100）/);assert.equal(h.w.document.querySelector('[data-style-for="markdown-pdf"]').value,'github');assert.equal(h.w.document.querySelector('[data-style-for="markdown-pdf"] [value="minimal"]').textContent,'最小限のスタイル');await h.click('[data-action="utility"][data-operation="markdown-pdf"]');assert.match(h.w.document.querySelector('#modal').textContent,/ファイルの結果/);assert.match(h.w.document.querySelector('#modal').textContent,/完了/);assert.ok(h.w.document.querySelector('#modal').textContent.includes('/tmp/日本語.pdf'));assert.deepEqual(clone(h.calls.at(-1).args.options),{style:'github'});});
+
+test('Markdown command preview renders structure, opens links externally, and copies original source', options, async t => {
+  const h=await fixture(t); await h.click('[data-page="command"]');
+  const text='# Heading\n\n- **Bold**\n\n| A | B |\n| --- | --- |\n| one | two |\n\n[Docs](https://example.com/docs)\n\n![Alt](https://example.com/image.png)';
+  h.emit('command-result',{kind:'text',text,canInsert:false,preview:require('../src/main/markdown-preview').preview(text)}); await flush();
+  const result=h.w.document.querySelector('#command-result');
+  assert.equal(result.querySelector('h1').textContent,'Heading'); assert.equal(result.querySelector('li strong').textContent,'Bold');
+  assert.equal(result.querySelectorAll('td').length,2); assert.equal(result.querySelector('img'),null);
+  await h.click('#command-result a'); assert.deepEqual(clone(h.calls.find(c=>c.action==='open-url').args),{url:'https://example.com/docs'});
+  assert.equal(h.w.location.href,'http://localhost/');
+  await h.click('[data-action="copy-command"]'); assert.equal(h.calls.find(c=>c.action==='copy').args.text,text);
+});
+
+test('plain command previews preserve whitespace and escape source markup', options, async t => {
+  const h=await fixture(t); await h.click('[data-page="command"]'); const text='  Plain text\n\n<script>bad()</script>  ';
+  h.emit('command-result',{kind:'text',text,canInsert:false,preview:require('../src/main/markdown-preview').preview(text)}); await flush();
+  const result=h.w.document.querySelector('#command-result'); assert.equal(result.textContent,text); assert.equal(result.querySelector('script'),null);
+  assert.equal(result.classList.contains('markdown-result'),false);
+});
+
+test('AI utility previews render Markdown while copying original source', options, async t => {
+  const h=await fixture(t); const text='## Utility\n\n`sample`';
+  h.emit('utility-result',{id:'review',name:'Utility',text,canInsert:false,preview:require('../src/main/markdown-preview').preview(text)}); await flush();
+  assert.equal(h.w.document.querySelector('#utility-result h2').textContent,'Utility');
+  assert.equal(h.w.document.querySelector('#utility-result code').textContent,'sample');
+  await h.click('[data-action="copy-ai-utility"]'); assert.equal(h.calls.find(c=>c.action==='copy').args.text,text);
+});

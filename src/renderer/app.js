@@ -415,14 +415,14 @@ function renderUtilities() {
     [
       "image-convert",
       "Convert an image",
-      "Resize or compress into JPEG, PNG, or WebP.",
+      "Convert images to PNG, JPG, WebP, AVIF, GIF, TIFF, HEIC, HEIF, or JFIF.",
       "webp",
     ],
     [
       "image-compress",
       "Compress an image",
-      "Re-encode into a new file and report whether its size decreased.",
-      "webp",
+      "Compress at the chosen quality while preserving the image format.",
+      "",
     ],
     [
       "image-palette",
@@ -433,10 +433,10 @@ function renderUtilities() {
     [
       "audio-convert",
       "Convert audio",
-      "Save a recording as MP3, WAV, M4A, or Opus.",
+      "Convert audio to MP3, WAV, AAC, FLAC, OGG, M4A, WMA, or Opus.",
       "mp3",
     ],
-    ["video-convert", "Convert video", "Create MP4 or WebM video.", "mp4"],
+    ["video-convert", "Convert video", "Convert video to MP4, AVI, MOV, MKV, WebM, FLV, or WMV.", "mp4"],
     [
       "pdf-merge",
       "Merge PDFs",
@@ -453,7 +453,7 @@ function renderUtilities() {
     [
       "config-convert",
       "Convert configuration",
-      "Convert JSON, YAML, or TOML.",
+      "Convert JSON, YAML, TOML, or XML.",
       "json",
     ],
     [
@@ -471,9 +471,20 @@ function renderUtilities() {
   ]
     .map(
       ([operation, title, description, format]) =>
-        `<div class="card"><h3>${esc(interfaceLabel(title))}</h3><p class="muted">${esc(interfaceLabel(description))}</p>${format ? `<label class="field">${esc(interfaceLabel("Output format"))}<select data-format-for="${operation}">${{ "image-convert": ["webp", "jpg", "png"], "image-compress": ["webp", "jpg", "png"], "audio-convert": ["mp3", "wav", "m4a", "opus"], "video-convert": ["mp4", "webm"], "config-convert": ["json", "yaml", "toml"] }[operation].map((f) => `<option>${f}</option>`).join("")}</select></label>` : ""}${button("Choose files", "utility", "upload", "", `data-operation="${operation}"`)}</div>`,
+        `<div class="card"><h3>${esc(interfaceLabel(title))}</h3><p class="muted">${esc(interfaceLabel(description))}</p>${format ? `<label class="field">${esc(interfaceLabel("Output format"))}<select data-format-for="${operation}">${{ "image-convert": ["webp", "jpg", "png", "avif", "gif", "tiff", "heic", "heif", "jfif"], "audio-convert": ["mp3", "wav", "aac", "flac", "ogg", "m4a", "wma", "opus"], "video-convert": ["mp4", "avi", "mov", "mkv", "webm", "flv", "wmv"], "config-convert": ["json", "yaml", "toml", "xml"] }[operation].map((f) => `<option>${f}</option>`).join("")}</select></label>` : ""}${operation === "image-compress" ? `<label class="field">${esc(interfaceLabel("Quality (1–100)"))}<input type="number" min="1" max="100" step="1" value="80" data-quality-for="image-compress"></label>` : ""}${operation === "markdown-pdf" ? `<label class="field">${esc(interfaceLabel("PDF style"))}<select data-style-for="markdown-pdf"><option value="github">${esc(interfaceLabel("GitHub style"))}</option><option value="minimal">${esc(interfaceLabel("Minimal style"))}</option></select></label>` : ""}${operation === "text-markdown" ? `<label class="field"><input type="checkbox" checked data-heading-for="text-markdown"> ${esc(interfaceLabel("Use the first line as a heading"))}</label>` : ""}${button("Choose files", "utility", "upload", "", `data-operation="${operation}"`)}</div>`,
     )
     .join("")}</div>`;
+}
+function showFileResults(result) {
+  void stopHotkeyCapture();
+  closeMicrophonePicker();
+  if (!result || typeof result !== "object") return;
+  const rows = Array.isArray(result.items) ? result.items : result.output ? [{status:"completed",output:result.output,details:result.details}] : [];
+  const completed=rows.filter(item=>item.status==="completed").length;
+  const cancelled=!!result.details?.cancelled;
+  const summary=interfaceLabel("Saved {completed} of {total} outputs.").replace("{completed}",String(completed)).replace("{total}",String(rows.length));
+  const html=`<div class="row between"><h2>${esc(interfaceLabel("File results"))}</h2>${button("", "close-modal", "close", "ghost icon")}</div>${cancelled?`<p>${esc(interfaceLabel("Cancelled"))}</p>`:""}<p>${esc(summary)}</p>${!completed?`<p>${esc(interfaceLabel("No files were saved."))}</p>`:""}<div class="stack">${rows.map(item=>`<div class="card"><strong>${esc(interfaceLabel({completed:"Completed",skipped:"Skipped",failed:"Failed"}[item.status] || "Failed"))}</strong>${item.input?`<p>${esc(interfaceLabel("Input"))}: ${esc(item.input)}</p>`:""}${item.output?`<p>${esc(interfaceLabel("Output"))}: ${esc(item.output)}</p>`:""}${item.error||item.reason?`<p>${esc(interfaceLabel(String(item.error||item.reason)))}</p>`:""}${item.details?.notice?`<p>${esc(item.details.notice)}</p>`:""}</div>`).join("")}</div><div class="dialog-footer">${button("Dismiss","close-modal","","ghost")}</div>`;
+  const dialog=$("#modal");dialog.innerHTML=html;dialog.showModal();
 }
 function setupReady() {
   return state.settings.speechProvider === "local" && state.speechStatus.ready &&
@@ -611,8 +622,14 @@ function renderCommandOptions() {
   const toggle=(key,label,disabled=false)=>`<label class="row"><input type="checkbox" name="${key}" data-setting="${key}" ${s[key] ? "checked" : ""} ${disabled ? "disabled" : ""}>${esc(interfaceLabel(label))}</label>`;
   return `<section class="card" id="command-options">${toggle("commandEnabled","Command Mode enabled")}<p class="tip">${esc(interfaceLabel("Turn off to disable voice and typed commands."))}</p>${toggle("commandScreenContext","Screen context",!enabled || !allowed)}<p class="tip">${esc(interfaceLabel("Include a screen image when a command starts. Selected images are sent to your configured AI provider."))}</p>${!allowed ? `<p class="notice">${esc(interfaceLabel("Screen Recording access is required for screen context."))}</p>${button("Allow Screen Recording","request-permission","shield","",'data-kind="screen"')}` : ""}${button("Refresh screen permission","command-permission-refresh","refresh","small")}${toggle("commandDragRegions","Drag to choose screen regions while recording",!enabled || !allowed || !s.commandScreenContext)}<p class="tip">${esc(interfaceLabel("Choose at least one region while recording. With this option on, typed commands use only screen images you attach manually."))}</p></section>`;
 }
+function hasMarkdownPreview(result) {
+  return result?.preview?.format === "markdown" && typeof result.preview.html === "string" && result.preview.html.length <= 500000;
+}
+function resultMarkup(result) {
+  return hasMarkdownPreview(result) ? result.preview.html : esc(result.text);
+}
 function renderCommand() {
-  return `${heading("Say what should happen", "Command Mode.", "Transform selected text, set a timer, or ask your own language model. Review a result before inserting it.")}${renderCommandOptions()}<div class="card"><p class="eyebrow">Hold ⌥ ⌃ Space for a voice command</p><label class="field">What would you like to do?<input id="command-text" value="${esc(commandDraft)}" placeholder="Make this more concise, set a timer for 5 minutes…"></label>${area("command-context", "Text to work with", commandTextContext, "Leave empty to use the selected text or clipboard.")}<div class="row wrap">${["Clean up", "Formal", "Polish", "Summarize", "Bullets", "Email"].map((label) => button(label, "command-preset", "", "small", `data-preset="${label}"`)).join("")}</div><div class="row">${button("Choose context files", "command-files", "upload")}${button("Capture screen context", "command-screen", "image")}${commandAttachments.sources.length ? button("Clear files", "clear-command-files", "close", "ghost") + `<span class="muted">${commandAttachments.sources.map((source) => esc(source.name)).join(", ")}</span>` : ""}${button("Run command", "run-command", "spark", "primary", state.settings.commandEnabled === false ? "disabled" : "")}${button("Speak a command", "record-command", "mic", "", state.settings.commandEnabled === false ? "disabled" : "")}<span class="muted">Local utilities are ready. AI commands use your configured provider.</span></div>${commandResult ? `<div class="command-panel"><div class="command-result" id="command-result" tabindex="0">${esc(commandResult.text)}</div><div class="row">${button("Copy", "copy-command", "copy")}${commandResult.kind === "text" && commandResult.canInsert ? button("Insert", "paste-command", "arrow", "primary") : ""}</div>${commandResult.kind === "text" ? `<label class="field">Refine this result<input id="refine-command" placeholder="Make it shorter, change the tone…"></label>${button("Refine", "refine-command", "spark", "small", state.settings.commandEnabled === false ? "disabled" : "")}` : ""}<p class="smallprint">${esc(interfaceLabel(commandResult.kind === "text" && commandResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."))}</p></div>` : ""}</div>${state.timers.length ? `<div class="section-heading"><h2>Timers</h2></div><div class="grid three">${state.timers.map((t) => `<div class="card"><h3>${esc(t.title)}</h3><p class="number" data-timer-ends-at="${esc(t.endsAt)}">${clock(Math.max(0, Math.ceil((t.endsAt - Date.now()) / 1000)))}</p>${button("Cancel", "cancel-timer", "close", "small", `data-id="${t.id}"`)}</div>`).join("")}</div>` : ""}<div class="section-heading"><h2>A few things to try</h2></div><div class="grid three">${[
+  return `${heading("Say what should happen", "Command Mode.", "Transform selected text, set a timer, or ask your own language model. Review a result before inserting it.")}${renderCommandOptions()}<div class="card"><p class="eyebrow">Hold ⌥ ⌃ Space for a voice command</p><label class="field">What would you like to do?<input id="command-text" value="${esc(commandDraft)}" placeholder="Make this more concise, set a timer for 5 minutes…"></label>${area("command-context", "Text to work with", commandTextContext, "Leave empty to use the selected text or clipboard.")}<div class="row wrap">${["Clean up", "Formal", "Polish", "Summarize", "Bullets", "Email"].map((label) => button(label, "command-preset", "", "small", `data-preset="${label}"`)).join("")}</div><div class="row">${button("Choose context files", "command-files", "upload")}${button("Capture screen context", "command-screen", "image")}${commandAttachments.sources.length ? button("Clear files", "clear-command-files", "close", "ghost") + `<span class="muted">${commandAttachments.sources.map((source) => esc(source.name)).join(", ")}</span>` : ""}${button("Run command", "run-command", "spark", "primary", state.settings.commandEnabled === false ? "disabled" : "")}${button("Speak a command", "record-command", "mic", "", state.settings.commandEnabled === false ? "disabled" : "")}<span class="muted">Local utilities are ready. AI commands use your configured provider.</span></div>${commandResult ? `<div class="command-panel"><div class="command-result${hasMarkdownPreview(commandResult) ? " markdown-result" : ""}" id="command-result" tabindex="0">${resultMarkup(commandResult)}</div><div class="row">${button("Copy", "copy-command", "copy")}${commandResult.kind === "text" && commandResult.canInsert ? button("Insert", "paste-command", "arrow", "primary") : ""}</div>${commandResult.kind === "text" ? `<label class="field">Refine this result<input id="refine-command" placeholder="Make it shorter, change the tone…"></label>${button("Refine", "refine-command", "spark", "small", state.settings.commandEnabled === false ? "disabled" : "")}` : ""}<p class="smallprint">${esc(interfaceLabel(commandResult.kind === "text" && commandResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."))}</p></div>` : ""}</div>${state.timers.length ? `<div class="section-heading"><h2>Timers</h2></div><div class="grid three">${state.timers.map((t) => `<div class="card"><h3>${esc(t.title)}</h3><p class="number" data-timer-ends-at="${esc(t.endsAt)}">${clock(Math.max(0, Math.ceil((t.endsAt - Date.now()) / 1000)))}</p>${button("Cancel", "cancel-timer", "close", "small", `data-id="${t.id}"`)}</div>`).join("")}</div>` : ""}<div class="section-heading"><h2>A few things to try</h2></div><div class="grid three">${[
     [
       "clock",
       "“Set a timer for 5 minutes”",
@@ -692,7 +709,7 @@ function renderAI() {
 const utilityPresets = [["grammar", "Fix grammar"], ["professional", "Professional"], ["polish", "Polish"], ["summary", "Summary"], ["bullets", "Bullet points"], ["email", "Email"]];
 function utilityBinding(id) { return (state.settings.hotkeys || []).find(h => h.mode === "utility" && h.utilityId === id); }
 function renderAIUtilities() {
-  return `<div class="card"><div class="row between"><h2>${esc(interfaceLabel("AI utilities"))}</h2>${button("Add utility", "add-ai-utility", "plus")}</div><p class="muted">${esc(interfaceLabel("Transform selected text or clipboard text with your configured language model. Cloud providers receive this text and may charge for usage. Results stay available for review before insertion. An empty selection is never replaced with clipboard text."))}</p>${(state.settings.aiUtilities || []).map(u => `<div class="list-row"><div class="body"><strong>${esc(u.name)}</strong><p>${esc(interfaceLabel(utilityPresets.find(p => p[0] === u.preset)?.[1] || u.preset))} · ${esc(interfaceLabel(u.source === "clipboard" ? "Clipboard" : "Selected text"))}${utilityBinding(u.id) ? " · " + esc(utilityBinding(u.id).modifiers.join(" + ")) + " + " + esc(utilityBinding(u.id).keyCode) : " · " + esc(interfaceLabel("No shortcut"))}</p></div>${button(u.enabled !== false ? "Disable" : "Enable", "toggle-ai-utility", "", "small", `data-id="${esc(u.id)}"`)}${utilityBusy.has(u.id) ? button("Cancel", "cancel-ai-utility", "close", "small", `data-id="${esc(u.id)}"`) : button("Run", "run-ai-utility", "play", "small", `data-id="${esc(u.id)}" ${u.enabled === false ? "disabled" : ""}`)}${button("Edit", "edit-ai-utility", "edit", "small", `data-id="${esc(u.id)}"`)}${button("Delete", "delete-ai-utility", "trash", "small danger", `data-id="${esc(u.id)}"`)}</div>`).join("") || `<p class="muted">${esc(interfaceLabel("Add a utility to turn a keyboard shortcut into a text transformation."))}</p>`}${utilityResult ? `<div class="command-panel"><h3>${esc(utilityResult.name)}</h3><div class="command-result" id="utility-result" tabindex="0">${esc(utilityResult.text)}</div><div class="row">${button("Copy", "copy-ai-utility", "copy")}${utilityResult.canInsert ? button("Insert", "paste-ai-utility", "arrow", "primary") : ""}${button("Dismiss", "dismiss-ai-utility", "close")}</div><p class="smallprint">${esc(interfaceLabel(utilityResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."))}</p></div>` : ""}</div>`;
+  return `<div class="card"><div class="row between"><h2>${esc(interfaceLabel("AI utilities"))}</h2>${button("Add utility", "add-ai-utility", "plus")}</div><p class="muted">${esc(interfaceLabel("Transform selected text or clipboard text with your configured language model. Cloud providers receive this text and may charge for usage. Results stay available for review before insertion. An empty selection is never replaced with clipboard text."))}</p>${(state.settings.aiUtilities || []).map(u => `<div class="list-row"><div class="body"><strong>${esc(u.name)}</strong><p>${esc(interfaceLabel(utilityPresets.find(p => p[0] === u.preset)?.[1] || u.preset))} · ${esc(interfaceLabel(u.source === "clipboard" ? "Clipboard" : "Selected text"))}${utilityBinding(u.id) ? " · " + esc(utilityBinding(u.id).modifiers.join(" + ")) + " + " + esc(utilityBinding(u.id).keyCode) : " · " + esc(interfaceLabel("No shortcut"))}</p></div>${button(u.enabled !== false ? "Disable" : "Enable", "toggle-ai-utility", "", "small", `data-id="${esc(u.id)}"`)}${utilityBusy.has(u.id) ? button("Cancel", "cancel-ai-utility", "close", "small", `data-id="${esc(u.id)}"`) : button("Run", "run-ai-utility", "play", "small", `data-id="${esc(u.id)}" ${u.enabled === false ? "disabled" : ""}`)}${button("Edit", "edit-ai-utility", "edit", "small", `data-id="${esc(u.id)}"`)}${button("Delete", "delete-ai-utility", "trash", "small danger", `data-id="${esc(u.id)}"`)}</div>`).join("") || `<p class="muted">${esc(interfaceLabel("Add a utility to turn a keyboard shortcut into a text transformation."))}</p>`}${utilityResult ? `<div class="command-panel"><h3>${esc(utilityResult.name)}</h3><div class="command-result${hasMarkdownPreview(utilityResult) ? " markdown-result" : ""}" id="utility-result" tabindex="0">${resultMarkup(utilityResult)}</div><div class="row">${button("Copy", "copy-ai-utility", "copy")}${utilityResult.canInsert ? button("Insert", "paste-ai-utility", "arrow", "primary") : ""}${button("Dismiss", "dismiss-ai-utility", "close")}</div><p class="smallprint">${esc(interfaceLabel(utilityResult.canInsert ? "Focus the result and press Tab to insert, or Escape to dismiss." : "Copy the result or dismiss it. Press Escape to dismiss."))}</p></div>` : ""}</div>`;
 }
 async function insertCommandResult() {
   const result = commandResult;
@@ -1684,6 +1701,16 @@ function setupDrop() {
   });
 }
 document.addEventListener("click", async (e) => {
+  const link = e.target.closest(".markdown-result a[href]");
+  if (link) {
+    e.preventDefault();
+    try {
+      const url = new URL(link.getAttribute("href"));
+      if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password)
+        await request("open-url", {url:url.href});
+    } catch (error) { toast(error.message || "Unable to open link"); }
+    return;
+  }
   const b = e.target.closest("[data-action]");
   if (!b) return;
   const a = b.dataset.action,
@@ -1729,11 +1756,12 @@ document.addEventListener("click", async (e) => {
       try {
         const operation = b.dataset.operation,
           format = $(`[data-format-for="${operation}"]`)?.value;
-        const result = await request("utility", {
-          operation,
-          options: format ? { format } : {},
-        });
-        if (result) toast("Saved: " + result.output);
+        const options=format?{format}:{};
+        if(operation==="image-compress") {const quality=Number($('[data-quality-for="image-compress"]').value);if(!Number.isInteger(quality)||quality<1||quality>100)throw new Error(interfaceLabel("Quality (1–100)"));options.quality=quality;}
+        if(operation==="markdown-pdf") options.style=$('[data-style-for="markdown-pdf"]').value;
+        if(operation==="text-markdown") options.firstLineHeading=$('[data-heading-for="text-markdown"]').checked;
+        const result = await request("utility", {operation,options});
+        if(result && typeof result === "object") showFileResults(result);
       } finally {
         b.disabled = false;
       }

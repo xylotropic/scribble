@@ -82,6 +82,11 @@ function expireCommandReviews() {
     commandReviewTimer.unref?.();
   }
 }
+function addResultPreview(result) {
+  try { result.preview = require("./markdown-preview").preview(result.text); } catch { /* Render oversized structure as the complete plain text. */ }
+  return result;
+}
+function historyCommandResult(result) { const {preview, ...stored} = result; return stored; }
 const {CommandScreenSession, mergeImages} = require("./command-screen");
 let commandScreen;
 function screenSession() {
@@ -663,6 +668,7 @@ async function runAIUtility(id) {
     if (typeof text !== "string" || !text.trim() || text.length > 100000) throw Error("The utility returned no usable text");
     const result = { id: crypto.randomUUID(), utilityId: id, name: utility.name, text,
       canInsert: !!target?.token && target.bundleId !== "org.scribble.voice" };
+    addResultPreview(result);
     for (const [key, saved] of utilityResults) if (saved.expiresAt < Date.now()) utilityResults.delete(key);
     if (utilityResults.size >= 32) utilityResults.delete(utilityResults.keys().next().value);
     job.resultId = result.id;
@@ -782,6 +788,7 @@ function attachCommandReview(result, target, captured = null, images = [], autom
   if (result.kind !== "text") return result;
   if (typeof result.text !== "string" || result.text.length > 100000)
     throw Error("Command result is too large or invalid");
+  addResultPreview(result);
   for (const [id, value] of commandReviews)
     if (value.expiresAt < Date.now()) commandReviews.delete(id);
   const imageBytes = images.reduce((sum,image) => sum + image.data.length, 0);
@@ -896,7 +903,7 @@ function armTimer(entry) {
 }
 async function launchApplication(name, folder = "") {
   await new Promise((resolve, reject) => {
-    const child = spawn("/usr/bin/open", ["-a", name, ...(folder ? [folder] : [])]);
+    const child = spawn("/usr/bin/open", ["-a", name, ...(Array.isArray(folder) ? folder : folder ? [folder] : [])], {shell:false});
     child.on("error", reject);
     child.on("exit", (code) =>
       code ? reject(Error("Application could not be opened")) : resolve(),
@@ -926,7 +933,38 @@ async function runCommand(text, context = "", attachments = {}, captured = null,
   const shortcutFamily = domain.matchShortcut(text, store.data.shortcuts.map(
     (shortcut) => ({ ...shortcut, enabled: true }),
   ));
-  if (shortcutFamily && ["url", "folder", "app"].includes(parsed.type))
+  const matchedFamily = shortcutFamily?.shortcut || shortcutFamily;
+  const family = matchedFamily ? store.data.shortcuts.find(shortcut => shortcut.id === matchedFamily.id) || matchedFamily : null;
+  const systemToolsAllowed = !family || (family.builtin && family.enabled !== false && (family.target || family.url) === "folder");
+  if (systemToolsAllowed) {
+    if (require("./screen-palette").isScreenPaletteCommand(text)) {
+      const token = crypto.randomUUID();
+      try {
+        await screenSession().start(token,false);
+        assertCommandEnabled();
+        const images = await screenSession().finish(token);
+        assertCommandEnabled();
+        const palette = await require("./screen-palette").paletteFromImages(images);
+        assertCommandEnabled();
+        return {kind:"action",text:"Screen color palette:\n"+palette.colors.map(color=>color.hex+" — "+(color.proportion*100).toFixed(1)+"%").join("\n"),palette};
+      } finally { await commandScreen?.cancel(token).catch(error=>emit("notice",{title:"Screen capture",body:error.message})); }
+    }
+    const tools = require("./command-system-tools");
+    const systemCommand = tools.parseSystemCommand(text);
+    if (systemCommand?.type === "editor") {
+      const files = await tools.capturedPaths(captured,{kind:systemCommand.kind});
+      assertCommandEnabled();
+      await launchApplication(systemCommand.application,files);
+      return {kind:"action",text:"Opened in "+systemCommand.application+":\n"+files.join("\n"),files};
+    }
+    if (systemCommand?.type === "settings") {
+      if (process.platform !== "darwin") throw Error("These System Settings commands require macOS");
+      assertCommandEnabled();
+      await shell.openExternal(systemCommand.uri);
+      return {kind:"action",text:"Opened "+systemCommand.pane+" settings. "+(systemCommand.instruction || "Opening the pane does not grant permissions."),pane:systemCommand.pane};
+    }
+  }
+  if (shortcutFamily && ["url", "folder", "app"].includes(parsed.type) && !(systemToolsAllowed && parsed.type === "app"))
     parsed = { type: "unknown", instruction: text };
   if (parsed.type === "timer" || parsed.type === "reminder")
     return scheduleReminder(parsed.seconds, parsed.message || "Timer finished");
@@ -960,8 +998,9 @@ async function runCommand(text, context = "", attachments = {}, captured = null,
     return { kind: "action", text: "Opened " + parsed.folder + " folder." };
   }
   if (parsed.type === "app") {
-    await launchApplication(parsed.app);
-    return { kind: "action", text: "Opened " + parsed.app + "." };
+    const application = require("./command-system-tools").appName(parsed.app);
+    await launchApplication(application);
+    return { kind: "action", text: "Opened " + application + "." };
   }
   const target =
     (context + (attachments.text ? "\n\n" + attachments.text : "")).trim() ||
@@ -1181,7 +1220,7 @@ async function transcribeAndProcess(
     const command = attachCommandReview(output, recordTarget?.commandTarget, recordTarget?.commandContext, attachments.images || [], front?.commandAutomatic);
     entry.text = command.text;
     entry.command = text;
-    entry.commandResult = command;
+    entry.commandResult = historyCommandResult(command);
   } else if (kind === "dictation" || kind === "shortcut") {
     const shortcut = await runShortcut(text);
     if (shortcut) {
@@ -1917,7 +1956,7 @@ const actions = {
     const target = reviewId ? (prior?.expiresAt > Date.now() ? prior.target : null) : await captureCommandTarget(captured);
     assertCommandEnabled();
     let capturedImages = prior?.images || [];
-    if (!reviewId && screenEnabled()) {
+    if (!reviewId && screenEnabled() && !require("./screen-palette").isScreenPaletteCommand(text)) {
       if (store.data.settings.commandDragRegions === true) {
         if (!attachments.images?.length) throw Error("Use a voice command to select screen regions, or attach screen context manually.");
       } else {
@@ -1953,7 +1992,7 @@ const actions = {
       ].slice(-30);
       entry.text = result.text;
       entry.command = text;
-      entry.commandResult = result;
+      entry.commandResult = historyCommandResult(result);
       store.save();
     } else
       entry = store.addHistory({
@@ -1961,7 +2000,7 @@ const actions = {
         text: result.text,
         original: text,
         command: text,
-        commandResult: result,
+        commandResult: historyCommandResult(result),
         title: "Command",
         revisions: [revision],
       });

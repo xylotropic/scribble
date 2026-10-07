@@ -435,93 +435,11 @@ function markdownLines(text) {
       };
     });
 }
-async function markdownPDF(input, temp, options) {
-  const { PDFDocument, StandardFonts } = require("pdf-lib");
-  if ((await fsp.stat(input)).size > LIMITS.configBytes)
-    throw new Error("Markdown document exceeds 16 MB");
-  const text = await readUTF8(input);
-  const doc = await PDFDocument.create();
-  let fontPath = options.fontPath;
-  if (fontPath) {
-    if (!path.isAbsolute(fontPath))
-      throw new Error("Font path must be absolute");
-    await fsp.access(fontPath);
-  } else if (/[^\x00-\xff]/.test(text)) {
-    for (const candidate of [
-      "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-      "/Library/Fonts/Arial Unicode.ttf",
-    ])
-      if (fs.existsSync(candidate)) {
-        fontPath = candidate;
-        break;
-      }
-  }
-  let font;
-  if (fontPath) {
-    doc.registerFontkit(require("@pdf-lib/fontkit"));
-    font = await doc.embedFont(await fsp.readFile(fontPath), { subset: true });
-  } else font = await doc.embedFont(StandardFonts.Helvetica);
-  let page = doc.addPage([612, 792]),
-    y = 742;
-  const margin = 50,
-    maxWidth = 512;
-  function draw(line, size) {
-    if (y < margin + size) {
-      page = doc.addPage([612, 792]);
-      y = 742;
-    }
-    try {
-      page.drawText(line, { x: margin, y, size, font });
-    } catch (error) {
-      throw new Error(
-        `The PDF font cannot encode this text. Choose options.fontPath with a font covering its characters. ${error.message}`,
-      );
-    }
-    y -= size * 1.4;
-  }
-  for (const item of markdownLines(text)) {
-    if (!item.text) {
-      y -= 8;
-      continue;
-    }
-    let current = "";
-    for (const word of item.text.split(/\s+/)) {
-      const proposed = current ? current + " " + word : word;
-      let width;
-      try {
-        width = font.widthOfTextAtSize(proposed, item.size);
-      } catch (error) {
-        throw new Error(
-          "The default PDF font cannot encode this text. Choose options.fontPath with a Unicode font.",
-        );
-      }
-      if (width > maxWidth && current) {
-        draw(current, item.size);
-        current = word;
-      } else current = proposed;
-      if (font.widthOfTextAtSize(current, item.size) > maxWidth) {
-        let chunk = "";
-        for (const character of Array.from(current)) {
-          if (
-            chunk &&
-            font.widthOfTextAtSize(chunk + character, item.size) > maxWidth
-          ) {
-            draw(chunk, item.size);
-            chunk = "";
-          }
-          chunk += character;
-        }
-        current = chunk;
-      }
-    }
-    if (current) draw(current, item.size);
-  }
-  await fsp.writeFile(temp, await doc.save());
-  return {
-    pages: doc.getPageCount(),
-    font: fontPath ? path.basename(fontPath) : "Helvetica",
-    format: "pdf",
-  };
+async function markdownPDF(input, temp, options = {}) {
+  if ((await fsp.stat(input)).size > LIMITS.configBytes) throw Error("Markdown document exceeds 16 MB");
+  const result=await require("./markdown-pdf").renderMarkdownPDF(await readUTF8(input),options);
+  await fsp.writeFile(temp,result.bytes);
+  return result.details;
 }
 async function readUTF8(file) {
   try {
