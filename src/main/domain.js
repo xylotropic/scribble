@@ -149,7 +149,7 @@ function parseCommand(text) {
   if (
     (match = lower.match(
       /^(?:set (?:a )?)?timer (?:for )?(\d+(?:\.\d+)?)\s*(seconds?|minutes?|hours?)$/,
-    ))
+    ) || lower.match(/^(?:set|start) (?:a )?(\d+(?:\.\d+)?)\s*[- ]?\s*(seconds?|minutes?|hours?) timer[.!?]?$/))
   )
     return {
       type: "timer",

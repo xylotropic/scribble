@@ -1,0 +1,291 @@
+{
+  "unchangedExistingLockEntries": 387,
+  "existingDependencyFilesUnchanged": 12720,
+  "newPureJavaScriptPackages": [
+    {
+      "path": "node_modules/linkify-it",
+      "packagedFilesVerified": 6,
+      "packageMetadataNote": "electron-builder strips development metadata (keywords/scripts/contributors/bugs/jspm); runtime metadata semantically matched, package.json byte parity not claimed",
+      "licenseFiles": [
+        "LICENSE"
+      ],
+      "omittedDocumentation": [
+        "README.md",
+        "build/index.d.ts"
+      ],
+      "allCopiedSourceFilesByteIdentical": 8,
+      "packagedPath": "node_modules/linkify-it",
+      "files": {
+        "LICENSE": {
+          "sha256": "95e3f7f0e81e9b4940cdfaa1956aaff5e4dfd2fb1565041e7c78eb9a606f23e3"
+        },
+        "README.md": {
+          "sha256": "796e0469da01d76e99868f560743b76f316f6287b8c43d553e0fb4db919940fa"
+        },
+        "build/index.cjs.js": {
+          "sha256": "9ef3d015dfe09ba22cc53cf34e9fe777922ceada1d037f323b6c87bc3382303a"
+        },
+        "build/index.cjs.js.map": {
+          "sha256": "6a5cac46b95d72a04cecb685a6b25bfa3245eb29aed7d1c4a134323af779a3c3"
+        },
+        "build/index.d.ts": {
+          "sha256": "137159600fbeef26e064ad934c339ca841594d4338daf603ff638107ce47c26f"
+        },
+        "build/index.mjs": {
+          "sha256": "8b8112c2d772da15ebfff2506ac7a281bfa061f695ac7743c083ac54815385ac"
+        },
+        "build/index.mjs.map": {
+          "sha256": "d462ef886c6da0e93e74c04572aab741ce1d8b79946dd20f0a3df1512cfc1a04"
+        },
+        "package.json": {
+          "sha256": "5dc14a32eb18ce1de17e257c9059162683d939cf74bcfdbbf7526ece1742f821"
+        }
+      }
+    },
+    {
+      "path": "node_modules/markdown-it",
+      "packagedFilesVerified": 20,
+      "packageMetadataNote": "electron-builder strips development metadata (keywords/scripts/contributors/bugs/jspm); runtime metadata semantically matched, package.json byte parity not claimed",
+      "licenseFiles": [
+        "LICENSE",
+        "node_modules/argparse/LICENSE"
+      ],
+      "omittedDocumentation": [
+        "README.md",
+        "node_modules/argparse/README.md",
+        "node_modules/argparse/lib/argparse.d.ts"
+      ],
+      "allCopiedSourceFilesByteIdentical": 23,
+      "packagedPath": "node_modules/markdown-it",
+      "files": {
+        "LICENSE": {
+          "sha256": "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473"
+        },
+        "README.md": {
+          "sha256": "4be181f1920ecce286589cdf3863fac8dedd0aa674a54fb8a7d299978b9701fa"
+        },
+        "bin/markdown-it.mjs": {
+          "sha256": "d8b76b94b812fb4e5c81e3feeddc9a6bf983f5557316bf7d9d4276ee4116ab02"
+        },
+        "dist/browser/markdown-it.esm.min.mjs": {
+          "sha256": "85feb50fd6ce1b7c49acb02b0337eb622ecc4fc2ed4ae0dcbb8c084556d463b6"
+        },
+        "dist/browser/markdown-it.esm.min.mjs.map": {
+          "sha256": "495aa010515523da428720070f1cc74c5515595cd8baa551484072a1d4200417"
+        },
+        "dist/browser/markdown-it.umd.min.js": {
+          "sha256": "635972b985228e8af9f0143647c68616b7a3bb09f6946e7e4a52e43dcf5e7be5"
+        },
+        "dist/browser/markdown-it.umd.min.js.map": {
+          "sha256": "54f473ad859c0c6ff2ef507c6ebc50c6dff27128e3bbbc7b5e3d9838c8ce5861"
+        },
+        "dist/markdown-it.cjs.js": {
+          "sha256": "bb4c7d4233a9ccd7416992c8ab6ab702313e4b7bd7719ecf4ba0c3ba922a4ea7"
+        },
+        "dist/markdown-it.cjs.js.map": {
+          "sha256": "719c55d7b3b012843d9af1d110779e30e6eb4d21b07228cbb096c04ceb8abda7"
+        },
+        "dist/markdown-it.d.cts": {
+          "sha256": "aed2caab93348a67c010a613acb787583df6112706ee552cda141b702c4aa7c7"
+        },
+        "dist/markdown-it.d.mts": {
+          "sha256": "ca7f7391e9470a4e69e4af81c02a94f955a4da67ad5cfeafb425f39a93cb9b52"
+        },
+        "dist/markdown-it.mjs": {
+          "sha256": "499649c0b497ed031bf21b1f29e5a53b9a49101d6f432eb13e68050ba754f860"
+        },
+        "dist/markdown-it.mjs.map": {
+          "sha256": "d1b342dc4a3cfa333227d29c3dbd3a6d38c35e93f4f30a46158fefd90480f5d6"
+        },
+        "node_modules/argparse/LICENSE": {
+          "sha256": "ab745c5061d1dea43a3885e5b4b6befc7e983954954775c5736debeefcdfd89b"
+        },
+        "node_modules/argparse/README.md": {
+          "sha256": "5e29325d9f128a1ef47d35e645fb10731845c04cc150f07b37d17bbab028d838"
+        },
+        "node_modules/argparse/lib/_colorize.js": {
+          "sha256": "3eda8fc89c9ee47e78c5e5eb00953c77314c5db4ba15365755fa625b66650981"
+        },
+        "node_modules/argparse/lib/argparse.d.ts": {
+          "sha256": "bffad8ff33ec0ee24b813f39f9918d041fec9096b6458784107a5731f5e85d35"
+        },
+        "node_modules/argparse/lib/argparse.js": {
+          "sha256": "35aa3cc53e43e24633990700b0cdca10695a4c744780a3db112d9115738c850e"
+        },
+        "node_modules/argparse/lib/difflib.js": {
+          "sha256": "a9bbb1747c91ac28a63b3f764fe89c19eb0a81d905dfe55c2200f5352e69fe64"
+        },
+        "node_modules/argparse/lib/sub.js": {
+          "sha256": "5bfaea3c5e0b989bff50c8ac5935eeda1e4e2b559e02e1bf2507d74dd80fa708"
+        },
+        "node_modules/argparse/lib/textwrap.js": {
+          "sha256": "b630c008c1845e5df3562176f381bb50bbecac4c5f4d4ad27b80cca3b57cad84"
+        },
+        "node_modules/argparse/package.json": {
+          "sha256": "80d9ff02e0cfd70c6984c0eba9cb1ef1a9ec1af3184e21ffedc72dec73a17df6"
+        },
+        "package.json": {
+          "sha256": "8139a013848ea3354dad52d9e025646e85620fca02805d4db0bacd5c05472946"
+        }
+      }
+    },
+    {
+      "path": "node_modules/markdown-it/node_modules/argparse",
+      "packagedFilesVerified": 7,
+      "packageMetadataNote": "electron-builder strips development metadata (keywords/scripts/contributors/bugs/jspm); runtime metadata semantically matched, package.json byte parity not claimed",
+      "licenseFiles": [
+        "LICENSE"
+      ],
+      "omittedDocumentation": [
+        "README.md",
+        "lib/argparse.d.ts"
+      ],
+      "allCopiedSourceFilesByteIdentical": 9,
+      "packagedPath": "node_modules/argparse",
+      "files": {
+        "LICENSE": {
+          "sha256": "ab745c5061d1dea43a3885e5b4b6befc7e983954954775c5736debeefcdfd89b"
+        },
+        "README.md": {
+          "sha256": "5e29325d9f128a1ef47d35e645fb10731845c04cc150f07b37d17bbab028d838"
+        },
+        "lib/_colorize.js": {
+          "sha256": "3eda8fc89c9ee47e78c5e5eb00953c77314c5db4ba15365755fa625b66650981"
+        },
+        "lib/argparse.d.ts": {
+          "sha256": "bffad8ff33ec0ee24b813f39f9918d041fec9096b6458784107a5731f5e85d35"
+        },
+        "lib/argparse.js": {
+          "sha256": "35aa3cc53e43e24633990700b0cdca10695a4c744780a3db112d9115738c850e"
+        },
+        "lib/difflib.js": {
+          "sha256": "a9bbb1747c91ac28a63b3f764fe89c19eb0a81d905dfe55c2200f5352e69fe64"
+        },
+        "lib/sub.js": {
+          "sha256": "5bfaea3c5e0b989bff50c8ac5935eeda1e4e2b559e02e1bf2507d74dd80fa708"
+        },
+        "lib/textwrap.js": {
+          "sha256": "b630c008c1845e5df3562176f381bb50bbecac4c5f4d4ad27b80cca3b57cad84"
+        },
+        "package.json": {
+          "sha256": "80d9ff02e0cfd70c6984c0eba9cb1ef1a9ec1af3184e21ffedc72dec73a17df6"
+        }
+      }
+    },
+    {
+      "path": "node_modules/mdurl",
+      "packagedFilesVerified": 8,
+      "packageMetadataNote": "electron-builder strips development metadata (keywords/scripts/contributors/bugs/jspm); runtime metadata semantically matched, package.json byte parity not claimed",
+      "licenseFiles": [
+        "LICENSE"
+      ],
+      "omittedDocumentation": [
+        "README.md",
+        "lib/index.d.ts"
+      ],
+      "allCopiedSourceFilesByteIdentical": 10,
+      "packagedPath": "node_modules/mdurl",
+      "files": {
+        "LICENSE": {
+          "sha256": "6b6a356c4337e2446841f30f3cdf7e7023af8c5260b5e347c0f987b9f6aa2644"
+        },
+        "README.md": {
+          "sha256": "4cf58538aeba8f553f2315103db7ec6cb94fac54e7830473b4e85fe1f771f613"
+        },
+        "build/index.cjs.js": {
+          "sha256": "52eb8a3ea40536c61f6aafb2e53face22e47653194274f24e110eb8f1b321bfa"
+        },
+        "index.mjs": {
+          "sha256": "8ea430f1f8a107f529e2dac519d2f18e71ec9befe6f23f78bf6510cf86d3f9a0"
+        },
+        "lib/decode.mjs": {
+          "sha256": "d91544cfb42b9639073f5fa0f576bf72ef6697e848005357c433cad036c2ef20"
+        },
+        "lib/encode.mjs": {
+          "sha256": "0ae621933b548f880404841b251b0f4fc2c8446ded699e6812def217250ac15d"
+        },
+        "lib/format.mjs": {
+          "sha256": "2410ec324b913a42c572e01ae49436e5fa4e2e5fbea15c08c92a6dea8bc5887d"
+        },
+        "lib/index.d.ts": {
+          "sha256": "74b19240ade8cf0b56f8c7c3fe2d1981811156deb4457c1b38737aa9b6bfca1b"
+        },
+        "lib/parse.mjs": {
+          "sha256": "2a417b42e9ea8ee94fc77c596a34eb206d6c69823484e89d80bf1e7583d8f91d"
+        },
+        "package.json": {
+          "sha256": "807e00f99605ba97f4953f8ceb6a65db877d23a9f5496ae367eb953c0e4e627d"
+        }
+      }
+    },
+    {
+      "path": "node_modules/punycode.js",
+      "packagedFilesVerified": 4,
+      "packageMetadataNote": "electron-builder strips development metadata (keywords/scripts/contributors/bugs/jspm); runtime metadata semantically matched, package.json byte parity not claimed",
+      "licenseFiles": [
+        "LICENSE-MIT.txt"
+      ],
+      "omittedDocumentation": [
+        "README.md"
+      ],
+      "allCopiedSourceFilesByteIdentical": 5,
+      "packagedPath": "node_modules/punycode.js",
+      "files": {
+        "LICENSE-MIT.txt": {
+          "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+        },
+        "README.md": {
+          "sha256": "ab87f92cff7bfac2644eee44b469b263f7a147b6e5e8c15627164890a249c2be"
+        },
+        "package.json": {
+          "sha256": "ce0bcedcc3d00b235770a2c49af74712e10e5dac8d3dda5ed23c433b19720c3c"
+        },
+        "punycode.es6.js": {
+          "sha256": "8969ae1b78644a33574be197d1a7a9c85b031092f1c1a657d865b7b3c1edd77e"
+        },
+        "punycode.js": {
+          "sha256": "6052a80eac47e46bd4de17ae0095e0192c336d3d7c387d292ad2176ebfc53d04"
+        }
+      }
+    },
+    {
+      "path": "node_modules/uc.micro",
+      "packagedFilesVerified": 4,
+      "packageMetadataNote": "electron-builder strips development metadata (keywords/scripts/contributors/bugs/jspm); runtime metadata semantically matched, package.json byte parity not claimed",
+      "licenseFiles": [
+        "LICENSE.txt"
+      ],
+      "omittedDocumentation": [
+        "README.md",
+        "build/index.d.ts"
+      ],
+      "allCopiedSourceFilesByteIdentical": 6,
+      "packagedPath": "node_modules/uc.micro",
+      "files": {
+        "LICENSE.txt": {
+          "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+        },
+        "README.md": {
+          "sha256": "08f80be7f21ab583731030d722b9fad7a04664e3a86b205d9cc9eaff57c5c9d5"
+        },
+        "build/index.cjs.js": {
+          "sha256": "ec6a5cc30dc0115643a3d6ee4c6865e6396c01e536854142af7ecfc8769c28b9"
+        },
+        "build/index.d.ts": {
+          "sha256": "a4e7452542c44574c47d429427984ecc942e5d6a2d61290fcaf34495ec3f49bc"
+        },
+        "build/index.mjs": {
+          "sha256": "3fdef99558860189fb25d930401847dccc1aafe3d10d4c4aec25fb02df0d0726"
+        },
+        "package.json": {
+          "sha256": "93f983d24c5f48a75c80d0019fc14d522bbbefa049a45545bb7617eab82ec2f4"
+        }
+      }
+    }
+  ],
+  "thirdPartyNotice": {
+    "retainedByteIdentical": true,
+    "sha256": "a1a1a185c5f96532afc7746b2407bcb53c4c2611ee49f6c94b836164fcac3f63"
+  },
+  "originalRuntimeStageMatchesCopiedRuntime": true
+}

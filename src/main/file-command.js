@@ -7,6 +7,13 @@ function parseFileCommand(text) {
     .toLowerCase()
     .replace(/[.!?]$/, "")
     .replace(/\s+/g, " ");
+  const literal = text.trim().replace(/[.!?]$/, "").replace(/\s+/g, " ");
+  const combined = literal.match(/^(merge|combine) (?:these |the selected )?(?:pdfs|pdf files)(?:,? (?:as|into|named|called) (.+))?$/i) || literal.match(/^(zip|archive) (?:this |these |the selected )?(?:file|files|folder|folders)(?:,? (?:as|into|named|called) (.+))?$/i);
+  if (combined) {
+    const operation = /^(merge|combine)$/i.test(combined[1]) ? "pdf-merge" : "archive-create";
+    try { return {operation,options:combined[2] ? {outputName:require("./file-combined").outputName(operation,combined[2])} : {}}; }
+    catch { return null; }
+  }
   const formats = {
     jpg: "image-convert",
     jpeg: "image-convert",

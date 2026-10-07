@@ -990,3 +990,7 @@ dialog h2 {
 .markdown-result table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
 .markdown-result th, .markdown-result td { border: 1px solid var(--line); padding: 6px 10px; }
 .markdown-result a { color: var(--ink); text-decoration: underline; }
+
+.palette-swatches { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; white-space: normal; }
+.palette-swatch { display: grid; gap: 4px; min-width: 86px; font-size: 12px; }
+.palette-chip { display: block; height: 46px; border: 1px solid var(--line); border-radius: 8px; }

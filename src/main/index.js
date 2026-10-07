@@ -732,6 +732,18 @@ async function runFileUtility({ operation, options = {} }, captured = null) {
           : ["openFile", "multiSelections"],
     });
     if (chosen.canceled) return null;
+    if (selected && ["pdf-merge", "archive-create"].includes(operation)) {
+      const combined = require("./file-combined");
+      const plan = await combined.preflight({operation,files:selected,expected:captured.files,outputName:options.outputName});
+      await selectedUtilityInputs(operation,captured);
+      await combined.verify(plan);
+      if (activeProcess?.kind === "command") assertCommandEnabled();
+      const {outputName,...utilityOptions} = options;
+      const result = await require("./utilities").performUtility({operation,files:plan.files,output:plan.output,options:{...utilityOptions,overwrite:false}});
+      const saved = await fsp.lstat(plan.output);
+      if (!saved.isFile() || saved.isSymbolicLink()) throw Error("Combined output was not saved as a regular file");
+      return {kind:"file",output:plan.output,text:"Output saved:\n"+plan.output,outputs:[plan.output],items:[{inputs:plan.files,output:plan.output,status:"completed",details:result.details || {}}],details:{...result.details,operation,completed:1,total:1}};
+    }
     if (batch.isBatch(operation) && (selected || chosen.filePaths.length > 1)) {
       const plan = await batch.preflight({operation,files:chosen.filePaths,options,expected:selected ? captured.files : null});
       if (selected) await selectedUtilityInputs(operation,captured);
@@ -740,7 +752,7 @@ async function runFileUtility({ operation, options = {} }, captured = null) {
     }
     const extension = batch.isBatch(operation) ? batch.outputExtension(operation,options,chosen.filePaths[0]) || "folder" : extensions[operation];
     const destination = await dialog.showSaveDialog(window, {
-      defaultPath: "Scribble-output." + extension,
+      defaultPath: options.outputName ? require("./file-combined").outputName(operation,options.outputName) : "Scribble-output." + extension,
     });
     if (destination.canceled) return null;
     if(selected) await selectedUtilityInputs(operation, captured);
@@ -966,8 +978,11 @@ async function runCommand(text, context = "", attachments = {}, captured = null,
   }
   if (shortcutFamily && ["url", "folder", "app"].includes(parsed.type) && !(systemToolsAllowed && parsed.type === "app"))
     parsed = { type: "unknown", instruction: text };
-  if (parsed.type === "timer" || parsed.type === "reminder")
+  if (parsed.type === "timer" || parsed.type === "reminder") {
+    if (parsed.type === "timer" && (!Number.isFinite(parsed.seconds) || parsed.seconds < 1 || parsed.seconds > 86400))
+      throw Error("Choose a timer duration from one second to 24 hours");
     return scheduleReminder(parsed.seconds, parsed.message || "Timer finished");
+  }
   if (parsed.type === "url") {
     await openUrl(parsed.url);
     return { kind: "action", text: "Opened " + parsed.url };

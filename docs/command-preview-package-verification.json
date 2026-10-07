@@ -1,0 +1,87 @@
+{
+  "verifiedAt": "2026-10-07T13:38:34.759Z",
+  "publicCommit": "629901b2fc43e7ee76e5a4140c533cbe1f36f7ef",
+  "tree": "08c5e967474b2ecb68aefc4bd627f456da27a32a",
+  "app": "/tmp/scribble-command-preview-package-20261007/mac-arm64/Scribble.app",
+  "architecture": "arm64",
+  "guard": {
+    "architectures": [
+      "arm64"
+    ],
+    "checkedExecutables": 7
+  },
+  "shippedAsarFilesByteIdentical": 62,
+  "runtimePackageMetadataMatched": [
+    "name",
+    "version",
+    "main",
+    "dependencies"
+  ],
+  "nativeModules": [
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.5.node",
+    "Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.7.dylib",
+    "Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node"
+  ],
+  "signature": {
+    "deepStrict": true,
+    "adHoc": true,
+    "hardenedRuntime": true,
+    "notarized": false
+  },
+  "runtimeSourceFilesAndLinksUnchanged": 83,
+  "priorScreenPackagedRuntimeFilesAndLinksIdentical": 82,
+  "packagedOllamaRelativeLinksChecked": 10,
+  "bridgeImageCodecAndShareRebuilt": true,
+  "screenPermissionNotice": "Scribble captures meeting system audio when you start a meeting recording and screen images when you enable Command Mode screen context.",
+  "infoPlist": {
+    "NSMicrophoneUsageDescription": "Scribble records your voice for local transcription.",
+    "NSScreenCaptureUsageDescription": "Scribble captures meeting system audio when you start a meeting recording and screen images when you enable Command Mode screen context.",
+    "NSAppleEventsUsageDescription": "Scribble inserts your dictation in the application you are using.",
+    "CFBundleIdentifier": "org.scribble.voice",
+    "CFBundleShortVersionString": "0.1.0",
+    "LSMinimumSystemVersion": "14.0.0"
+  },
+  "electronDistribution": "Existing cached electron-v44.6.0-darwin-arm64.zip; no runtime downloads/setup/services invoked.",
+  "limitations": [
+    "No GUI launch or microphone/screen capture/provider inference tests.",
+    "Finder AX hierarchy and native screen region interaction remain unverified on the desktop.",
+    "Ad hoc signed and not notarized."
+  ],
+  "electronCachedArchive": {
+    "path": "/Users/floydkorzan-mac-mini/Library/Caches/electron/8ed3ed5a704bf2ea4aac1ece9f050d2f11422ac8430103e9efbf921b4ea38d8c/electron-v44.6.0-darwin-arm64.zip",
+    "sha256": "023a69ab3a2e8fac0a62746c2aaaf42f637b7ab07b8d78fb64f00c48e01fef8c",
+    "membersByteIdentical": 273
+  },
+  "nativeBuild": {
+    "sdk": "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk",
+    "components": [
+      "ScribbleBridge",
+      "ImageCodec",
+      "ScribbleShare"
+    ],
+    "warningFree": true
+  },
+  "sourceClean": true,
+  "buildCheckout": "/tmp/scribble-command-preview-arm-source",
+  "dependencyProof": "/tmp/scribble-command-preview-package-20261007/dependencies-verification.json",
+  "dependencyVerification": {
+    "unchangedExistingLockEntries": 387,
+    "existingDependencyFilesUnchanged": 12720,
+    "newPackages": 6,
+    "newPackageFileChecks": 49,
+    "allNewPackageSourceCopiesByteIdentical": true,
+    "newPackageRuntimeCodeAndLicensesByteIdentical": true,
+    "newPackageRuntimeMetadataMatched": true,
+    "packageMetadataAndDocumentationNote": "electron-builder strips development package metadata and omits README/type/source-map files; no ASAR package.json byte-parity claim. Argparse3.0.2 is hoisted from markdown-it/node_modules to root node_modules."
+  },
+  "thirdPartyNotice": {
+    "retainedByteIdentical": true,
+    "sha256": "a1a1a185c5f96532afc7746b2407bcb53c4c2611ee49f6c94b836164fcac3f63"
+  },
+  "originalRuntimeStageMatchesCopiedRuntime": true,
+  "logs": [
+    "/tmp/scribble-command-preview-arm-build.log",
+    "/tmp/scribble-command-preview-arm-native.log",
+    "/tmp/scribble-command-preview-arm-share.log"
+  ]
+}

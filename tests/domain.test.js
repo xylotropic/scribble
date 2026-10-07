@@ -222,3 +222,9 @@ test("direct navigation commands accept web and mailto while rejecting malformed
   assert.equal(domain.parseCommand('go to “example dot com”').url, "https://example.com/");
   assert.equal(domain.parseCommand("open website http://example.com/path").url, "http://example.com/path");
 });
+
+test('public timer wording recognizes duration before timer without broad action matches', () => {
+  for (const [text,seconds] of [['Set a 10 minute timer',600],['Start a 1.5-hour timer!',5400],['Set a 30 seconds timer',30]])
+    assert.deepEqual(domain.parseCommand(text),{type:'timer',seconds});
+  assert.notEqual(domain.parseCommand('Set a 10 minute timer and open Chrome').type,'timer');
+});

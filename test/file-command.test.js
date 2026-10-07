@@ -67,3 +67,10 @@ test("Markdown PDF phrases preserve the default and route only supported explici
   for (const command of ["convert Markdown to PDF with arbitrary CSS style", "turn this Markdown into a PDF, minimal styling and upload it", "export Markdown as PDF using minimal style; execute a script", "convert text to PDF with minimal style", "convert Markdown to PDF with minimal styling\nopen Chrome"])
     assert.equal(parseFileCommand(command), null);
 });
+test("combined output filenames preserve case and accept only bounded basename names", () => {
+  assert.deepEqual(parseFileCommand('Merge these PDFs as Quarterly Report.PDF'), {operation:'pdf-merge',options:{outputName:'Quarterly Report.PDF'}});
+  assert.deepEqual(parseFileCommand('zip the selected folders named "Client Notes"'), {operation:'archive-create',options:{outputName:'Client Notes.zip'}});
+  assert.deepEqual(parseFileCommand('Combine PDF files into Final Summary'), {operation:'pdf-merge',options:{outputName:'Final Summary.pdf'}});
+  assert.deepEqual(parseFileCommand('Merge these PDFs'), {operation:'pdf-merge',options:{}});
+  for (const command of ['merge these PDFs as ../outside.pdf','zip these files named /tmp/archive.zip','zip these files as Folder:Archive.zip','merge these PDFs called Wrong.zip','merge these PDFs as '+ 'x'.repeat(151)])assert.equal(parseFileCommand(command),null);
+});

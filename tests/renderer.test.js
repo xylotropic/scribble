@@ -1431,3 +1431,14 @@ test('AI utility previews render Markdown while copying original source', option
   assert.equal(h.w.document.querySelector('#utility-result code').textContent,'sample');
   await h.click('[data-action="copy-ai-utility"]'); assert.equal(h.calls.find(c=>c.action==='copy').args.text,text);
 });
+
+test('screen palette review displays bounded color swatches and copies complete text', options, async t => {
+  const h=await fixture(t); await h.click('[data-page="command"]'); const text='Screen color palette:\n#ff0000 — 60.0%\n#0000ff — 40.0%';
+  h.emit('command-result',{kind:'action',text,palette:{colors:[{hex:'#ff0000',proportion:.6},{hex:'#0000ff',proportion:.4}]}}); await flush();
+  assert.equal(h.w.document.querySelectorAll('.palette-chip').length,2);
+  assert.equal(h.w.document.querySelector('.palette-chip').style.backgroundColor,'rgb(255, 0, 0)');
+  assert.match(h.w.document.querySelector('.palette-swatch').textContent,/60.0%/);
+  await h.click('[data-action="copy-command"]'); assert.equal(h.calls.find(c=>c.action==='copy').args.text,text);
+  h.emit('command-result',{kind:'action',text:'Invalid palette',palette:{colors:[{hex:'red;background:url(https://example.com)',proportion:1}]}}); await flush();
+  assert.equal(h.w.document.querySelector('.palette-chip'),null); assert.equal(h.w.document.querySelector('#command-result').textContent,'Invalid palette');
+});

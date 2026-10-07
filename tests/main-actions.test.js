@@ -668,9 +668,9 @@ test('microphone label IPC remembers only ranked display labels without requesti
  const saved=fs.readFileSync(h.store.file,'utf8');assert.throws(()=>h.actions['remember-microphone-labels']({labels:[{id:'usb',name:'secret',capabilities:{}}]}),/microphone labels/);assert.equal(fs.readFileSync(h.store.file,'utf8'),saved);
 });
 
- test('Finder command snapshot preserves native selection order, ignores renderer paths and rechecks identity after destination choice',async t=>{
+ test('Finder combined command preserves native selection order and ignores renderer paths',async t=>{
   let h, capturedCalls=0, chosenCalls=0, observed;
-  h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?(capturedCalls++,{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'second.pdf'),path.join(h.directory,'first.pdf')]}):{},dialog:{showOpenDialog:async()=>{chosenCalls++;throw Error('unexpected input picker');},showSaveDialog:async()=>({filePath:path.join(h.directory,'out.pdf')})},utilities:{performUtility:async value=>{observed=value;return{output:value.output};}}});
+  h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?(capturedCalls++,{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'second.pdf'),path.join(h.directory,'first.pdf')]}):{},dialog:{showOpenDialog:async()=>{chosenCalls++;throw Error('unexpected input picker');},showSaveDialog:async()=>({filePath:path.join(h.directory,'out.pdf')})},utilities:{performUtility:async value=>{observed=value;fs.writeFileSync(value.output,"saved fixture");return{output:value.output};}}});
   for(const name of ['first.pdf','second.pdf'])fs.writeFileSync(path.join(h.directory,name),'%PDF-fixture');
   await h.actions.command({text:'merge these pdfs',attachments:{selectedFiles:['/untrusted'],files:['/untrusted']}});
   assert.equal(capturedCalls,1);assert.equal(chosenCalls,0);assert.deepEqual(Array.from(observed.files),[path.join(h.directory,'second.pdf'),path.join(h.directory,'first.pdf')]);
@@ -934,4 +934,30 @@ test('safe result preview is ephemeral while copy and insertion keep original Ma
  const result=await h.actions.command({text:'draft a response'});assert.equal(result.preview.format,'markdown');assert.match(result.preview.html,/<h1>Result/);
  assert.equal(h.store.data.history[0].commandResult.preview,undefined);
  await h.actions['paste-command-result']({id:result.reviewId});assert.equal(pasted,text);
+});
+
+test('timers enforce the public 24 hour limit while reminders retain longer durations', async t => {
+  const h=harness(t);
+  await assert.rejects(h.actions.command({text:'Set a 25 hour timer'}),/24 hours/);
+  assert.equal(h.store.data.timers.length,0);
+  const result=await h.actions.command({text:'Set a 24 hour timer'}); assert.equal(result.kind,'timer');
+  await h.actions.command({text:'remind me to stretch in 25 hours'}); assert.equal(h.store.data.timers.length,2);
+  for(const timer of [...h.store.data.timers])h.actions['cancel-timer']({id:timer.id});
+});
+test('selected combined tools use adjacent defaults and preserve ordered sources without output pickers',async(t)=>{
+ let h;const seen=[];h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'second.pdf'),path.join(h.directory,'first.pdf')]}:{},dialog:{showSaveDialog:async()=>{throw Error('unexpected destination picker');}},utilities:{performUtility:async input=>{seen.push(input);fs.writeFileSync(input.output,"saved fixture");return{output:input.output};}}});
+ for(const name of ['first.pdf','second.pdf'])fs.writeFileSync(path.join(h.directory,name),'PDF fixture');await h.actions.command({text:'merge these PDFs'});await h.actions.command({text:'zip these files named Case Preserved'});
+ assert.deepEqual(seen.map(value=>value.output),[path.join(h.directory,'merged.pdf'),path.join(h.directory,'Case Preserved.zip')]);assert.deepEqual(Array.from(seen[0].files),[path.join(h.directory,'second.pdf'),path.join(h.directory,'first.pdf')]);assert.equal(seen[1].options.overwrite,false);assert.equal('outputName' in seen[1].options,false);
+});
+test('manual combined tools retain the save dialog and selected existing destinations stop before execution',async(t)=>{
+ let h,picks=0,saves=0,performed=0;h=harness(t,{dialog:{showOpenDialog:async()=>{picks++;return{filePaths:[path.join(h.directory,'first.pdf'),path.join(h.directory,'second.pdf')]};},showSaveDialog:async (_window,args)=>{saves++;assert.equal(args.defaultPath,'Custom Name.pdf');return{canceled:true};}},utilities:{performUtility:async()=>{performed++;}}});
+ for(const name of ['first.pdf','second.pdf'])fs.writeFileSync(path.join(h.directory,name),'PDF fixture');assert.equal(await h.actions.utility({operation:'pdf-merge',options:{outputName:'Custom Name'}}),null);assert.equal(picks,1);assert.equal(saves,1);assert.equal(performed,0);
+ const files=[path.join(h.directory,'first.pdf'),path.join(h.directory,'second.pdf')];fs.writeFileSync(path.join(h.directory,'MERGED.PDF'),'keep original');
+ const captured={files:files.map(file=>{const stat=fs.lstatSync(file);return{path:file,dev:stat.dev,ino:stat.ino,size:stat.size,mtimeMs:stat.mtimeMs,ctimeMs:stat.ctimeMs,directory:false};})};
+ await assert.rejects(h.runCommand('merge these PDFs','',{},captured),/already exists/);assert.equal(performed,0);assert.equal(fs.readFileSync(path.join(h.directory,'MERGED.PDF'),'utf8'),'keep original');
+});
+test('combined output committed during cancellation remains visible and saved in history',async t=>{
+ let h;h=harness(t,{nativeRequest:async command=>command==='captureCommandContext'?{available:true,pid:9,bundleId:'com.apple.finder',text:'',selectedFiles:[path.join(h.directory,'a.pdf'),path.join(h.directory,'b.pdf')]}:{},utilities:{performUtility:async value=>{fs.writeFileSync(value.output,'committed fixture');await h.actions['cancel-recording']();return{output:value.output,details:{pages:2}};}}});
+ for(const name of ['a.pdf','b.pdf'])fs.writeFileSync(path.join(h.directory,name),'source fixture');const result=await h.actions.command({text:'merge these PDFs'});
+ assert.equal(result.kind,'file');assert.deepEqual(Array.from(result.outputs),[path.join(h.directory,'merged.pdf')]);assert.match(result.text,/Output saved/);assert.equal(h.store.data.history[0].commandResult.outputs[0],result.output);assert.equal(fs.readFileSync(result.output,'utf8'),'committed fixture');
 });
