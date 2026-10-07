@@ -8,7 +8,7 @@ const test = require("node:test"),
 const { createRequire } = require("node:module");
 const mainPath = path.resolve(__dirname, "../src/main/index.js"),
   localRequire = createRequire(mainPath);
-function harness(t, { chat, transcribe } = {}) {
+function harness(t, { chat, transcribe, summaryCLI, models = [] } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scribble-actions-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { Store } = localRequire("./store"),
@@ -33,7 +33,7 @@ function harness(t, { chat, transcribe } = {}) {
   };
   const speech = {
     status: () => ({ busy: false, ready: true }),
-    listModels: () => [],
+    listModels: () => models,
     cancelTranscription() {},
     transcribe:
       transcribe ||
@@ -51,7 +51,9 @@ function harness(t, { chat, transcribe } = {}) {
   };
   const context = {
     require: (name) =>
-      name === "./ai-runtime"
+      name === "./summary-cli"
+        ? (summaryCLI || localRequire(name))
+        : name === "./ai-runtime"
         ? { ensureLocalAI: async () => ({}), closeLocalAI: async () => ({}) }
         : name === "electron"
           ? electron
@@ -306,4 +308,116 @@ test('graceful quit closes native services then exits rather than restarting qui
  assert.equal(prevented,1);assert.ok(h.nativeCalls.some(x=>x.command==='close'));
  await new Promise(resolve=>setImmediate(resolve));
  assert.deepEqual(h.exits,[0]);
+});
+
+test("note summary CLI routes separately from global chat and records provenance", async (t) => {
+  let cliCalls = 0,
+    chatCalls = 0;
+  const h = harness(t, {
+    chat: async () => {
+      chatCalls++;
+      return "global AI";
+    },
+    summaryCLI: {
+      status: async () => ({ available: false }),
+      summarize: async ({ transcript }) => {
+        cliCalls++;
+        assert.equal(transcript, "Project ABC-42 launches Friday.");
+        return { text: "Project ABC-42 launches Friday." };
+      },
+    },
+  });
+  h.store.updateSettings({ summaryProvider: "claude-cli" });
+  const note = h.store.upsert("notes", {
+    title: "Reference",
+    transcript: "Project ABC-42 launches Friday.",
+  });
+  const result = await h.actions["summarize-note"]({ id: note.id });
+  assert.equal(result.summaryProvider, "claude-cli");
+  assert.equal(result.summaryFallback, false);
+  assert.equal(cliCalls, 1);
+  assert.equal(chatCalls, 0);
+  await h.actions.enhance({ text: "hello" });
+  assert.equal(chatCalls, 1);
+  assert.equal(cliCalls, 1);
+  assert.equal((await h.actions["summary-cli-status"]()).available, false);
+});
+test("default summary keeps configured AI route and CLI errors record extractive fallback", async (t) => {
+  let chatCalls = 0,
+    cliCalls = 0;
+  const h = harness(t, {
+    chat: async () => {
+      chatCalls++;
+      return "Fact retained.";
+    },
+    summaryCLI: {
+      summarize: async () => {
+        cliCalls++;
+        throw Error("Claude unavailable");
+      },
+    },
+  });
+  const note = h.store.upsert("notes", { transcript: "Fact retained." });
+  let result = await h.actions["summarize-note"]({ id: note.id });
+  assert.equal(result.summaryRequestedProvider, "configured-ai");
+  assert.equal(result.summaryProvider, "ollama");
+  assert.equal(chatCalls, 1);
+  h.store.updateSettings({ summaryProvider: "claude-cli" });
+  result = await h.actions["summarize-note"]({ id: note.id });
+  assert.equal(result.summaryProvider, "local-extractive");
+  assert.equal(result.summaryFallback, true);
+  assert.equal(result.summaryError, "Claude unavailable");
+  assert.equal(cliCalls, 1);
+  assert.equal(chatCalls, 1);
+});
+
+test("file note uses the same CLI dispatcher and cancellation saves no late note", async (t) => {
+  let started;
+  const began = new Promise((resolve) => (started = resolve));
+  let finish;
+  const output = new Promise((resolve) => (finish = resolve));
+  const h = harness(t, {
+    summaryCLI: {
+      summarize: async ({ signal }) => {
+        assert.ok(signal);
+        started();
+        await output;
+        return { text: "Late summary" };
+      },
+    },
+  });
+  h.store.updateSettings({ summaryProvider: "claude-cli", aiEnhance: false });
+  const task = h.processFile(path.join(h.directory, "fixture.wav"), {
+    kind: "note",
+  });
+  await began;
+  await h.actions["cancel-recording"]();
+  finish();
+  await assert.rejects(task, { name: "AbortError" });
+  assert.equal(h.store.data.notes.length, 0);
+});
+test("derived file overrides normalize unsupported language and translation without mutating settings", async (t) => {
+  let selected;
+  const h = harness(t, {
+    models: [
+      {
+        id: "parakeet-ja",
+        engine: "catalog",
+        language: "ja",
+        supportedLanguages: ["ja"],
+      },
+    ],
+    transcribe: async (_, options) => {
+      selected = options;
+      return { text: "Japanese test", segments: [], duration: 1 };
+    },
+  });
+  h.store.updateSettings({ language: "fr", translate: true });
+  await h.processFile(path.join(h.directory, "fixture.wav"), {
+    speechOptions: { modelId: "parakeet-ja" },
+  });
+  assert.equal(selected.language, "auto");
+  assert.equal(selected.translate, false);
+  assert.equal(h.store.data.settings.language, "fr");
+  assert.equal(h.store.data.settings.translate, true);
 });

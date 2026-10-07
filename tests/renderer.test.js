@@ -111,6 +111,7 @@ async function fixture(
         return clone(commandFiles || { text: "", images: [], sources: [] });
       if (action === "command") return { kind: "text", text: "fixture answer" };
       if (action === "models") return clone(data.models);
+      if (action === "summary-cli-status") return { available:false, reason:"Claude CLI is not installed" };
       if (action === "download-model")
         return new Promise((resolve) => {
           downloadResolve = () => {
@@ -847,4 +848,26 @@ test('translated settings explanations and field hints keep values intact', opti
   assert.ok(!h.w.document.querySelector('#content').textContent.includes('Used only for your dashboard greeting.'));
   await h.click('[data-tab="language"]');
   assert.equal(h.w.document.querySelector('[data-setting="language"]').value, 'en');
+});
+
+
+test('note summary provider is independent and unavailable CLI status is explicit', options, async (t) => {
+  const h = await fixture(t);
+  await h.click('[data-page="settings"]');
+  await h.click('[data-tab="language"]');
+  const provider = h.w.document.querySelector('[data-setting="summaryProvider"]');
+  assert.equal(provider.value, 'configured-ai');
+  provider.value = 'claude-cli';
+  provider.dispatchEvent(new h.w.Event('change', { bubbles:true }));
+  await flush();
+  assert.equal(h.data.settings.aiProvider, 'ollama');
+  assert.ok(h.w.document.querySelector('[data-setting="summaryModel"]'));
+  await h.click('[data-action="summary-cli-status"]');
+  assert.equal(h.w.document.querySelector('#summary-cli-status').textContent, 'Claude CLI is not installed');
+});
+
+test('note summary fallback is visible with the provider failure', options, async (t) => {
+  const h = await fixture(t, { notes:[{id:'fallback', title:'Fixture', transcript:'Maya owns the demo.', summary:'Maya owns the demo.', summaryProvider:'local-extractive', summaryFallback:true, summaryError:'Claude CLI is not installed'}] });
+  await h.click('[data-page="notes"]');
+  assert.match(h.w.document.querySelector('#content').textContent, /Local extractive notes used.*Claude CLI is not installed/);
 });

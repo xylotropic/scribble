@@ -188,3 +188,29 @@ test('left and right modifier bindings remain distinct and survive persistence',
  assert.deepEqual(new Store(path.dirname(store.file)).data.settings.hotkeys,bindings);
  assert.throws(()=>store.updateSettings({hotkeys:[{...bindings[0],modifiers:['left-fn']}]}),/hotkey/);
 });
+
+test("summary provider settings persist independently and reject invalid routes atomically", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scribble-summary-store-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const store = new Store(dir);
+  assert.equal(store.data.settings.summaryProvider, "configured-ai");
+  store.updateSettings({
+    summaryProvider: "claude-cli",
+    summaryModel: "sonnet",
+  });
+  assert.equal(new Store(dir).data.settings.summaryProvider, "claude-cli");
+  const original = structuredClone(store.data.settings);
+  assert.throws(
+    () =>
+      store.updateSettings({
+        summaryProvider: "codex-cli",
+        aiProvider: "openai",
+      }),
+    /summary provider/,
+  );
+  assert.deepEqual(store.data.settings, original);
+  assert.throws(
+    () => store.updateSettings({ summaryModel: "bad model;" }),
+    /summary model/,
+  );
+});

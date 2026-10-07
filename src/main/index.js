@@ -273,6 +273,62 @@ async function chat(settings, messages, key, options) {
   }
   return ai.chat(settings, messages, key, options);
 }
+async function generateNoteSummary(
+  settings,
+  transcript,
+  template,
+  { signal } = {},
+) {
+  const requested = settings.summaryProvider || "configured-ai";
+  const prompt = summaryTools.prompt(
+    template || "Meeting",
+    settings.summaryLanguage,
+  );
+  let summary,
+    provider,
+    error = null;
+  try {
+    if (requested === "claude-cli") {
+      const result = await require("./summary-cli").summarize({
+        transcript,
+        prompt,
+        model: settings.summaryModel || undefined,
+        signal,
+      });
+      summary = result.text;
+      provider = "claude-cli";
+    } else if (requested === "configured-ai") {
+      summary = await chat(
+        settings,
+        [
+          { role: "system", content: prompt },
+          { role: "user", content: transcript },
+        ],
+        apiKey(),
+        { signal },
+      );
+      provider = settings.aiProvider;
+    } else throw Error("Unknown summary provider");
+  } catch (cause) {
+    if (signal?.aborted || cause.name === "AbortError") throw cause;
+    summary = ai.extractiveSummary(transcript, template || "Meeting");
+    provider = "local-extractive";
+    error = cause.message;
+  }
+  if (signal?.aborted)
+    throw signal.reason || new DOMException("Cancelled", "AbortError");
+  return {
+    summary: summaryTools.formatGrounded(
+      transcript,
+      summary,
+      template || "Meeting",
+    ),
+    summaryProvider: provider,
+    summaryRequestedProvider: requested,
+    summaryFallback: provider === "local-extractive",
+    summaryError: error,
+  };
+}
 function apiKey(provider) {
   if (provider && !Object.hasOwn(require("./cloud-speech").CATALOG, provider))
     throw Error("Unknown speech provider");
@@ -721,6 +777,13 @@ async function transcribeAndProcess(
     ...applyTone(store.data.settings, front),
     ...speechOptions,
   };
+  Object.assign(
+    settings,
+    require("./speech-preferences").normalizeSpeechPreferences(
+      settings,
+      speech.listModels(),
+    ),
+  );
   indicator(
     "processing",
     settings.speechProvider === "local"
@@ -829,34 +892,15 @@ async function transcribeAndProcess(
     }
   }
   if (kind === "note") {
-    let summary;
-    try {
-      summary = await chat(
-        settings,
-        [
-          {
-            role: "system",
-            content: summaryTools.prompt(
-              template || "Meeting",
-              settings.summaryLanguage,
-            ),
-          },
-          { role: "user", content: text },
-        ],
-        apiKey(),
-        { signal: activeProcess?.controller.signal },
-      );
-    } catch (e) {
-      assertProcessing();
-      summary = ai.extractiveSummary(text, template || "Meeting");
-      entry.warning = e.message;
-    }
+    const summaryResult = await generateNoteSummary(settings, text, template, {
+      signal: activeProcess?.controller.signal,
+    });
     assertProcessing();
-    summary = summaryTools.formatGrounded(text, summary, template || "Meeting");
+    if (summaryResult.summaryError) entry.warning = summaryResult.summaryError;
     const note = store.upsert("notes", {
       title: title || "Untitled meeting",
       transcript: text,
-      summary,
+      ...summaryResult,
       segments: result.segments,
       audioPath: entry.audioPath,
       template: template || "Meeting",
@@ -1417,32 +1461,18 @@ const actions = {
   "summarize-note": async ({ id }) => {
     const note = store.data.notes.find((n) => n.id === id);
     if (!note) throw Error("Note not found");
-    let summary;
-    try {
-      summary = await chat(
-        store.data.settings,
-        [
-          {
-            role: "system",
-            content: summaryTools.prompt(
-              note.template || "Meeting",
-              store.data.settings.summaryLanguage,
-            ),
-          },
-          { role: "user", content: note.transcript },
-        ],
-        apiKey(),
-      );
-    } catch {
-      summary = ai.extractiveSummary(note.transcript, note.template);
-    }
-    summary = summaryTools.formatGrounded(
+    const summaryResult = await generateNoteSummary(
+      store.data.settings,
       note.transcript,
-      summary,
-      note.template || "Meeting",
+      note.template,
+      { signal: activeProcess?.controller.signal },
     );
-    return actions["save-item"]({ kind: "notes", item: { ...note, summary } });
+    return actions["save-item"]({
+      kind: "notes",
+      item: { ...note, ...summaryResult },
+    });
   },
+  "summary-cli-status": () => require("./summary-cli").status(),
   "choose-command-files": async () => {
     const chosen = await dialog.showOpenDialog(window, {
       properties: ["openFile", "multiSelections"],

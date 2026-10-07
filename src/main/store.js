@@ -12,6 +12,8 @@ const SETTINGS = {
   speechCloudVersion: "2026-08-14",
   language: "auto",
   summaryLanguage: "en",
+  summaryProvider: "configured-ai",
+  summaryModel: "",
   translate: false,
   microphoneId: "default",
   microphonePriority: [],
@@ -211,6 +213,17 @@ class Store {
         !Object.hasOwn(require("./cloud-ai").PROVIDERS, v)
       )
         throw Error("Unknown AI provider");
+      if (
+        k === "summaryProvider" &&
+        !["configured-ai", "claude-cli"].includes(v)
+      )
+        throw Error("Unknown summary provider");
+      if (
+        k === "summaryModel" &&
+        (typeof v !== "string" ||
+          (v && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,119}$/.test(v)))
+      )
+        throw Error("Invalid summary model");
       if (k === "aiEndpoint" && v) require("./ai").endpoint(v);
       if (k === "hotkeys") {
         if (v.length > 30) throw Error("Too many hotkeys");

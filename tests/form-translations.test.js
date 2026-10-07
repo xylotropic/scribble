@@ -1,8 +1,8 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const forms=require('../src/shared/form-translations.js');
-test('every original form catalogue covers all 162 labels with matching parameters and plain text',()=>{
-  assert.equal(forms.labels.length,162);assert.equal(new Set(forms.labels).size,162);assert.deepEqual(forms.locales.slice().sort(),['en','bg','cs','de','es','fr','it','ja','ko','pl','pt','ru','sv','tr','uk','vi','zh','zh-TW'].sort());
+test('every original form catalogue covers all 166 labels with matching parameters and plain text',()=>{
+  assert.equal(forms.labels.length,166);assert.equal(new Set(forms.labels).size,166);assert.deepEqual(forms.locales.slice().sort(),['en','bg','cs','de','es','fr','it','ja','ko','pl','pt','ru','sv','tr','uk','vi','zh','zh-TW'].sort());
   const parameters=text=>[...text.matchAll(/\{[^}]+\}/g)].map(x=>x[0]).sort();
   for(const locale of forms.locales){assert.deepEqual(Object.keys(forms.catalogues[locale]),forms.labels);for(const label of forms.labels){const text=forms.translate(locale,label);assert.ok(text.trim(),`${locale}: ${label}`);assert.doesNotMatch(text,/<[^>]*>/);assert.deepEqual(parameters(text),parameters(label));if(label.endsWith('%'))assert.ok(text.endsWith('%'));if(locale==='en')assert.equal(text,label);}}
 });
@@ -28,8 +28,10 @@ test('settings descriptions and hints preserve technical facts and template vari
 });
 test('new prose is present rather than relying on fallback for every locale',()=>{
   const prose=forms.labels.filter(label=>label.length>100);
-  assert.equal(prose.length,10);
+  assert.equal(prose.length,11);
   for(const locale of forms.locales){for(const label of prose){assert.ok(Object.hasOwn(forms.catalogues[locale],label));if(locale!=='en')assert.notEqual(forms.catalogues[locale][label],label);}}
   assert.equal(forms.translate('es','Leave empty to use the selected text or clipboard.'),'Déjalo vacío para usar el texto seleccionado o el portapapeles.');
   assert.equal(forms.translate('ja','Keep a small ready indicator visible.'),'小さな待機インジケーターを表示しておきます。');
 });
+
+test('Claude summary disclosure names destination and CLI in every translated catalogue',()=>{const key='Use the configured language model or an already signed-in Claude subscription CLI. Claude summaries send transcript text to Anthropic and use subscription limits.';for(const locale of forms.locales){const value=forms.translate(locale,key);for(const token of ['Claude','Anthropic','CLI'])assert.ok(value.includes(token));if(locale!=='en')assert.notEqual(value,key);for(const label of ['Note summary provider','Claude summary model','Leave blank to use the installed CLI default.'])assert.ok(Object.hasOwn(forms.catalogues[locale],label));}});

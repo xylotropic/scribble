@@ -1,0 +1,35 @@
+# Optional Claude subscription summary provider
+
+`src/main/summary-cli.js` is an original optional adapter for **meeting summaries only**. It does not supply Command Mode, dictation enhancement, memory indexing, Notes Ask AI, or Codex. The app uses a separate summary-provider setting; global AI configuration remains independent.
+
+[Vowen's official summary documentation](https://docs.vowen.ai/meeting-notes/summaries) describes installed, already signed-in CLI summary providers with tools disabled and text-only input. Its Ask AI documentation does not explicitly establish CLI support. This implementation does not reuse Vowen code.
+
+## Interface and availability
+
+`await status(options)` runs the selected executable's `--help`, `--version`, and read-only `auth status`, with output/time bounds and an isolated temporary working directory. Every required isolation flag must appear in that installed executable's help. Version text alone cannot mark a provider available. It returns `{available,binary,version,authentication:'claude.ai',inferenceVerified:false}` or `{available:false,reason}`. Availability requires supported flags and successful read-only authentication metadata identifying `authMethod:"claude.ai"`. Other or ambiguous authentication is refused. No login, credential-file/keychain inspection, or inference is performed.
+
+`await summarize({transcript,prompt,model,signal,...options})` returns `{text,provider:'claude-cli',model,cliVersion}`. The documented `claude auth status` command returns JSON by default and exits successfully when signed in. Only its nonsecret `authMethod` field is retained; raw metadata such as account email is not returned or logged. `api_key`, `api_key_helper`, `oauth_token`, `third_party`, `none`, missing fields, invalid JSON, and failed status commands are refused. No caller boolean or version string can substitute for this evidence. The adapter rechecks it before each summary and never signs users in or falls back to API authentication. See the [official CLI authentication-status schema](https://code.claude.com/docs/en/cli-reference).
+
+Input limits are 500,000 transcript characters and 20,000 prompt characters. Optional models are restricted to a bounded identifier. Timeout defaults to 180 seconds, configurable from 1–600 seconds. Output is capped at 1 MiB and summary text at 100,000 characters. Authentication/provider failures, malformed JSON, unsuccessful result subtypes, empty summaries, timeout, or cancellation throw errors without silent fallback.
+
+## Invocation safeguards and limitations
+
+The adapter uses `spawn` with `shell:false`, a fresh empty temporary working directory, and transcript stdin. Trusted summary instructions are the system-prompt argument; transcript content never becomes shell text or command-line options. Flags include `--safe-mode`, `--restricted`, empty `--tools`, wildcard `--disallowedTools`, strict empty MCP configuration, disabled slash commands/Chrome, disabled hooks, no session persistence, no permission prompts, and one turn. See the [official Claude CLI reference](https://code.claude.com/docs/en/cli-reference).
+
+**It deliberately does not use `--bare`.** Current [programmatic Claude documentation](https://code.claude.com/docs/en/headless) says bare mode does not read OAuth/keychain subscription credentials. Safe mode preserves ordinary authentication. API-token/key, cloud-provider-selection, and related model-provider environment variables are stripped; the existing home/config/keychain remain available to the user's installed CLI. Credentials are never copied.
+
+Known macOS managed-settings JSON/directory, managed-MCP, and managed-preference locations cause refusal when present or unreadable. Other platforms are refused until policy discovery is implemented. Current [Claude hook documentation](https://code.claude.com/docs/en/hooks) says per-run hook disabling cannot disable administrator-managed hooks. These local checks cannot prove absence of remotely delivered or undiscovered managed policy. Do not enable this adapter on a managed account unless independent policy verification establishes no executable managed hooks or other unsupported side effects. The adapter is not an OS-level sandbox, and ephemeral sessions do not guarantee that the CLI never writes its own authentication refresh, diagnostics, or cache metadata. They prevent model-directed document writes and retained conversation sessions under the documented CLI behavior.
+
+Cancellation/timeout terminates the process, escalates to SIGKILL if necessary, waits for process closure, and removes the temporary directory. The adapter does not request paid credits, retries, installs, updates, or cloud-provider fallback. Actual summary requests consume the selected subscription's usage limits and may interact with account-level extra-usage settings; no unlimited-free claim is made.
+
+## Verification
+
+Claude was not installed in the current local PATH during implementation. No real Claude inference, login, installation, or cloud request was performed. Authentication-status schema tests use mocks because the executable is absent. Tests use injected help/result responses for capability checks, flag construction, JSON errors, input bounds, cancellation, environment stripping, policy refusal, and cleanup. A generated synthetic executable exercises the real spawn timeout path without contacting a service. Runtime model accuracy and actual account access remain unverified. The optional injectable runner, environment, policy access, and paths are internal test seams; do not expose them as arbitrary user-controlled IPC inputs.
+
+## Note-summary integration
+
+Main process settings persist `summaryProvider` (`configured-ai`, the default, or `claude-cli`) and an optional bounded `summaryModel` identifier. These settings do not change global AI configuration. One `generateNoteSummary` dispatcher handles both newly transcribed meeting notes and `summarize-note` regeneration. The read-only `summary-cli-status` action exposes availability without accepting executable paths, environment overrides, runners, or policy-test seams through IPC.
+
+Each saved note records the actual `summaryProvider`, requested `summaryRequestedProvider`, boolean `summaryFallback`, and `summaryError`. Existing local extractive fallback remains available when the selected provider fails, but it is explicitly recorded as `local-extractive` with the provider error. No other cloud provider is attempted. Cancellation propagates instead of publishing a fallback or saving a late result. Existing deterministic grounded formatting still applies. Global enhancement, Command Mode, and memory remain on the configured AI route.
+
+Derived file/tone speech preferences are normalized against the current model registry immediately before inference. Unsupported language hints reset to `auto`, and unsupported translation resets to false for Parakeet/catalog engines. This modifies only the derived invocation, preserving stored global preferences.
