@@ -53,13 +53,17 @@ const esc = (v) =>
         c
       ],
   );
+const interfaceLabel = (label) => {
+  const key = Object.keys(ScribbleI18n.catalogues.en).find((key) => ScribbleI18n.catalogues.en[key] === label);
+  return key ? ScribbleI18n.t(state?.settings.locale, key) : label;
+};
 const date = (v) =>
-    new Date(v).toLocaleDateString(undefined, {
+    new Date(v).toLocaleDateString(ScribbleI18n.formattingLocale(state?.settings.locale), {
       month: "short",
       day: "numeric",
     }),
   time = (v) =>
-    new Date(v).toLocaleTimeString(undefined, {
+    new Date(v).toLocaleTimeString(ScribbleI18n.formattingLocale(state?.settings.locale), {
       hour: "numeric",
       minute: "2-digit",
     }),
@@ -240,7 +244,7 @@ async function request(action, args) {
   }
 }
 function button(label, action, ico, cls = "", data = "") {
-  return `<button type="button" class="${cls}" data-action="${action}" ${data}>${ico ? icon(ico) : ""}${label}</button>`;
+  return `<button type="button" class="${cls}" data-action="${action}" ${data}>${ico ? icon(ico) : ""}${interfaceLabel(label)}</button>`;
 }
 function field(name, label, value = "", type = "text", hint = "") {
   return `<label class="field">${label}<input name="${name}" type="${type}" value="${esc(value)}" ${type === "password" ? 'autocomplete="off"' : ""}>${hint ? `<small>${hint}</small>` : ""}</label>`;
@@ -318,18 +322,20 @@ function render() {
   const active = document.activeElement,
     focus = active?.dataset?.focus,
     selection = active?.selectionStart;
+  document.documentElement.lang = ScribbleI18n.resolveLocale(state.settings.locale);
+  document.documentElement.dir = "ltr";
   document.body.classList.toggle("dark", state.settings.theme === "dark");
   const nav = (keys) =>
     keys
       .map(
         (k) =>
-          `<button class="nav-button ${page === k ? "active" : ""}" data-action="navigate" data-page="${k}">${icon(pages[k][1])}${pages[k][0]}</button>`,
+          `<button class="nav-button ${page === k ? "active" : ""}" data-action="navigate" data-page="${k}">${icon(pages[k][1])}${esc(interfaceLabel(pages[k][0]))}</button>`,
       )
       .join("");
   $("#sidebar").innerHTML =
     `<div class="brand"><div class="brand-mark">${icon("mic")}</div><div>Scribble<small>VOICE WORKSPACE</small></div></div><div class="nav-section">${nav(["home", "notes", "transcribe", "shortcuts", "command", "dictionary", "utilities"])}</div><div class="nav-section"><div class="nav-label">Make it yours</div>${nav(["models", "ai", "tones", "memory"])}</div><div class="sidebar-bottom nav-section">${nav(["settings", "help"])}<div class="local-card">${icon("shield")}<div>Local by default.<br>Your voice stays yours.</div></div></div>`;
   $("#header").innerHTML =
-    `<div class="breadcrumb">Workspace <span>/</span> <strong>${pages[page][0]}</strong></div><div class="header-actions"><span class="pill optional"><i class="dot ${state.speechStatus.ready ? "" : "warn"}"></i>${esc(state.settings.speechProvider === "local" ? state.settings.modelId : state.settings.speechProvider)}</span>${button("Search workspace", "workspace-palette", "search", "ghost small")}${button("", "theme", state.settings.theme === "dark" ? "sun" : "moon", "ghost icon", 'title="Toggle appearance"')}${button("Dictate", "record", "mic", "primary")}</div>`;
+    `<div class="breadcrumb">Workspace <span>/</span> <strong>${esc(interfaceLabel(pages[page][0]))}</strong></div><div class="header-actions"><span class="pill optional"><i class="dot ${state.speechStatus.ready ? "" : "warn"}"></i>${esc(state.settings.speechProvider === "local" ? state.settings.modelId : state.settings.speechProvider)}</span>${button("Search workspace", "workspace-palette", "search", "ghost small")}${button("", "theme", state.settings.theme === "dark" ? "sun" : "moon", "ghost icon", 'title="Toggle appearance"')}${button("Dictate", "record", "mic", "primary")}</div>`;
   $("#content").innerHTML = {
     home: renderHome,
     notes: renderNotes,
@@ -442,7 +448,7 @@ function renderHome() {
     )
     .join(
       "",
-    )}</div><div class="grid two"><div class="card" data-card="activity"><div class="section-heading"><h3>Finding your rhythm</h3><span class="caps">Last 7 days</span></div><div class="chart">${daily.length ? daily.map((x) => `<div class="chart-bar" title="${x.date}: ${x.words} words" data-height="${Math.max(3, (x.words / max) * 90)}"></div>`).join("") : '<p class="muted">Your daily activity appears after the first dictation.</p>'}</div><div class="chart-labels">${daily.map((x) => `<span>${new Date(x.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" })}</span>`).join("")}</div></div><div class="card"><div class="section-heading"><h3>Ready when you are</h3>${icon("shield")}</div><p class="muted">A private microphone, a local model, a shortcut. That’s all you need.</p><div class="row wrap">${button("Check permissions", "check-permissions", "shield")}${button("Speech models", "navigate", "model", "ghost", 'data-page="models"')}</div><p class="tip">No account, subscription, or transcription limit.</p></div></div><div class="section-heading"><h2>Voice log</h2><div class="tabs">${["overview", "history"].map((t) => button(t === "history" ? "All history" : "Recent", "home-tab", "", tab === t ? "active" : "", `data-tab="${t}"`)).join("")}</div></div>${
+    )}</div><div class="grid two"><div class="card" data-card="activity"><div class="section-heading"><h3>Finding your rhythm</h3><span class="caps">Last 7 days</span></div><div class="chart">${daily.length ? daily.map((x) => `<div class="chart-bar" title="${x.date}: ${x.words} words" data-height="${Math.max(3, (x.words / max) * 90)}"></div>`).join("") : '<p class="muted">Your daily activity appears after the first dictation.</p>'}</div><div class="chart-labels">${daily.map((x) => `<span>${new Date(x.date + "T12:00:00").toLocaleDateString(ScribbleI18n.formattingLocale(state?.settings.locale), { weekday: "short" })}</span>`).join("")}</div></div><div class="card"><div class="section-heading"><h3>Ready when you are</h3>${icon("shield")}</div><p class="muted">A private microphone, a local model, a shortcut. That’s all you need.</p><div class="row wrap">${button("Check permissions", "check-permissions", "shield")}${button("Speech models", "navigate", "model", "ghost", 'data-page="models"')}</div><p class="tip">No account, subscription, or transcription limit.</p></div></div><div class="section-heading"><h2>Voice log</h2><div class="tabs">${["overview", "history"].map((t) => button(t === "history" ? "All history" : "Recent", "home-tab", "", tab === t ? "active" : "", `data-tab="${t}"`)).join("")}</div></div>${
     tab === "history"
       ? `${select(
           "historyKind",
@@ -651,7 +657,7 @@ function renderSettings() {
   };
   let body = "";
   if (settingsTab === "general")
-    body = `<h2>A workspace that fits.</h2>${setting("Your name", "Used only for your dashboard greeting.", "name", "text")}${setting(
+    body = `<h2>A workspace that fits.</h2>${setting("Interface language", "Choose the language for navigation, common actions and dates.", "locale", "select", ScribbleI18n.locales.map((locale) => [locale.id, locale.name]))}${setting("Your name", "Used only for your dashboard greeting.", "name", "text")}${setting(
       "Appearance",
       "Choose the look of your workspace.",
       "theme",

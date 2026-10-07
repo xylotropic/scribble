@@ -170,6 +170,7 @@ async function fixture(
       this.onstop?.();
     }
   };
+  w.eval(fs.readFileSync(path.join(__dirname, "../src/shared/i18n.js"), "utf8"));
   w.eval(
     fs.readFileSync(path.join(__dirname, "../src/renderer/app.js"), "utf8"),
   );
@@ -769,4 +770,21 @@ test('fixed-language models show an accurate disabled dictation selector', optio
   h.data.models.push({ id:'multilingual', name:'Multilingual' });
   h.emit('state', h.data);
   assert.equal(h.w.document.querySelector('[data-setting="language"]').disabled, false);
+});
+
+test('interface language changes navigation and common actions without changing speech or command draft', options, async (t) => {
+  const h = await fixture(t);
+  await h.click('[data-page="command"]');
+  h.input('#command-text', 'Keep this unsent request');
+  await h.click('[data-page="settings"]');
+  const language = h.w.document.querySelector('[data-setting="locale"]');
+  language.value = 'ja';
+  language.dispatchEvent(new h.w.Event('change', { bubbles:true }));
+  await flush();
+  assert.equal(h.data.settings.locale, 'ja');
+  assert.equal(h.data.settings.language, 'auto');
+  assert.equal(h.w.document.documentElement.lang, 'ja');
+  assert.equal(h.w.document.querySelector('[data-page="home"]').textContent.trim(), 'ホーム');
+  await h.click('[data-page="command"]');
+  assert.equal(h.w.document.querySelector('#command-text').value, 'Keep this unsent request');
 });

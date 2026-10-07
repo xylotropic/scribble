@@ -1,0 +1,9 @@
+# Interface localization
+
+Scribble includes independently authored labels in18 interface languages: English, Bulgarian, Czech, German, Spanish, French, Italian, Japanese, Korean, Polish, Portuguese, Russian, Swedish, Turkish, Ukrainian, Vietnamese, Simplified Chinese and Traditional Chinese. No translations from the reference application were copied.
+
+Settings → General → Interface language changes navigation, common action labels and date/time formatting immediately. The choice is separate from transcription and summary language. Unsupported saved locale values are rejected. Portuguese formatting uses pt-BR and Simplified Chinese uses zh-CN. All current interface locales use left-to-right layout.
+
+The shared browser/CommonJS module returns plain text; consumers must escape HTML or use textContent. It provides fallback, parameter substitution, locale formatting and plural rules. User transcripts and custom names are not translated.
+
+Coverage remains partial:37 shared labels are translated; full page descriptions, form labels, dialogs, tray/application menus, notifications and overlay text still require migration. The language selector does not imply full interface parity. Tests cover browser isolation, catalogue coverage, formatting, plural rules, hostile parameters and immediate Japanese navigation switching while preserving an unsent command and speech language. Packaged desktop switching remains unverified.

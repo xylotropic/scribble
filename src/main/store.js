@@ -185,6 +185,7 @@ class Store {
           patch.microphonePriority.length)
     )
       throw Error("Invalid microphone priority");
+    if (patch.locale !== undefined && !require("../shared/i18n").locales.some((locale) => locale.id === patch.locale)) throw Error("Unsupported interface language");
     for (const [k, v] of Object.entries(patch)) {
       if (!Object.hasOwn(SETTINGS, k)) throw Error("Unknown preference: " + k);
       if (
