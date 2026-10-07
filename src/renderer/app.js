@@ -568,7 +568,7 @@ function renderNotes() {
   return `${heading("Keep the conversation", "Notes, without the busywork.", "Record a meeting, capture ideas, or import a recording. Keep the audio, transcript, and notes together.", button("Import", "import-note", "upload") + button("Take notes", "new-note", "mic", "primary"))}${!notes.length ? `<div class="card">${empty("notes", "Nothing lost. Everything remembered.", "Capture microphone and meeting audio, then get a local summary and editable notes.", button("Start a note", "new-note", "plus", "primary"))}</div>` : `<div class="split"><div><input id="search" class="search" data-focus="search" value="${esc(search)}" placeholder="Search notes…">${notes.map((n) => `<button class="note-item ${n.id === selectedNote ? "active" : ""}" data-action="select-note" data-id="${n.id}"><strong class="truncate">${esc(n.title)}</strong><small>${date(n.createdAt)} · ${clock(n.duration || 0)}</small></button>`).join("")}</div><div class="card"><div class="row between"><h2>${esc(note.title)}</h2>${button("", "edit-note-title", "edit", "ghost icon", `data-id="${note.id}"`)}</div><div class="row wrap"><span class="badge">${esc(note.template || "Meeting")}</span>${button("Regenerate", "summarize-note", "spark", "small", `data-id="${note.id}"`)}${button("Export", "export-note", "download", "small", `data-id="${note.id}"`)}${button("Delete", "delete", "trash", "danger small", `data-id="${note.id}" data-kind="notes"`)}</div>${note.summaryDraft ? '<p class="smallprint">AI summary draft. Review its wording against the quoted transcript evidence.</p>' : ""}${note.summaryFallback ? `<p class="notice" role="status">Local extractive notes used because the selected summary provider failed: ${esc(note.summaryError || "Provider unavailable")}</p>` : note.summaryProvider ? `<p class="smallprint">Summary provider: ${esc(note.summaryProvider)}</p>` : ""}${note.audioPath ? `<audio controls preload="none" src="scribble-audio://recording/${note.id}"></audio>` : ""}<div class="tabs">${["summary", "transcript", "personal"].map((t) => button(t === "personal" ? "My notes" : t[0].toUpperCase() + t.slice(1), "note-tab", "", noteTab === t ? "active" : "", `data-tab="${t}"`)).join("")}</div><textarea class="editor" id="note-editor" data-focus="note-editor" data-id="${note.id}" data-field="${noteTab === "summary" ? "summary" : noteTab === "transcript" ? "transcript" : "personalNotes"}" placeholder="Your own notes, decisions, or follow-ups…">${esc(noteTab === "summary" ? note.summary : noteTab === "transcript" ? note.transcript : note.personalNotes || "")}</textarea><div class="smallprint">Edits save automatically on this Mac.</div></div></div>`}`;
 }
 function renderShortcuts() {
-  return `${heading("A phrase. An action.", "Your voice is a shortcut.", "Search the web, launch an app, or open a folder. Built-in shortcuts work without an AI provider.", button("Add shortcut", "add-item", "plus", "primary", 'data-kind="shortcuts"'))}<div class="banner">Say “google best coffee near me” while dictating. Scribble routes the phrase instead of typing it.</div><div class="card">${state.shortcuts.map((s) => `<div class="list-row"><span class="list-icon">${icon(s.type === "folder" ? "folder" : "shortcut")}</span><div class="body"><strong>${esc(s.name || s.trigger)}</strong><p><span class="shortcut-trigger">${esc(s.trigger)}</span> ${esc(s.target === "navigate" ? "Open a spoken website" : s.target === "folder" ? "Open a common folder" : s.target)}</p></div>${s.builtin ? '<span class="badge">BUILT-IN</span>' : ""}<input type="checkbox" data-toggle-kind="shortcuts" data-id="${s.id}" ${s.enabled !== false ? "checked" : ""} aria-label="Enable ${esc(s.name)}">${!s.builtin ? button("", "edit-item", "edit", "ghost icon", `data-kind="shortcuts" data-id="${s.id}"`) + button("", "delete", "trash", "ghost icon danger", `data-kind="shortcuts" data-id="${s.id}"`) : ""}</div>`).join("")}</div><div class="card"><h3>Try a shortcut</h3><div class="row"><input class="inline-input" id="shortcut-test" placeholder="google public hiking trails">${button("Run", "test-shortcut", "play")}</div><p class="tip">Running a shortcut opens the selected app, folder, or browser destination.</p></div>`;
+  return `${heading("A phrase. An action.", "Your voice is a shortcut.", "Search the web, launch an app, or open a folder. Built-in shortcuts work without an AI provider.", button("Add shortcut", "add-item", "plus", "primary", 'data-kind="shortcuts"'))}<div class="banner">Say “google best coffee near me” while dictating. Scribble routes the phrase instead of typing it.</div><div class="card">${state.shortcuts.map((s) => `<div class="list-row"><span class="list-icon">${icon(s.type === "folder" ? "folder" : "shortcut")}</span><div class="body"><strong>${esc(s.name || s.trigger)}</strong><p><span class="shortcut-trigger">${esc(s.trigger)}</span> ${esc(shortcutDescription(s))}</p></div>${s.builtin ? '<span class="badge">BUILT-IN</span>' : ""}<input type="checkbox" data-toggle-kind="shortcuts" data-id="${s.id}" ${s.enabled !== false ? "checked" : ""} aria-label="Enable ${esc(s.name)}">${!s.builtin ? button("", "edit-item", "edit", "ghost icon", `data-kind="shortcuts" data-id="${s.id}"`) + button("", "delete", "trash", "ghost icon danger", `data-kind="shortcuts" data-id="${s.id}"`) : ""}</div>`).join("")}</div><div class="card"><h3>Try a shortcut</h3><div class="row"><input class="inline-input" id="shortcut-test" placeholder="google public hiking trails">${button("Run", "test-shortcut", "play")}</div><p class="tip">Running a shortcut opens the selected app, folder, or browser destination.</p></div>`;
 }
 function renderCommand() {
   return `${heading("Say what should happen", "Command Mode.", "Transform selected text, set a timer, or ask your own language model. Review a result before inserting it.")}<div class="card"><p class="eyebrow">Hold ⌥ ⌃ Space for a voice command</p><label class="field">What would you like to do?<input id="command-text" value="${esc(commandDraft)}" placeholder="Make this more concise, set a timer for 5 minutes…"></label>${area("command-context", "Text to work with", commandTextContext, "Leave empty to use the selected text or clipboard.")}<div class="row wrap">${["Clean up", "Formal", "Polish", "Summarize", "Bullets", "Email"].map((label) => button(label, "command-preset", "", "small", `data-preset="${label}"`)).join("")}</div><div class="row">${button("Choose context files", "command-files", "upload")}${button("Capture screen context", "command-screen", "image")}${commandAttachments.sources.length ? button("Clear files", "clear-command-files", "close", "ghost") + `<span class="muted">${commandAttachments.sources.map((source) => esc(source.name)).join(", ")}</span>` : ""}${button("Run command", "run-command", "spark", "primary")}${button("Speak a command", "record-command", "mic")}<span class="muted">Local utilities are ready. AI commands use your configured provider.</span></div>${commandResult ? `<div class="command-panel"><div class="command-result" id="command-result" tabindex="0">${esc(commandResult.text)}</div><div class="row">${button("Copy", "copy-command", "copy")}${commandResult.kind === "text" ? button("Insert", "paste-command", "arrow", "primary") : ""}</div>${commandResult.kind === "text" ? `<label class="field">Refine this result<input id="refine-command" placeholder="Make it shorter, change the tone…"></label>${button("Refine", "refine-command", "spark", "small")}` : ""}<p class="smallprint">Focus the result and press Tab to insert, or Escape to dismiss.</p></div>` : ""}</div>${state.timers.length ? `<div class="section-heading"><h2>Timers</h2></div><div class="grid three">${state.timers.map((t) => `<div class="card"><h3>${esc(t.title)}</h3><p class="number">${clock(Math.max(0, (t.endsAt - Date.now()) / 1000))}</p>${button("Cancel", "cancel-timer", "close", "small", `data-id="${t.id}"`)}</div>`).join("")}</div>` : ""}<div class="section-heading"><h2>A few things to try</h2></div><div class="grid three">${[
@@ -847,6 +847,78 @@ document.addEventListener("mousedown", (event) => {
   if (event.target.closest('[data-action="rich-format"]'))
     event.preventDefault();
 });
+function shortcutDrafts(item) {
+  const actions = Array.isArray(item.actions) ? item.actions : item.target || item.url ? [item.type === "app" ? {type:"application", name:item.target, folder:item.folder || ""} : item.type === "folder" ? {type:"folders", paths:[item.target]} : {type:"websites", urls:[item.target || item.url], profile:item.profile || ""}] : [];
+  return actions.map(action => ({type:action.type, urlsText:(action.urls || []).join("\n"), profile:action.profile || "", name:action.name || "", folder:action.folder || "", pathsText:(action.paths || []).join("\n")}));
+}
+function shortcutActionHTML(actions) {
+  const titles = {websites:"Open websites", application:"Open an application", folders:"Open folders"};
+  const input = (key,label,value,hint="",multiline=false) => `<label class="field">${esc(interfaceLabel(label))}${multiline ? `<textarea data-shortcut-field="${key}">${esc(value)}</textarea>` : `<input data-shortcut-field="${key}" value="${esc(value)}">`}${hint ? `<small>${esc(hint)}</small>` : ""}</label>`;
+  return actions.map((action,index) => `<section class="card" data-shortcut-action="${index}" data-shortcut-type="${esc(action.type)}" aria-label="Action ${index + 1}"><div class="row between"><h3>${index + 1}. ${esc(interfaceLabel(titles[action.type] || "Unsupported action"))}</h3><div class="row">${button("↑","shortcut-action-up","","small",`data-index="${index}" aria-label="Move action ${index + 1} up" ${index === 0 ? "disabled" : ""}`)}${button("↓","shortcut-action-down","","small",`data-index="${index}" aria-label="Move action ${index + 1} down" ${index === actions.length - 1 ? "disabled" : ""}`)}${button("Remove","shortcut-action-remove","close","small",`data-index="${index}" aria-label="Remove action ${index + 1}"`)}</div></div>${action.type === "websites" ? input("urlsText","Websites, one per line",action.urlsText,"Up to 16 websites. Use {{text}} to insert the spoken query.",true) + input("profile","Chrome profile directory (optional)",action.profile,"Use Default or Profile N, such as Profile 1. Leave blank for Chrome's normal launch behavior.") : action.type === "application" ? input("name","Application name",action.name) + input("folder","Open a folder with this application (optional)",action.folder,"Use an absolute folder path or ~/ for your home folder.") : action.type === "folders" ? input("pathsText","Folders, one per line",action.pathsText,"Up to 16 absolute folder paths or ~/ paths.",true) : '<p>Remove this unsupported action before saving.</p>'}</section>`).join("");
+}
+function readShortcutDrafts() {
+  return $$("#shortcut-actions [data-shortcut-action]").map(block => {
+    const draft = {type:block.dataset.shortcutType};
+    block.querySelectorAll("[data-shortcut-field]").forEach(input => { draft[input.dataset.shortcutField] = input.value; });
+    return draft;
+  });
+}
+function updateShortcutActionControls(actions) {
+  $("#shortcut-actions").innerHTML = shortcutActionHTML(actions);
+  $("#shortcut-action-count").textContent = `${actions.length} / 32 actions`;
+  $$('#modal [data-action="shortcut-action-add"]').forEach(button => { button.disabled = actions.length >= 32; });
+}
+function editShortcutAction(button,action) {
+  if (!$("#shortcut-actions")) return;
+  const drafts = readShortcutDrafts();
+  let focusIndex = Number(button.dataset.index);
+  if (action === "shortcut-action-add") {
+    if (drafts.length >= 32) throw Error("A shortcut can contain up to 32 actions.");
+    if (!["websites","application","folders"].includes(button.dataset.actionType)) return;
+    drafts.push({type:button.dataset.actionType,urlsText:"",profile:"",name:"",folder:"",pathsText:""});
+    focusIndex = drafts.length - 1;
+  } else {
+    if (!Number.isInteger(focusIndex) || focusIndex < 0 || focusIndex >= drafts.length) return;
+    if (action === "shortcut-action-remove") drafts.splice(focusIndex,1);
+    else {
+      const other = focusIndex + (action === "shortcut-action-up" ? -1 : 1);
+      if (other < 0 || other >= drafts.length) return;
+      [drafts[focusIndex],drafts[other]] = [drafts[other],drafts[focusIndex]];
+      focusIndex = other;
+    }
+  }
+  updateShortcutActionControls(drafts);
+  const blocks = $$("#shortcut-actions [data-shortcut-action]");
+  blocks[Math.min(focusIndex,blocks.length - 1)]?.querySelector("[data-shortcut-field]")?.focus();
+}
+function shortcutActionsForSave() {
+  const drafts = readShortcutDrafts();
+  if (!drafts.length || drafts.length > 32) throw Error("Add between 1 and 32 actions to this shortcut.");
+  const list = (value,label) => {
+    const entries = (value || "").split(/\r?\n/).map(value=>value.trim()).filter(Boolean);
+    if (!entries.length || entries.length > 16) throw Error(`${label} must contain between 1 and 16 entries.`);
+    return entries;
+  };
+  return drafts.map(draft => {
+    if (draft.type === "websites") {
+      const profile = draft.profile.trim();
+      if (!/^$|^Default$|^Profile [0-9]{1,6}$/.test(profile)) throw Error("Chrome profile must be blank, Default, or Profile N (for example Profile 1).");
+      return {type:"websites",urls:list(draft.urlsText,"Websites"),profile};
+    }
+    if (draft.type === "folders") return {type:"folders",paths:list(draft.pathsText,"Folders")};
+    if (draft.type === "application") {
+      const name = draft.name.trim(), folder = draft.folder.trim();
+      if (!name) throw Error("Enter an application name.");
+      if (folder && !folder.startsWith("/") && !folder.startsWith("~/") && folder !== "~") throw Error("Use an absolute folder path or ~/ for the application folder.");
+      return {type:"application",name,folder};
+    }
+    throw Error("Remove unsupported actions before saving.");
+  });
+}
+function shortcutDescription(shortcut) {
+  if (Array.isArray(shortcut.actions)) return shortcut.actions.map(action => action.type === "websites" ? action.urls?.join(", ") : action.type === "application" ? action.name : action.paths?.join(", ")).filter(Boolean).join(" · ");
+  return shortcut.target === "navigate" ? "Open a spoken website" : shortcut.target === "folder" ? "Open a common folder" : shortcut.target;
+}
 function editItem(kind, id) {
   const item = state[kind].find((x) => x.id === id) || {};
   let html;
@@ -899,26 +971,7 @@ function editItem(kind, id) {
           "",
         )}</div><div id="rich-editor" class="editor" contenteditable="true" role="textbox" aria-label="Replacement text"></div><small>Formatting is included when inserting through the clipboard. AI cleanup returns plain text. Variables: {date}, {time}, {clipboard}, {selection}.</small></label>`;
   if (kind === "shortcuts")
-    html =
-      field("name", "Name", item.name) +
-      field("trigger", "Trigger phrase", item.trigger) +
-      select(
-        "type",
-        "Action",
-        [
-          ["url", "Open a website"],
-          ["app", "Open an application"],
-          ["folder", "Open a folder"],
-        ],
-        item.type || "url",
-      ) +
-      field(
-        "target",
-        "Website, application name, or absolute folder path",
-        item.target,
-        "text",
-        "Use {{text}} in a URL to insert the spoken query.",
-      );
+    html = field("name", "Name", item.name) + field("trigger", "Trigger phrase", item.trigger) + `<label class="field">Aliases (comma-separated)<input name="aliases" value="${esc(Array.isArray(item.aliases) ? item.aliases.join(", ") : item.aliases || "")}"></label><h3>Actions</h3><p class="tip">Actions run in the numbered order. Websites open in Google Chrome.</p><div class="row wrap">${button("Add websites","shortcut-action-add","plus","small",'data-action-type="websites"')}${button("Add application","shortcut-action-add","plus","small",'data-action-type="application"')}${button("Add folders","shortcut-action-add","plus","small",'data-action-type="folders"')}</div><p id="shortcut-action-count" class="smallprint" role="status"></p><div id="shortcut-actions" class="stack"></div>`;
   if (kind === "tones")
     html =
       field("name", "Tone name", item.name) +
@@ -978,6 +1031,10 @@ function editItem(kind, id) {
         values.replacement = editor.innerText || editor.textContent;
         values.html = safeRichHTML(editor.innerHTML);
       }
+      if (kind === "shortcuts") {
+        values.actions = shortcutActionsForSave();
+        values.aliases = (values.aliases || "").split(",").map(value=>value.trim()).filter(Boolean);
+      }
       if (kind === "dictionary")
         values.aliases = values.aliases
           .split(",")
@@ -1001,6 +1058,7 @@ function editItem(kind, id) {
       toast("Saved locally.");
     },
   );
+  if (kind === "shortcuts") updateShortcutActionControls(shortcutDrafts(item));
   if (kind === "threads" || kind === "expansions")
     $("#rich-editor").innerHTML = safeRichHTML(
       item.html || "<p>" + esc(item.replacement || "") + "</p>",
@@ -1368,6 +1426,10 @@ document.addEventListener("click", async (e) => {
     id = b.dataset.id,
     kind = b.dataset.kind;
   try {
+    if (["shortcut-action-add","shortcut-action-remove","shortcut-action-up","shortcut-action-down"].includes(a)) {
+      editShortcutAction(b,a);
+      return;
+    }
     if (a === "rich-format") {
       const command = b.dataset.command;
       if (

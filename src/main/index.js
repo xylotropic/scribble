@@ -394,6 +394,7 @@ async function beginRecording(mode = "dictation", toneId) {
   emit("recording-control", { action: "start", mode });
   indicator("starting", "Starting microphone…");
 }
+const { launchChromeWebsites } = require("./chrome-launch");
 async function openUrl(url) {
   const parsed = new URL(url);
   if (!["http:", "https:", "mailto:"].includes(parsed.protocol))
@@ -517,11 +518,21 @@ async function runShortcut(text) {
   const match = domain.matchShortcut(text, store.data.shortcuts);
   if (!match) return null;
   const shortcut = match.shortcut || match;
+  if (!shortcut.builtin) {
+    const plan = require("./shortcut-actions").planShortcutActions(shortcut, match.query || "");
+    if (!plan) return null;
+    await require("./shortcut-execution").executeShortcutPlan(plan.actions, {
+      openWebsites: launchChromeWebsites,
+      launchApplication,
+      openFolder: (folder) => shell.openPath(folder),
+    });
+    return { action: shortcut.name || shortcut.trigger, query: match.query || "" };
+  }
   let query =
     match.query ?? match.text ?? text.slice(shortcut.trigger.length).trim();
   const target = shortcut.target || shortcut.url;
   if (target === "navigate") {
-    const url = voiceRouting.resolveWebsite(query);
+    const url = voiceRouting.resolveWebsite(query, "", { allowMailto: true });
     if (!url) return null;
     await openUrl(url);
   } else if (target === "folder") {
@@ -579,9 +590,9 @@ function armTimer(entry) {
     ),
   );
 }
-async function launchApplication(name) {
+async function launchApplication(name, folder = "") {
   await new Promise((resolve, reject) => {
-    const child = spawn("/usr/bin/open", ["-a", name]);
+    const child = spawn("/usr/bin/open", ["-a", name, ...(folder ? [folder] : [])]);
     child.on("error", reject);
     child.on("exit", (code) =>
       code ? reject(Error("Application could not be opened")) : resolve(),

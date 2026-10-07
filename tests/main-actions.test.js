@@ -8,7 +8,7 @@ const test = require("node:test"),
 const { createRequire } = require("node:module");
 const mainPath = path.resolve(__dirname, "../src/main/index.js"),
   localRequire = createRequire(mainPath);
-function harness(t, { chat, transcribe, summaryCLI, shell, models = [] } = {}) {
+function harness(t, { chat, transcribe, summaryCLI, shell, chromeLauncher, spawn, models = [] } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scribble-actions-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { Store } = localRequire("./store"),
@@ -51,7 +51,11 @@ function harness(t, { chat, transcribe, summaryCLI, shell, models = [] } = {}) {
   };
   const context = {
     require: (name) =>
-      name === "./summary-cli"
+      name === "./chrome-launch" && chromeLauncher
+        ? { launchChromeWebsites: chromeLauncher }
+        : name === "node:child_process" && spawn
+        ? { ...localRequire(name), spawn }
+        : name === "./summary-cli"
         ? (summaryCLI || localRequire(name))
         : name === "./ai-runtime"
         ? { ensureLocalAI: async () => ({}), closeLocalAI: async () => ({}) }
@@ -427,7 +431,7 @@ test('folder shortcut resolves Applications and surfaces OS opening errors', asy
  const calls=[];const h=harness(t,{shell:{openPath:async p=>{calls.push(p);return 'Folder unavailable';}}});
  await assert.rejects(h.runShortcut('open the Applications folder'),/Folder unavailable/);
  assert.deepEqual(calls,['/Applications']);
- assert.equal(await h.runShortcut('navigate to mailto:user@example.com'),null);
+ assert.equal(await h.runShortcut('navigate to invalid'),null);
 });
 test('command routing respects disabled builtin families and custom invalid targets', async t=>{
  const calls=[];const h=harness(t,{shell:{openPath:async p=>{calls.push(p);return '';}}});
@@ -437,4 +441,13 @@ test('command routing respects disabled builtin families and custom invalid targ
  h.store.data.shortcuts.push({id:'custom-invalid',trigger:'navigate to',type:'url',target:'mailto:user@example.com',enabled:true});
  assert.equal(await h.runShortcut('navigate to example.com'),null);
  const invalid=await h.runCommand('navigate to example.com');assert.notEqual(invalid.kind,'action');
+});
+
+
+test('saved multi-action shortcut executes the new action list instead of stale legacy fields',async t=>{
+ const seen=[];const {EventEmitter}=require('node:events');
+ const h=harness(t,{chromeLauncher:async(urls,profile)=>seen.push(['websites',...urls,profile]),shell:{openPath:async p=>{seen.push(['folder',p]);return '';}},spawn:(exe,args)=>{seen.push(['application',exe,...args]);const child=new EventEmitter();queueMicrotask(()=>child.emit('exit',0));return child;}});
+ h.store.upsert('shortcuts',{trigger:'standup',name:'Standup',type:'app',target:'Old app',actions:[{type:'websites',urls:['example.com?q={{text}}','example.org'],profile:'Profile 2'},{type:'application',name:'TextEdit',folder:'/tmp/project'},{type:'folders',paths:['/Applications']}]});
+ const result=await h.runCommand('standup notes & agenda');assert.equal(result.kind,'shortcut');
+ assert.deepEqual(seen,[['websites','https://example.com/?q=notes%20%26%20agenda','https://example.org/','Profile 2'],['application','/usr/bin/open','-a','TextEdit','/tmp/project'],['folder','/Applications']]);
 });

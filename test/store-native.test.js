@@ -254,3 +254,13 @@ test("legacy backup migration preserves explicit completion flags and rejects in
   }
 });
 test('custom voice shortcuts may override a built-in canonical phrase but reject another custom duplicate',t=>{const store=workspace(t);const builtin=store.data.shortcuts.find(x=>x.trigger==='google');assert.ok(builtin.builtin);const custom=store.upsert('shortcuts',{trigger:'google',name:'Custom Google',target:'https://example.com',type:'url'});assert.equal(custom.builtin,undefined);assert.throws(()=>store.upsert('shortcuts',{trigger:'  GOOGLE  ',target:'https://example.org',type:'url'}),/already exists/);store.upsert('shortcuts',{id:builtin.id,enabled:false});assert.equal(store.data.shortcuts.find(x=>x.id===builtin.id).enabled,false);assert.ok(store.data.shortcuts.some(x=>x.id===custom.id));});
+
+
+test('multi-action shortcut validation persists ordered actions and rejects invalid save or backup atomically',t=>{
+ const store=workspace(t);const actions=[{type:'websites',urls:['example.com?q={{text}}','https://example.org'],profile:'Profile 2'},{type:'application',name:'TextEdit',folder:'/tmp/project'},{type:'folders',paths:['~/Downloads','/Applications']}];
+ const saved=store.upsert('shortcuts',{trigger:'standup',aliases:['stand up'],actions});
+ assert.deepEqual(new Store(store.dir).data.shortcuts.find(x=>x.id===saved.id).actions,actions);
+ const before=structuredClone(store.data);
+ assert.throws(()=>store.upsert('shortcuts',{id:saved.id,actions:[{type:'websites',urls:['javascript:alert(1)']}]}),/valid/);assert.deepEqual(store.data,before);
+ const invalid=structuredClone(store.data);invalid.shortcuts.find(x=>x.id===saved.id).actions=[{type:'folders',paths:['relative']}];assert.throws(()=>store.restore(invalid),/valid/);assert.deepEqual(store.data,before);
+});

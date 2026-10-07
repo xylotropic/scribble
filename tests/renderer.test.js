@@ -16,7 +16,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   clone = (x) => JSON.parse(JSON.stringify(x));
 async function fixture(
   t,
-  { notes = [], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
+  { notes = [], shortcuts = [], mediaPromise, commandFiles, screens = [], setupPermissions = {microphoneStatus:"not-determined",accessibility:false} } = {},
 ) {
   const dom = new JSDOM(
     fs.readFileSync(path.join(__dirname, "../src/renderer/index.html"), "utf8"),
@@ -48,7 +48,7 @@ async function fixture(
     dictionary: [],
     threads: [],
     expansions: [],
-    shortcuts: [],
+    shortcuts: clone(shortcuts),
     tones: [],
     memory: [],
     timers: [],
@@ -958,4 +958,47 @@ test('Japanese File tools translate cards while preserving operation and format 
   assert.deepEqual([...select.options].map(o=>o.value),['webp','jpg','png']);
   assert.ok(select.parentElement.textContent.includes(forms.translate('ja','Output format')));
   assert.ok(h.w.document.querySelector('[data-action="utility"][data-operation="image-convert"]'));
+});
+test('shortcut numbered blocks add, reorder and remove without losing entered values',options,async t=>{
+  const h=await fixture(t);await h.click('[data-page="shortcuts"]');await h.click('[data-action="add-item"][data-kind="shortcuts"]');
+  h.input('#modal [name="name"]','Research & notes');h.input('#modal [name="trigger"]','start research');h.input('#modal [name="aliases"]','research now, begin research');
+  await h.click('[data-action="shortcut-action-add"][data-action-type="websites"]');
+  const urls=' https://docs.example.com/{{text}}?sort=a&b=1\n\nhttps://example.org/path ';
+  h.input('[data-shortcut-action="0"] [data-shortcut-field="urlsText"]',urls);h.input('[data-shortcut-action="0"] [data-shortcut-field="profile"]','Profile 12');
+  await h.click('[data-action="shortcut-action-add"][data-action-type="application"]');
+  h.input('[data-shortcut-action="1"] [data-shortcut-field="name"]','Visual Studio Code');h.input('[data-shortcut-action="1"] [data-shortcut-field="folder"]','/Users/floyd/My Project');
+  await h.click('[data-action="shortcut-action-add"][data-action-type="folders"]');h.input('[data-shortcut-action="2"] [data-shortcut-field="pathsText"]','~/Documents\n/Users/floyd/Research & Notes');
+  assert.equal(h.w.document.querySelector('[data-shortcut-action="0"] textarea').value,urls);
+  await h.click('[data-action="shortcut-action-up"][data-index="2"]');await h.click('[data-action="shortcut-action-down"][data-index="0"]');
+  assert.deepEqual([...h.w.document.querySelectorAll('[data-shortcut-action]')].map(el=>el.dataset.shortcutType),['folders','websites','application']);
+  assert.equal(h.w.document.querySelector('[data-shortcut-action="1"] textarea').value,urls);
+  assert.equal(h.w.document.querySelector('[data-shortcut-action="2"] [data-shortcut-field="folder"]').value,'/Users/floyd/My Project');
+  await h.click('[data-action="shortcut-action-remove"][data-index="2"]');
+  assert.deepEqual([...h.w.document.querySelectorAll('[data-shortcut-action] h3')].map(el=>el.textContent.trim()),['1. Open folders','2. Open websites']);
+  assert.equal(h.w.document.querySelector('#modal [name="name"]').value,'Research & notes');await h.submit();
+  const saved=clone(h.calls.find(call=>call.action==='save-item').args.item);
+  assert.deepEqual(saved.actions,[{type:'folders',paths:['~/Documents','/Users/floyd/Research & Notes']},{type:'websites',urls:['https://docs.example.com/{{text}}?sort=a&b=1','https://example.org/path'],profile:'Profile 12'}]);
+  assert.deepEqual(saved.aliases,['research now','begin research']);assert.equal(saved.trigger,'start research');assert.equal(saved.name,'Research & notes');assert.equal(h.w.document.querySelector('#modal').open,false);
+});
+test('editing each legacy shortcut derives an action while preserving legacy fields and identity',options,async t=>{
+  for(const [type,target,expected]of [['url','https://example.org',{type:'websites',urls:['https://example.org'],profile:'Default'}],['app','TextEdit',{type:'application',name:'TextEdit',folder:''}],['folder','~/Documents',{type:'folders',paths:['~/Documents']}]] ){
+    const shortcut={id:'legacy',name:'Legacy',trigger:'legacy task',type,target,profile:'Default',enabled:false,aliases:['old alias'],extra:'keep'};
+    const h=await fixture(t,{shortcuts:[shortcut]});await h.click('[data-page="shortcuts"]');await h.click('[data-action="edit-item"][data-kind="shortcuts"][data-id="legacy"]');
+    assert.equal(h.w.document.querySelectorAll('[data-shortcut-action]').length,1);await h.submit();
+    const item=clone(h.calls.find(call=>call.action==='save-item').args.item);assert.deepEqual(item.actions,[expected]);for(const key of ['id','type','target','extra','enabled'])assert.equal(item[key],shortcut[key]);assert.deepEqual(item.aliases,['old alias']);
+  }
+});
+test('editing grouped actions keeps websites, Chrome profile, application folder and path order',options,async t=>{
+  const actions=[{type:'websites',urls:['https://one.example','https://two.example'],profile:'Profile 7'},{type:'application',name:'TextEdit',folder:'~/Documents/Work'},{type:'folders',paths:['/tmp/one','~/Pictures']}];
+  const h=await fixture(t,{shortcuts:[{id:'multi',name:'My actions',trigger:'my actions',actions,type:'url',target:'https://legacy.example'}]});await h.click('[data-page="shortcuts"]');await h.click('[data-action="edit-item"][data-id="multi"]');
+  assert.equal(h.w.document.querySelectorAll('[data-shortcut-action]').length,3);await h.submit();const item=clone(h.calls.find(call=>call.action==='save-item').args.item);assert.deepEqual(item.actions,actions);assert.equal(item.target,'https://legacy.example');
+});
+test('shortcut editor refuses empty, oversized lists and invalid Chrome profile before saving',options,async t=>{
+  const h=await fixture(t);await h.click('[data-page="shortcuts"]');await h.click('[data-action="add-item"][data-kind="shortcuts"]');h.input('#modal [name="trigger"]','test');await h.submit();assert.equal(h.calls.filter(x=>x.action==='save-item').length,0);assert.match(h.w.document.querySelector('#toast').textContent,/1 and 32/);
+  await h.click('[data-action="shortcut-action-add"][data-action-type="websites"]');h.input('[data-shortcut-field="urlsText"]','https://example.org');h.input('[data-shortcut-field="profile"]','../Other Profile');await h.submit();assert.match(h.w.document.querySelector('#toast').textContent,/Chrome profile/);assert.equal(h.calls.filter(x=>x.action==='save-item').length,0);
+  h.input('[data-shortcut-field="profile"]','Default');h.input('[data-shortcut-field="urlsText"]',Array.from({length:17},(_,i)=>`https://example.org/${i}`).join('\n'));await h.submit();assert.match(h.w.document.querySelector('#toast').textContent,/1 and 16/);assert.equal(h.calls.filter(x=>x.action==='save-item').length,0);assert.equal(h.w.document.querySelector('#modal').open,true);
+});
+test('shortcut editor caps action blocks at 32 and cancel leaves the source unchanged',options,async t=>{
+  const actions=Array.from({length:32},(_,i)=>({type:'application',name:`App ${i}`,folder:''}));const original={id:'full',trigger:'full',actions};const h=await fixture(t,{shortcuts:[original]});await h.click('[data-page="shortcuts"]');await h.click('[data-action="edit-item"][data-id="full"]');assert.equal(h.w.document.querySelectorAll('[data-shortcut-action]').length,32);for(const button of h.w.document.querySelectorAll('[data-action="shortcut-action-add"]'))assert.equal(button.disabled,true);
+  await h.click('[data-action="shortcut-action-remove"][data-index="3"]');assert.equal(h.w.document.querySelectorAll('[data-shortcut-action]').length,31);assert.equal(h.w.document.querySelector('[data-action="shortcut-action-add"]').disabled,false);await h.click('#modal [data-action="close-modal"]');assert.equal(h.calls.filter(x=>x.action==='save-item').length,0);assert.deepEqual(h.data.shortcuts,[original]);
 });

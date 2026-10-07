@@ -97,6 +97,13 @@ const BUILTINS = [
   enabled: true,
   builtin: true,
 }));
+function validateShortcutActions(item) {
+  if (item.actions !== undefined && !require("./shortcut-actions").planShortcutActions(item, "query"))
+    throw Error("Enter valid website, application, or folder actions");
+  if (item.aliases !== undefined && (!Array.isArray(item.aliases) || item.aliases.length > 30 ||
+    item.aliases.some((alias) => typeof alias !== "string" || !alias.trim() || alias.length > 120)))
+    throw Error("Enter valid shortcut aliases");
+}
 class Store {
   constructor(dir) {
     this.dir = dir;
@@ -354,6 +361,7 @@ class Store {
         value[kind].some((x) => !x || typeof x !== "object" || Array.isArray(x))
       )
         throw Error("Invalid workspace collection: " + kind);
+      if (kind === "shortcuts") value[kind].forEach(validateShortcutActions);
       next[kind] = structuredClone(value[kind]);
     }
     return next;
@@ -394,6 +402,7 @@ class Store {
       updatedAt: new Date().toISOString(),
     };
     if (i < 0) value.createdAt = value.updatedAt;
+    if (kind === "shortcuts") validateShortcutActions(value);
     if (["threads", "expansions", "shortcuts"].includes(kind)) {
       if (typeof value.trigger !== "string" || !value.trigger.trim())
         throw Error("Enter a trigger");

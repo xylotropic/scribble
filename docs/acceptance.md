@@ -191,3 +191,12 @@ Source tests cover fresh/persisted state, legacy migration/backup validation, ex
 The full source suite passed 273 tests with five environment-dependent skips (278 total). New coverage checks ranked voice routing, validated targets, custom/built-in trigger coexistence, disabled command fallback, folder-opening errors and Japanese File tools labels with stable operation/format identifiers. The form catalogue now contains 207 exact strings in 18 locales; this remains partial UI localization.
 
 The separate first-run setup package at `/tmp/scribble-setup-package-20261007/mac-arm64/Scribble.app` passed deep strict signature verification. This package predates the routing/translation update. Desktop control resumed inventory access but reports the Mac is locked and automatic unlock failed; live permission, microphone, global shortcut and insertion checks remain pending. User microphone and Accessibility testing authorization is recorded. No screen capture grant or test is implied.
+
+
+## Ordered shortcut actions — October 7, 2026
+
+Custom voice shortcuts now have a numbered editor with websites, applications and folders; add/reorder/remove controls preserve entered values. Website groups support multiple URLs and an optional existing Chrome profile directory, applications support an optional folder, and folder groups support multiple paths. Aliases are editable. Legacy simple shortcuts remain editable; the new action list takes precedence over preserved legacy fields.
+
+Pure planning validates the whole list before execution. Store persistence and backup restoration reject invalid action lists atomically. Mocked main tests exercise a mixed website/application/folder sequence, grouped Chrome arguments, selected-profile existence, URL query punctuation preservation and failure propagation without launching apps. `mailto:` navigation is restored, with optional recipients and RFC 6068 encoded body line breaks; no email was composed or sent. The full source suite passed 298 tests: 293 passed, five explicit integration skips.
+
+Desktop acceptance of the editor and ordered actions is pending because the Mac remains locked. Automatic browser/profile discovery, additional browser families and documented runtime fallback behavior remain gaps. New editor labels have not yet been added to the locale catalogue. The source tests do not prove microphone, physical shortcuts or text insertion.

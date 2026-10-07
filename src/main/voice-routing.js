@@ -121,7 +121,7 @@ function matchVoiceShortcut(text, shortcuts = []) {
   }
   return null;
 }
-function resolveWebsite(value, query = "") {
+function resolveWebsite(value, query = "", options = {}) {
   if (
     typeof value !== "string" ||
     value.length > 8192 ||
@@ -129,14 +129,52 @@ function resolveWebsite(value, query = "") {
     query.length > 16000
   )
     return null;
-  let address = value
-    .trim()
-    .replace(/\{\{text\}\}/g, () => encodeURIComponent(query));
-  address = address
-    .replace(/^["“'‘]+|["”'’]+$/gu, "")
-    .replace(/[.!?,;]+$/u, "")
-    .replace(/\s+dot\s+/gi, ".");
+  // Spoken navigation may trim sentence punctuation; stored URL templates must preserve it.
+  let address = value.trim();
+  const spoken =
+    options.spoken === true ||
+    (options.spoken !== false && options.allowMailto === true);
+  if (spoken)
+    address = address
+      .replace(/^["“'‘]+|["”'’]+$/gu, "")
+      .replace(/[.!?,;]+$/u, "")
+      .replace(/\s+dot\s+/gi, ".");
+  address = address.replace(/\{\{text\}\}/g, () => encodeURIComponent(query));
   if (!address || /\s/u.test(address)) return null;
+  if (options.allowMailto === true && /^mailto:/i.test(address)) {
+    try {
+      const url = new URL(address);
+      const to = decodeURIComponent(url.pathname);
+      const recipients = to ? to.split(",") : [];
+      if (
+        url.hash ||
+        recipients.length > 16 ||
+        recipients.some(
+          (recipient) =>
+            !/^[A-Za-z0-9!#$%&'*+\/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+\/=?^_`{|}~-]+)*@(?:[a-z\d](?:[a-z\d-]*[a-z\d])?\.)+[a-z\d](?:[a-z\d-]*[a-z\d])?$/i.test(
+              recipient,
+            ),
+        )
+      )
+        return null;
+      const fields = url.search ? url.search.slice(1).split("&") : [];
+      if (fields.length > 32) return null;
+      for (const field of fields) {
+        const equal = field.indexOf("=");
+        if (equal < 1) return null;
+        const name = decodeURIComponent(field.slice(0, equal));
+        const value = decodeURIComponent(field.slice(equal + 1));
+        if (!/^[a-z\d-]+$/i.test(name)) return null;
+        // RFC 6068 body line breaks use CRLF; ordinary headers may never contain line breaks.
+        const checked =
+          name.toLowerCase() === "body" ? value.replace(/\r\n/g, "") : value;
+        if (/[\u0000-\u001f\u007f]/u.test(checked)) return null;
+      }
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }
   const scheme = /^[a-z][a-z\d+.-]*:/i.test(address);
   if (scheme && !/^https?:\/\//i.test(address)) return null;
   if (

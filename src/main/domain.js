@@ -184,7 +184,7 @@ function parseCommand(text) {
       url: `https://www.youtube.com/results?search_query=${encodeURIComponent(match[1])}`,
     };
   if ((match = input.match(/^(?:navigate to|open website|go to)\s+(.+)$/i))) {
-    const url = require("./voice-routing").resolveWebsite(match[1]);
+    const url = require("./voice-routing").resolveWebsite(match[1], "", { allowMailto: true });
     if (url) return { type: "url", url };
     return { type: "unknown", instruction: input };
   }

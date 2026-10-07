@@ -67,8 +67,14 @@ test("Unicode aliases, boundaries and bounded malformed shortcut data are handle
   assert.equal(match("a+b query", [{ trigger: "a+b" }]).query, "query");
 });
 test("website resolution accepts spoken dots, safe custom placeholders and only valid web targets", () => {
-  assert.equal(resolveWebsite("“example dot com”"), "https://example.com/");
-  assert.equal(resolveWebsite("example.com."), "https://example.com/");
+  assert.equal(
+    resolveWebsite("“example dot com”", "", { spoken: true }),
+    "https://example.com/",
+  );
+  assert.equal(
+    resolveWebsite("example.com.", "", { spoken: true }),
+    "https://example.com/",
+  );
   assert.equal(
     resolveWebsite("example.com/?q={{text}}", "a & b"),
     "https://example.com/?q=a%20%26%20b",
@@ -103,4 +109,61 @@ test("common folders normalize singular/plural and optional trailing folder with
   assert.equal(resolveCommonFolder("the pictures folder"), "Pictures");
   for (const value of ["unknown", "/tmp", "downloads../../", "downloads now"])
     assert.equal(resolveCommonFolder(value), null);
+});
+test("mailto is accepted only when explicitly requested for navigation", () => {
+  assert.equal(resolveWebsite("mailto:a@example.com"), null);
+  assert.equal(
+    resolveWebsite("mailto:a@example.com", "", { allowMailto: true }),
+    "mailto:a@example.com",
+  );
+  assert.equal(
+    resolveWebsite("mailto:not-an-address", "", { allowMailto: true }),
+    null,
+  );
+  assert.equal(
+    resolveWebsite("mailto:a@example.com?subject=%0d%0aInjected", "", {
+      allowMailto: true,
+    }),
+    null,
+  );
+});
+
+test("RFC6068 optional recipients and encoded body CRLF remain valid while header controls fail", () => {
+  const options = { allowMailto: true };
+  for (const value of [
+    "mailto:?subject=Hello",
+    "mailto:",
+    "mailto:a@example.com,b@example.org?body=First%0D%0ASecond",
+    "mailto:a+tag@example.com?subject=A%20question&body=Hello%0D%0AWorld",
+  ])
+    assert.equal(resolveWebsite(value, "", options), value);
+  for (const value of [
+    "mailto:?subject=Hello%0D%0ABcc:bad@example.com",
+    "mailto:?sub%0Aject=x",
+    "mailto:a@example.com?body=bare%0Anewline",
+    "mailto:a@example.com?body=%00bad",
+    "mailto:.bad@example.com",
+    "mailto:a@example.com?subject=%zz",
+    "mailto:a@example.com#fragment",
+  ])
+    assert.equal(resolveWebsite(value, "", options), null, value);
+});
+
+test("stored URL templates preserve substituted and literal query punctuation", () => {
+  assert.equal(
+    resolveWebsite("example.com/?q={{text}}", "hi! ?"),
+    "https://example.com/?q=hi!%20%3F",
+  );
+  assert.equal(
+    resolveWebsite("example.com/?q=wow!"),
+    "https://example.com/?q=wow!",
+  );
+  assert.equal(
+    resolveWebsite("example.com/?q={{text}}", "agenda!"),
+    "https://example.com/?q=agenda!",
+  );
+  assert.equal(
+    resolveWebsite("example.com/?q=wow!", "", { spoken: true }),
+    "https://example.com/?q=wow",
+  );
 });
