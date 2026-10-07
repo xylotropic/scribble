@@ -435,7 +435,7 @@ function renderUtilities() {
   ]
     .map(
       ([operation, title, description, format]) =>
-        `<div class="card"><h3>${title}</h3><p class="muted">${description}</p>${format ? `<label class="field">Output format<select data-format-for="${operation}">${{ "image-convert": ["webp", "jpg", "png"], "image-compress": ["webp", "jpg", "png"], "audio-convert": ["mp3", "wav", "m4a", "opus"], "video-convert": ["mp4", "webm"], "config-convert": ["json", "yaml", "toml"] }[operation].map((f) => `<option>${f}</option>`).join("")}</select></label>` : ""}${button("Choose files", "utility", "upload", "", `data-operation="${operation}"`)}</div>`,
+        `<div class="card"><h3>${esc(interfaceLabel(title))}</h3><p class="muted">${esc(interfaceLabel(description))}</p>${format ? `<label class="field">${esc(interfaceLabel("Output format"))}<select data-format-for="${operation}">${{ "image-convert": ["webp", "jpg", "png"], "image-compress": ["webp", "jpg", "png"], "audio-convert": ["mp3", "wav", "m4a", "opus"], "video-convert": ["mp4", "webm"], "config-convert": ["json", "yaml", "toml"] }[operation].map((f) => `<option>${f}</option>`).join("")}</select></label>` : ""}${button("Choose files", "utility", "upload", "", `data-operation="${operation}"`)}</div>`,
     )
     .join("")}</div>`;
 }

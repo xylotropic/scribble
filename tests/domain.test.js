@@ -76,7 +76,7 @@ test("command classification never executes and preserves application/query data
   });
   assert.equal(
     domain.parseCommand("navigate to example dot com").url,
-    "https://example.com",
+    "https://example.com/",
   );
   assert.equal(
     domain.parseCommand("navigate to this nonsense").type,
@@ -213,4 +213,11 @@ test("rich thread formatting preserves surrounding text and strips active markup
   });
   assert.equal(unmatched.html, null);
   assert.equal(unmatched.text, "launch notebook");
+});
+
+test("direct website commands use validated HTTP targets and reject email or malformed addresses", () => {
+  for (const target of ["mailto:a@example.com", "file:///tmp/a", "https://[broken", "https://user:pass@example.com", "this nonsense"])
+    assert.equal(domain.parseCommand("navigate to " + target).type, "unknown");
+  assert.equal(domain.parseCommand('go to “example dot com”').url, "https://example.com/");
+  assert.equal(domain.parseCommand("open website http://example.com/path").url, "http://example.com/path");
 });

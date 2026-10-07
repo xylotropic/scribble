@@ -402,7 +402,8 @@ class Store {
           (x) =>
             x.id !== value.id &&
             typeof x.trigger === "string" &&
-            x.trigger.toLowerCase() === value.trigger.toLowerCase(),
+            x.trigger.normalize("NFKC").trim().replace(/\s+/g," ").toLowerCase() === value.trigger.normalize("NFKC").trim().replace(/\s+/g," ").toLowerCase() &&
+            (kind !== "shortcuts" || (x.builtin === true) === (value.builtin === true)),
         )
       )
         throw Error("This trigger already exists");

@@ -2,7 +2,7 @@
 
 Read-only source inventory, October 7, 2026. Renderer SHA-256: `268a3e30e1de9a190fec6f297ae2dbfb37dfd3b6f1431ca641a09d66a6000b64`. Line numbers describe this snapshot and will shift after edits. No proprietary translation files were read.
 
-The shared core has 61 keys and the form/prose catalogue has 166 exact English keys across 18 locales. Current `interfaceLabel` and `interfaceProse` handle those entries. Catalogue presence alone does not localize text inserted directly into HTML, attributes, options or toasts. This inventory identifies those call sites, not linguistic review or runtime proof of complete coverage.
+The shared core has 61 keys and the form/prose catalogue has 207 exact English keys across 18 locales. Current `interfaceLabel` and `interfaceProse` handle those entries. Catalogue presence alone does not localize text inserted directly into HTML, attributes, options or toasts. This inventory identifies those call sites, not linguistic review or runtime proof of complete coverage.
 
 ## Next migration order
 
@@ -376,3 +376,6 @@ The option list above includes proper names (OpenAI, Anthropic, Gemini, Google C
 - Test fallback/status paths with mocked failures. In particular retain the Claude disclosure that inference has not been tested, and distinguish local-extractive fallback from the requested provider.
 - Keep user text, custom tone/profile names, paths, URLs, model names, transcripts, AI output, versions and diagnostic detail unchanged.
 - Verify live locale changes preserve unsaved input, selection, recording state and queued jobs. Regenerate this inventory against the resulting source baseline.
+
+
+Subsequent bounded coverage: the 18 first-run setup labels and the 23 File tools card titles, descriptions and Output format label are now translated in all 18 locales. Technical format identifiers remain unchanged. This does not resolve the remaining raw options, dynamic status text or notifications.

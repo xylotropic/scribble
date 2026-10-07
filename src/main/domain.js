@@ -140,25 +140,7 @@ function expandTemplate(text, context = {}) {
   );
 }
 function matchShortcut(text, shortcuts = []) {
-  const input = String(text || "")
-    .trim()
-    .replace(/^(?:(?:please|hey|okay|ok|um|uh|can you|could you)\s+)+/i, "");
-  for (const shortcut of [...shortcuts]
-    .filter((x) => x.enabled !== false)
-    .sort((a, b) => b.trigger.length - a.trigger.length)) {
-    for (const trigger of [shortcut.trigger, ...(shortcut.aliases || [])]) {
-      const match = input.match(
-        new RegExp(`^${escapeRegex(trigger)}(?:\\s+|$)`, "i"),
-      );
-      if (match)
-        return {
-          shortcut,
-          query: input.slice(match[0].length).trim(),
-          text: input,
-        };
-    }
-  }
-  return null;
+  return require("./voice-routing").matchVoiceShortcut(text, shortcuts);
 }
 function parseCommand(text) {
   const input = String(text || "").trim();
@@ -202,18 +184,8 @@ function parseCommand(text) {
       url: `https://www.youtube.com/results?search_query=${encodeURIComponent(match[1])}`,
     };
   if ((match = input.match(/^(?:navigate to|open website|go to)\s+(.+)$/i))) {
-    const address = match[1]
-      .replace(/\s+dot\s+/gi, ".")
-      .replace(/[.!?,]+$/, "")
-      .replace(/\s+/g, "");
-    if (
-      /^(https?:\/\/|mailto:)/i.test(address) ||
-      /^[\w-]+(?:\.[\w-]+)+(?:\/.*)?$/.test(address)
-    )
-      return {
-        type: "url",
-        url: /^[a-z]+:/i.test(address) ? address : `https://${address}`,
-      };
+    const url = require("./voice-routing").resolveWebsite(match[1]);
+    if (url) return { type: "url", url };
     return { type: "unknown", instruction: input };
   }
   if (
@@ -462,6 +434,7 @@ module.exports = {
   normalizeTranscript,
   expandTemplate,
   matchShortcut,
+  matchVoiceShortcut: matchShortcut,
   parseCommand,
   computeStats,
   exportTranscript,

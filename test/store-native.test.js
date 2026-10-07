@@ -253,3 +253,4 @@ test("legacy backup migration preserves explicit completion flags and rejects in
     assert.deepEqual(store.data, before);
   }
 });
+test('custom voice shortcuts may override a built-in canonical phrase but reject another custom duplicate',t=>{const store=workspace(t);const builtin=store.data.shortcuts.find(x=>x.trigger==='google');assert.ok(builtin.builtin);const custom=store.upsert('shortcuts',{trigger:'google',name:'Custom Google',target:'https://example.com',type:'url'});assert.equal(custom.builtin,undefined);assert.throws(()=>store.upsert('shortcuts',{trigger:'  GOOGLE  ',target:'https://example.org',type:'url'}),/already exists/);store.upsert('shortcuts',{id:builtin.id,enabled:false});assert.equal(store.data.shortcuts.find(x=>x.id===builtin.id).enabled,false);assert.ok(store.data.shortcuts.some(x=>x.id===custom.id));});

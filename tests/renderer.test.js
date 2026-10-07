@@ -947,3 +947,15 @@ test('setup selects a local model only on explicit choice and does not trigger i
   assert.equal(h.w.document.querySelector('[data-action="complete-setup"]:not([data-skip])').disabled, false);
   assert.equal(h.calls.some(c=>['download-model','start-recording','transcribe-file','ai-test'].includes(c.action)), false);
 });
+
+
+test('Japanese File tools translate cards while preserving operation and format identifiers', options, async t => {
+  const h=await fixture(t);h.data.settings.locale='ja';h.emit('state',h.data);
+  await h.click('[data-page="utilities"]');
+  const forms=h.w.ScribbleFormTranslations;
+  assert.ok([...h.w.document.querySelectorAll('.card h3')].some(el=>el.textContent===forms.translate('ja','Convert an image')));
+  const select=h.w.document.querySelector('[data-format-for="image-convert"]');
+  assert.deepEqual([...select.options].map(o=>o.value),['webp','jpg','png']);
+  assert.ok(select.parentElement.textContent.includes(forms.translate('ja','Output format')));
+  assert.ok(h.w.document.querySelector('[data-action="utility"][data-operation="image-convert"]'));
+});

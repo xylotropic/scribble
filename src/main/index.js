@@ -29,6 +29,7 @@ const { Store } = require("./store"),
   domain = require("./domain"),
   ai = require("./ai");
 const summaryTools = require("./summary");
+const voiceRouting = require("./voice-routing");
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "scribble-audio",
@@ -520,38 +521,26 @@ async function runShortcut(text) {
     match.query ?? match.text ?? text.slice(shortcut.trigger.length).trim();
   const target = shortcut.target || shortcut.url;
   if (target === "navigate") {
-    let url = query
-      .replace(/\s+dot\s+/gi, ".")
-      .replace(/\s+/g, "")
-      .replace(/[.!?,]+$/, "");
-    if (!url) throw Error("Say a website after “navigate to”");
-    if (!/^https?:/i.test(url)) url = "https://" + url;
+    const url = voiceRouting.resolveWebsite(query);
+    if (!url) return null;
     await openUrl(url);
   } else if (target === "folder") {
-    const dirs = {
-      downloads: "Downloads",
-      desktop: "Desktop",
-      documents: "Documents",
-      pictures: "Pictures",
-      music: "Music",
-      movies: "Movies",
-      home: "",
-    };
-    const folder = dirs[query.toLowerCase()];
-    if (folder === undefined) return null;
-    await shell.openPath(path.join(os.homedir(), folder));
+    const folder = voiceRouting.resolveCommonFolder(query);
+    if (folder === null) return null;
+    const error = await shell.openPath(
+      path.isAbsolute(folder) ? folder : path.join(os.homedir(), folder),
+    );
+    if (error) throw Error(error);
   } else if (shortcut.type === "app") {
-    await new Promise((resolve, reject) => {
-      const p = spawn("/usr/bin/open", ["-a", target]);
-      p.on("error", reject);
-      p.on("exit", (c) =>
-        c ? reject(Error("Application could not be opened")) : resolve(),
-      );
-    });
+    await launchApplication(target);
   } else if (shortcut.type === "folder") {
-    await shell.openPath(target);
-  } else
-    await openUrl(target.replace(/\{\{text\}\}/g, encodeURIComponent(query)));
+    const error = await shell.openPath(target);
+    if (error) throw Error(error);
+  } else {
+    const url = voiceRouting.resolveWebsite(target, query);
+    if (!url) return null;
+    await openUrl(url);
+  }
   return { action: shortcut.name || shortcut.trigger, query };
 }
 async function scheduleReminder(seconds, title) {
@@ -611,7 +600,17 @@ async function runCommand(text, context = "", attachments = {}) {
       result,
     };
   }
-  const parsed = domain.parseCommand(text);
+  const routed = await runShortcut(text);
+  if (routed) return { kind: "shortcut", text: `Opened ${routed.action}.` };
+  let parsed = domain.parseCommand(text);
+  // Recognized shortcut families must not bypass disabled preferences or invalid
+  // targets through the independent command parser. Explicit "launch" and
+  // "search for" syntax remain available when no shortcut trigger matches.
+  const shortcutFamily = domain.matchShortcut(text, store.data.shortcuts.map(
+    (shortcut) => ({ ...shortcut, enabled: true }),
+  ));
+  if (shortcutFamily && ["url", "folder", "app"].includes(parsed.type))
+    parsed = { type: "unknown", instruction: text };
   if (parsed.type === "timer" || parsed.type === "reminder")
     return scheduleReminder(parsed.seconds, parsed.message || "Timer finished");
   if (parsed.type === "url") {
@@ -643,8 +642,6 @@ async function runCommand(text, context = "", attachments = {}) {
     if (error) throw Error(error);
     return { kind: "action", text: "Opened " + parsed.folder + " folder." };
   }
-  const routed = await runShortcut(text);
-  if (routed) return { kind: "shortcut", text: `Opened ${routed.action}.` };
   if (parsed.type === "app") {
     await launchApplication(parsed.app);
     return { kind: "action", text: "Opened " + parsed.app + "." };

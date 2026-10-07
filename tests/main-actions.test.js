@@ -8,7 +8,7 @@ const test = require("node:test"),
 const { createRequire } = require("node:module");
 const mainPath = path.resolve(__dirname, "../src/main/index.js"),
   localRequire = createRequire(mainPath);
-function harness(t, { chat, transcribe, summaryCLI, models = [] } = {}) {
+function harness(t, { chat, transcribe, summaryCLI, shell, models = [] } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scribble-actions-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { Store } = localRequire("./store"),
@@ -28,7 +28,7 @@ function harness(t, { chat, transcribe, summaryCLI, models = [] } = {}) {
     protocol: { registerSchemesAsPrivileged() {} },
     Notification: { isSupported: () => false },
     clipboard: { readText: () => "clipboard", writeText() {} },
-    shell: { openPath: async () => "", openExternal: async () => {} },
+    shell: shell || { openPath: async () => "", openExternal: async () => {} },
     safeStorage: { isEncryptionAvailable: () => false },
   };
   const speech = {
@@ -77,7 +77,7 @@ function harness(t, { chat, transcribe, summaryCLI, models = [] } = {}) {
   vm.createContext(context);
   vm.runInContext(
     fs.readFileSync(mainPath, "utf8") +
-      "\nglobalThis.exposed={actions,processFile,snapshot,initializeTray(t){tray=t;},initialize(s,sp,n,d){store=s;speech=sp;native=n;dataDir=d;memoryIndex=new (require('./memory-index').MemoryIndex)();}};",
+      "\nglobalThis.exposed={actions,processFile,runShortcut,runCommand,snapshot,initializeTray(t){tray=t;},initialize(s,sp,n,d){store=s;speech=sp;native=n;dataDir=d;memoryIndex=new (require('./memory-index').MemoryIndex)();}};",
     context,
   );
   context.exposed.initialize(store, speech, native, directory);
@@ -420,4 +420,21 @@ test("derived file overrides normalize unsupported language and translation with
   assert.equal(selected.translate, false);
   assert.equal(h.store.data.settings.language, "fr");
   assert.equal(h.store.data.settings.translate, true);
+});
+
+
+test('folder shortcut resolves Applications and surfaces OS opening errors', async t=>{
+ const calls=[];const h=harness(t,{shell:{openPath:async p=>{calls.push(p);return 'Folder unavailable';}}});
+ await assert.rejects(h.runShortcut('open the Applications folder'),/Folder unavailable/);
+ assert.deepEqual(calls,['/Applications']);
+ assert.equal(await h.runShortcut('navigate to mailto:user@example.com'),null);
+});
+test('command routing respects disabled builtin families and custom invalid targets', async t=>{
+ const calls=[];const h=harness(t,{shell:{openPath:async p=>{calls.push(p);return '';}}});
+ h.store.data.shortcuts.find(s=>s.trigger==='open').enabled=false;
+ const result=await h.runCommand('open Downloads');
+ assert.notEqual(result.kind,'action');assert.equal(calls.length,0);
+ h.store.data.shortcuts.push({id:'custom-invalid',trigger:'navigate to',type:'url',target:'mailto:user@example.com',enabled:true});
+ assert.equal(await h.runShortcut('navigate to example.com'),null);
+ const invalid=await h.runCommand('navigate to example.com');assert.notEqual(invalid.kind,'action');
 });

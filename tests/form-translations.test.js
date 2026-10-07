@@ -1,8 +1,8 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const forms=require('../src/shared/form-translations.js');
-test('every original form catalogue covers all 184 labels with matching parameters and plain text',()=>{
-  assert.equal(forms.labels.length,184);assert.equal(new Set(forms.labels).size,184);assert.deepEqual(forms.locales.slice().sort(),['en','bg','cs','de','es','fr','it','ja','ko','pl','pt','ru','sv','tr','uk','vi','zh','zh-TW'].sort());
+test('every original form catalogue covers all 207 labels with matching parameters and plain text',()=>{
+  assert.equal(forms.labels.length,207);assert.equal(new Set(forms.labels).size,207);assert.deepEqual(forms.locales.slice().sort(),['en','bg','cs','de','es','fr','it','ja','ko','pl','pt','ru','sv','tr','uk','vi','zh','zh-TW'].sort());
   const parameters=text=>[...text.matchAll(/\{[^}]+\}/g)].map(x=>x[0]).sort();
   for(const locale of forms.locales){assert.deepEqual(Object.keys(forms.catalogues[locale]),forms.labels);for(const label of forms.labels){const text=forms.translate(locale,label);assert.ok(text.trim(),`${locale}: ${label}`);assert.doesNotMatch(text,/<[^>]*>/);assert.deepEqual(parameters(text),parameters(label));if(label.endsWith('%'))assert.ok(text.endsWith('%'));if(locale==='en')assert.equal(text,label);}}
 });
@@ -39,3 +39,13 @@ test('Claude summary disclosure names destination and CLI in every translated ca
 test('guided setup has eighteen explicit translated keys in every locale',()=>{const keys=['Make Scribble ready','A local model, your microphone, and one shortcut.','Download a speech model','Choose a model to transcribe on this Mac. Downloads use disk space and bandwidth.','Setup speech model','Model ready','Model not downloaded','Allow your microphone','Record your voice for local transcription.','Allow Accessibility','Use global shortcuts and insert words at the cursor.','Access allowed','Access not yet allowed','Refresh setup status','Finish setup','Do this later','Run setup again','Restart Scribble to enable global shortcuts.'];for(const locale of forms.locales){for(const key of keys){assert.ok(Object.hasOwn(forms.catalogues[locale],key));if(locale!=='en')assert.notEqual(forms.translate(locale,key),key);}assert.match(forms.translate(locale,'Make Scribble ready'),/Scribble/);assert.match(forms.translate(locale,keys[3]),/Mac/);assert.notEqual(forms.translate(locale,'Access allowed'),forms.translate(locale,'Access not yet allowed'));assert.notEqual(forms.translate(locale,'Model ready'),forms.translate(locale,'Model not downloaded'));}});
 
 test('shortcut recovery retains Scribble and is explicitly translated rather than falling back',()=>{const key='Restart Scribble to enable global shortcuts.';for(const locale of forms.locales){assert.ok(Object.hasOwn(forms.catalogues[locale],key));assert.match(forms.translate(locale,key),/Scribble/);if(locale!=='en')assert.notEqual(forms.translate(locale,key),key);}assert.equal(forms.translate('es',key),'Reinicia Scribble para activar los atajos globales.');});
+
+test('all eleven file-tool card titles/descriptions and output label are explicitly localized',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'../src/renderer/app.js'),'utf8');
+  const ast=require('prettier/plugins/babel').parsers.babel.parse(source,{});
+  const fn=ast.program.body.find(node=>node.type==='FunctionDeclaration'&&node.id.name==='renderUtilities');
+  assert.ok(fn);let cards=[];
+  function walk(node){if(!node||typeof node!=='object')return;if(node.type==='ArrayExpression'&&node.elements.length===4&&node.elements.every(item=>item?.type==='StringLiteral')&&/^[a-z]+-[a-z]+$/.test(node.elements[0].value))cards.push(node.elements.map(item=>item.value));for(const value of Object.values(node))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);}
+  walk(fn);assert.equal(cards.length,11);
+  for(const locale of forms.locales){for(const [operation,title,description,format] of cards){for(const label of [title,description,'Output format']){assert.ok(Object.hasOwn(forms.catalogues[locale],label));if(locale!=='en')assert.notEqual(forms.translate(locale,label),label);}assert.equal(forms.translate(locale,operation),operation);if(format)assert.equal(forms.translate(locale,format),format);for(const token of description.match(/JPEG|PNG|WebP|JSON|MP3|WAV|M4A|Opus|MP4|WebM|PDF|YAML|TOML|Markdown/g)||[])assert.ok(forms.translate(locale,description).includes(token),`${locale}: missing ${token}`);}}
+});
