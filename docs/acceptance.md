@@ -157,3 +157,16 @@ Local model metadata now records verified supported languages from primary model
 The capture/form package accepted Cmd+K through desktop input, filtered the workspace palette to Tones, and Enter opened that page while closing the dialog. This proves that bounded keyboard path.
 
 The optional Claude subscription CLI route is independent of the global AI provider and applies only to new and regenerated note summaries. Read-only status checks require installed isolation flags and successful claude.ai auth-method metadata; current local status reports that Claude is not installed. No actual login, install, inference or cloud request occurred. Provider failures retain local extractive notes with explicit error/provider metadata visible in note detail. Scoped main/store tests cover routing, cancellation, fallback, settings and normalization; renderer/adapter tests cover selection, disclosure, unavailable status and visible fallback. CLI inference remains unverified on an actual subscription account.
+
+
+## Expanded translations: clean package and desktop evidence
+
+Public revision061a11c was packaged in the existing clean checkout. Strict deep signature verification passed and36 tracked src/assets files matched that revision's archived bytes. The actual General pane switched English → Japanese; setting labels and descriptions (including greeting, appearance, launch behavior, clipboard, punctuation and sounds) were visibly Japanese. English was restored visibly. The package reported the three speech runtimes ready through actual CLI status. Microphone request was invoked after user approval, but the UI still reported Not yet requested; no grant or recording success is claimed. Accessibility still depends on the outstanding macOS password step.
+
+Public summary-provider revisionb8a84ad passed250 tests in the clean checkout:245 passed,5 explicit integration skips. No actual Claude executable/account inference was tested.
+
+## Useful localized summary drafts
+
+The original structured JSON summary prompt now requests the configured output language and meaningful preset sections. Valid generated prose and headings remain visible beside exact transcript evidence instead of being replaced wholesale by English quotations. Source excerpts are checked, repeated excerpts require occurrence indices, and invalid owner/deadline metadata falls back to exact excerpts. Main passes summaryLanguage to the formatter and labels AI-produced notes as drafts in note detail. These checks cannot prove arbitrary paraphrase entailment; review remains necessary.
+
+A real local qwen2.5:7b Spanish schema fixture produced localized headings/prose in40.9 seconds after the prompt was corrected to use full language names. The first attempt produced Italian and was rejected as quality evidence. The successful run still translated deadline metadata and had an awkward unresolved paraphrase; the formatter recovered unsupported metadata as source excerpts. This is bounded evidence, not a guarantee of factual or translation accuracy. Conservative fallback headings currently cover English, Spanish, French and German; other malformed-output language fallbacks remain English. The source suite passed257 tests:252 passed,5 explicit integration skips. A fresh public/packaged check of this final formatter is still required.
