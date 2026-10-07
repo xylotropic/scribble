@@ -62,6 +62,7 @@ const SETTINGS = {
   defaultNoteTemplate: "Meeting",
   suppressedApps: [],
   locale: "en",
+  preferIPv4: true,
   spelling: "us",
   memoryEnabled: true,
   pinnedToneId: "",

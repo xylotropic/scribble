@@ -837,6 +837,8 @@ const actions = {
   preferences: async (patch) => {
     const proposed = { ...store.data.settings, ...patch };
     const normalized = require("./speech-preferences").normalizeSpeechPreferences(proposed, speech.listModels());
+    store.validateSettings({ ...patch, ...normalized });
+    if ("preferIPv4" in patch) require("./network-preferences").applyNetworkPreferences(proposed);
     store.updateSettings({ ...patch, ...normalized });
     if ("launchAtLogin" in patch)
       app.setLoginItemSettings({ openAtLogin: patch.launchAtLogin });
@@ -1541,7 +1543,10 @@ app
       process.env.SCRIBBLE_DATA_DIR ||
       path.join(app.getPath("appData"), "Scribble");
     store = new Store(dataDir);
+    require("./network-preferences").applyNetworkPreferences(store.data.settings);
     speech = new SpeechEngine({ dataDir });
+    const speechPreferenceRepair = require("./speech-preferences").normalizeSpeechPreferences(store.data.settings, speech.listModels());
+    if (Object.keys(speechPreferenceRepair).length) store.updateSettings(speechPreferenceRepair);
     native = new NativeBridge(
       app.isPackaged
         ? path.join(process.resourcesPath, "native/scribble-bridge")
