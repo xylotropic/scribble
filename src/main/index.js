@@ -72,6 +72,47 @@ const timers = new Map(),
   pendingOpenFiles = [];
 const utilityResults = new Map();
 const commandReviews = new Map();
+let commandReviewTimer;
+function expireCommandReviews() {
+  clearTimeout(commandReviewTimer);
+  for (const [id,value] of commandReviews) if (value.expiresAt <= Date.now()) commandReviews.delete(id);
+  const next = Math.min(...[...commandReviews.values()].map(value => value.expiresAt));
+  if (Number.isFinite(next)) {
+    commandReviewTimer = setTimeout(expireCommandReviews, Math.max(1,next - Date.now()));
+    commandReviewTimer.unref?.();
+  }
+}
+const {CommandScreenSession, mergeImages} = require("./command-screen");
+let commandScreen;
+function screenSession() {
+  return commandScreen ||= new CommandScreenSession((command,args) => {
+    if (command === "commandScreenStart") {
+      const translate = require("../shared/form-translations").translate;
+      args = {...args, labels: {
+        instruction: translate(store.data.settings.locale, "Drag to select up to five regions. Stop recording when finished."),
+        regionCountPattern: translate(store.data.settings.locale, "{count} of {max} regions selected."),
+        maxReached: translate(store.data.settings.locale, "Five screen regions are already selected."),
+      }};
+    }
+    return native.request(command,args);
+  });
+}
+function assertCommandEnabled() {
+  if (quitting || store.data.settings.commandEnabled === false) throw Error("Command Mode is disabled");
+  assertProcessing();
+}
+function screenEnabled() { return store.data.settings.commandScreenContext === true; }
+async function recoverCommandScreen() {
+  const owner = commandScreen?.owner;
+  if (!owner?.cancelled || quitting) return;
+  try { await commandScreen.cancel(owner.token); }
+  catch (error) { throw Error("Previous screen capture cleanup is still pending. Retry the command to try cleanup again. " + error.message); }
+  if (!activeProcess && recordTarget?.mode === "command" && recordTarget.recordingToken === owner.token) {
+    recordingGeneration++;
+    recordTarget = null;
+    indicator("idle", "");
+  }
+}
 function emit(event, data) {
   for (const w of [window, overlay])
     if (w && !w.isDestroyed())
@@ -93,7 +134,7 @@ function refreshInterfaceMenus() {
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: interfaceText("tray.open"), click: show },
-        { label: interfaceText("tray.startDictation"), click: () => beginRecording() },
+        { label: interfaceText("tray.startDictation"), click: () => beginRecording().catch(error => notify("Scribble", error.message)) },
         {
           label: interfaceText("tray.startNote"),
           click: () => {
@@ -152,6 +193,7 @@ function snapshot() {
       ...speech.status(),
       busy: !!activeProcess || speech.status().busy,
     },
+    captureCleanupPending: !!commandScreen?.owner?.cancelled,
     nativeAvailable: native.available,
     stats: {
       ...domain.computeStats(
@@ -277,6 +319,7 @@ async function ensureAI(settings) {
 }
 async function chat(settings, messages, key, options) {
   await ensureAI(settings);
+  if (options?.signal?.aborted) throw new DOMException("Processing canceled", "AbortError");
   const provider = settings.aiProvider;
   if (provider !== "ollama") {
     if (
@@ -367,7 +410,7 @@ function updateNative() {
   if (!native.available) return;
   native
     .request("setHotkeys", { hotkeys: store.data.settings.hotkeys.filter((binding) =>
-      binding.mode !== "utility" || store.data.settings.aiUtilities.some((utility) => utility.id === binding.utilityId && utility.enabled)) })
+      (binding.mode !== "command" || store.data.settings.commandEnabled !== false) && (binding.mode !== "utility" || store.data.settings.aiUtilities.some((utility) => utility.id === binding.utilityId && utility.enabled))) })
     .catch((e) => emit("native-error", e.message));
   native
     .request("setExpansions", {
@@ -415,7 +458,10 @@ async function finishSystemCapture(session = systemCaptureSession, discard = tru
   }
 }
 async function beginRecording(mode = "dictation", toneId) {
-  if (quitting || recordTarget || systemCaptureSession || systemRecording || activeProcess || speech.status().busy) {
+  if (mode === "command") assertCommandEnabled();
+  await recoverCommandScreen();
+  if (mode === "command") assertCommandEnabled();
+  if (quitting || commandScreen?.owner || recordTarget || systemCaptureSession || systemRecording || activeProcess || speech.status().busy) {
     emit("notice", {
       title: "Scribble is busy",
       body: "Finish the current recording or transcription first.",
@@ -424,7 +470,7 @@ async function beginRecording(mode = "dictation", toneId) {
   }
   recordingGeneration++;
   const recordingToken = crypto.randomUUID();
-  const reservation = { starting: true, recordingToken };
+  const reservation = { starting: true, recordingToken, mode };
   recordTarget = reservation;
   const front = await native.request("frontmost").catch(() => ({}));
   if (recordTarget !== reservation) return;
@@ -439,7 +485,12 @@ async function beginRecording(mode = "dictation", toneId) {
   if (recordTarget !== reservation) return;
   const commandTarget = mode === "command" ? await captureCommandTarget(commandContext) : null;
   if (recordTarget !== reservation) return;
-  recordTarget = { ...front, toneId, commandTarget, commandContext, recordingToken };
+  try {
+    if (mode === "command" && screenEnabled()) await screenSession().start(recordingToken, store.data.settings.commandDragRegions === true);
+    if (recordTarget !== reservation) { await commandScreen?.cancel(recordingToken); return; }
+    if (mode === "command") assertCommandEnabled();
+  } catch (error) { if (recordTarget === reservation) recordTarget = null; throw error; }
+  recordTarget = { ...front, toneId, commandTarget, commandContext, recordingToken, mode, screenCapture: mode === "command" && screenEnabled() };
   activeMode = mode;
   emit("recording-control", { action: "start", mode, recordingToken });
   indicator("starting", "Starting microphone…");
@@ -669,6 +720,7 @@ async function runFileUtility({ operation, options = {} }, captured = null) {
     });
     if (destination.canceled) return null;
     if(selected) await selectedUtilityInputs(operation, captured);
+    if (activeProcess?.kind === "command") assertCommandEnabled();
     const result = await require("./utilities").performUtility({
       operation,
       files: chosen.filePaths,
@@ -708,17 +760,24 @@ async function captureCommandTarget(expected = null) {
   return target?.token && (!expected || !Number.isInteger(expected.pid) || (target.pid === expected.pid && target.bundleId === expected.bundleId)) && target.bundleId !== "org.scribble.voice"
     ? { token: target.token, expiresAt: Date.now() + 600000 } : null;
 }
-function attachCommandReview(result, target, captured = null) {
+function attachCommandReview(result, target, captured = null, images = []) {
   if (result.kind !== "text") return result;
   if (typeof result.text !== "string" || result.text.length > 100000)
     throw Error("Command result is too large or invalid");
   for (const [id, value] of commandReviews)
     if (value.expiresAt < Date.now()) commandReviews.delete(id);
-  if (commandReviews.size >= 32) commandReviews.delete(commandReviews.keys().next().value);
+  const imageBytes = images.reduce((sum,image) => sum + image.data.length, 0);
+  let retainedBytes = [...commandReviews.values()].reduce((sum,value) => sum + (value.images || []).reduce((n,image) => n + image.data.length, 0), 0);
+  while (commandReviews.size >= 32 || (commandReviews.size && retainedBytes + imageBytes > 64 * 1024 * 1024)) {
+    const id = commandReviews.keys().next().value;
+    retainedBytes -= (commandReviews.get(id).images || []).reduce((sum,image) => sum + image.data.length, 0);
+    commandReviews.delete(id);
+  }
   result.reviewId = crypto.randomUUID();
   result.canInsert = !!target?.token && target.expiresAt > Date.now();
-  commandReviews.set(result.reviewId, { result, context: captured, target: result.canInsert ? target : null,
+  commandReviews.set(result.reviewId, { result, images: mergeImages(images), context: captured, target: result.canInsert ? target : null,
     expiresAt: target?.expiresAt || Date.now() + 600000 });
+  expireCommandReviews();
   return result;
 }
 async function pasteCommandReview(id) {
@@ -827,6 +886,7 @@ async function launchApplication(name, folder = "") {
   });
 }
 async function runCommand(text, context = "", attachments = {}, captured = null) {
+  assertCommandEnabled();
   const fileCommand = require("./file-command").parseFileCommand(text);
   if (fileCommand) {
     const result = await (captured?.files?.length ? runFileUtility(fileCommand, captured) : actions.utility(fileCommand));
@@ -955,7 +1015,7 @@ function assertProcessing() {
 async function processFile(file, options = {}) {
   if (activeProcess)
     throw Error("Another transcription is still being processed");
-  const job = { controller: new AbortController() };
+  const job = { controller: new AbortController(), kind: options.kind };
   activeProcess = job;
   try {
     return await transcribeAndProcess(file, options);
@@ -1095,7 +1155,9 @@ async function transcribeAndProcess(
     speechProvider: settings.speechProvider,
   };
   if (kind === "command") {
-    const command = attachCommandReview(await runCommand(text, "", attachments, recordTarget?.commandContext), recordTarget?.commandTarget, recordTarget?.commandContext);
+    const output = await runCommand(text, "", attachments, recordTarget?.commandContext);
+    assertCommandEnabled();
+    const command = attachCommandReview(output, recordTarget?.commandTarget, recordTarget?.commandContext, attachments.images || []);
     entry.text = command.text;
     entry.command = text;
     entry.commandResult = command;
@@ -1196,10 +1258,19 @@ const actions = {
   },
   preferences: async (patch) => {
     const proposed = { ...store.data.settings, ...patch };
+    const screenPolicyChanged = ["commandScreenContext", "commandDragRegions"].some(key => key in patch && proposed[key] !== store.data.settings[key]);
     const normalized = require("./speech-preferences").normalizeSpeechPreferences(proposed, speech.listModels());
     store.validateSettings({ ...patch, ...normalized });
     if ("preferIPv4" in patch) require("./network-preferences").applyNetworkPreferences(proposed);
     store.updateSettings({ ...patch, ...normalized });
+    let screenCleanupError;
+    try {
+      if (proposed.commandEnabled === false || screenPolicyChanged) {
+        if (activeProcess?.kind === "command") activeProcess.controller.abort();
+        if (recordTarget?.mode === "command") await actions["cancel-recording"]();
+        else await commandScreen?.cancel();
+      }
+    } catch (error) { screenCleanupError = error; }
     if ("locale" in patch) refreshInterfaceMenus();
     if ("launchAtLogin" in patch)
       app.setLoginItemSettings({ openAtLogin: patch.launchAtLogin });
@@ -1209,6 +1280,7 @@ const actions = {
     if (!recordTarget && !activeProcess && overlay)
       indicator("idle", "Ready to listen");
     emit("state", snapshot());
+    if (screenCleanupError) throw screenCleanupError;
     return snapshot();
   },
   "show-tone-menu": () => {
@@ -1373,6 +1445,7 @@ const actions = {
   },
   "recording-failed": async ({ message }) => {
     const target = recordTarget, generation = ++recordingGeneration;
+    await commandScreen?.cancel(target?.recordingToken);
     await finishSystemCapture();
     if (recordingGeneration === generation && recordTarget === target) {
       recordTarget = null;
@@ -1384,6 +1457,7 @@ const actions = {
   "stop-recording": () => {
     if (recordTarget?.starting) {
       recordingGeneration++;
+      void commandScreen?.cancel(recordTarget.recordingToken).catch(error => emit("notice", {title:"Screen capture",body:error.message}));
       recordTarget = null;
       indicator("idle", "");
       return true;
@@ -1396,6 +1470,7 @@ const actions = {
     activeProcess?.controller.abort();
     speech.cancelTranscription();
     emit("recording-control", { action: "cancel" });
+    await commandScreen?.cancel(target?.recordingToken);
     await finishSystemCapture();
     if (recordingGeneration === generation && recordTarget === target) {
       recordTarget = null;
@@ -1434,6 +1509,12 @@ const actions = {
     let input = file;
     try {
       assertCurrent();
+      if (mode === "command") {
+        assertCommandEnabled();
+        const capturedImages = target?.screenCapture ? await screenSession().finish(target.recordingToken) : [];
+        assertCurrent();
+        attachments = {...attachments, images: mergeImages(attachments.images || [], capturedImages)};
+      }
       await fsp.writeFile(file, Buffer.from(bytes), { mode: 0o600 });
       assertCurrent();
       if (systemRecording) {
@@ -1457,6 +1538,7 @@ const actions = {
       wasCancelled = wasCancelled || error.name === "AbortError" || recordingGeneration !== generation;
       throw error;
     } finally {
+      await commandScreen?.cancel(target?.recordingToken).catch(error => emit("notice", {title:"Screen capture",body:error.message}));
       for (const item of created)
         if (wasCancelled || !store.data.settings.saveAudio || item !== input)
           await fsp.rm(item, { force: true }).catch(() => {});
@@ -1781,7 +1863,10 @@ const actions = {
   "paste-command-result": ({ id }) => pasteCommandReview(id),
   "dismiss-command-result": ({ id }) => commandReviews.delete(id),
   command: async ({ text, context, historyId, reviewId, attachments = {} }) => {
-    if (activeProcess) throw Error("Finish the current transcription first");
+    assertCommandEnabled();
+    await recoverCommandScreen();
+    assertCommandEnabled();
+    if (activeProcess || recordTarget || commandScreen?.owner) throw Error("Finish the current recording or transcription first");
     text = String(text || "").trim();
     if (!text || text.length > 12000)
       throw Error("Enter a command of up to 12,000 characters");
@@ -1797,10 +1882,30 @@ const actions = {
       !Array.isArray(attachments.images || [])
     )
       throw Error("Command context is too large or invalid");
+    attachments = {...attachments,images:mergeImages(attachments.images || [])};
     const prior = reviewId ? commandReviews.get(reviewId) : null;
+    if (reviewId && (!prior || prior.expiresAt <= Date.now())) throw Error("This command result expired; start a new command");
+    const job = {kind:"command",controller:new AbortController(),token:crypto.randomUUID()};
+    activeProcess = job;
+    try {
     const captured = reviewId ? (prior?.context || {text:"",files:[]}) : (await captureFileCommandContext() || {text:"",files:[]});
     const target = reviewId ? (prior?.expiresAt > Date.now() ? prior.target : null) : await captureCommandTarget(captured);
-    const result = attachCommandReview(await runCommand(text, String(context || ""), attachments, captured), target, captured);
+    assertCommandEnabled();
+    let capturedImages = prior?.images || [];
+    if (!reviewId && screenEnabled()) {
+      if (store.data.settings.commandDragRegions === true) {
+        if (!attachments.images?.length) throw Error("Use a voice command to select screen regions, or attach screen context manually.");
+      } else {
+        await screenSession().start(job.token, false);
+        assertCommandEnabled();
+        capturedImages = await screenSession().finish(job.token);
+      }
+    }
+    assertCommandEnabled();
+    attachments = {...attachments,images:mergeImages(capturedImages,attachments.images || [])};
+    const command = await runCommand(text, String(context || ""), attachments, captured);
+    assertCommandEnabled();
+    const result = attachCommandReview(command, target, captured, attachments.images);
     if (reviewId) commandReviews.delete(reviewId);
     if (!store.data.settings.saveHistory) return result;
     const revision = {
@@ -1839,6 +1944,10 @@ const actions = {
     store.save();
     emit("state", snapshot());
     return result;
+    } finally {
+      await commandScreen?.cancel(job.token).catch(error => emit("notice", {title:"Screen capture",body:error.message}));
+      if (activeProcess === job) activeProcess = null;
+    }
   },
   "open-url": ({ url }) => openUrl(url),
   "open-data": () => shell.openPath(dataDir),
@@ -1938,6 +2047,10 @@ app
     speech.on("progress", (x) => emit("speech-progress", x));
     speech.on("download-progress", (x) => emit("model-download", x));
     speech.on("models-changed", () => emit("state", snapshot()));
+    for (const event of ["command-region-count", "command-screen-status"]) native.on(event, value => {
+      const metadata = commandScreen?.metadata(event,value);
+      if (metadata) emit(event,metadata);
+    });
     native.on("indicator-action", (event) => {
       const action = { dictate: ["start-recording", {mode:"dictation"}], command: ["start-recording", {mode:"command"}],
         note: ["start-recording", {mode:"note"}], stop: ["stop-recording", {}], cancel: ["cancel-recording", {}],
@@ -1945,8 +2058,9 @@ app
       if (action) void dispatch(...action).catch(error => notify("Scribble", error.message));
     });
     native.on("hotkey", async (x) => {
+      if (x.mode === "command" && store.data.settings.commandEnabled === false) return;
       if (x.phase === "cancel") {
-        await actions["cancel-recording"]({});
+        await actions["cancel-recording"]({}).catch(error => notify("Scribble", error.message));
         return;
       }
       if (x.mode === "utility") {
@@ -1959,7 +2073,7 @@ app
         await actions["paste-last"]();
         return;
       }
-      if (x.phase === "start") await beginRecording(x.mode, x.toneId);
+      if (x.phase === "start") await beginRecording(x.mode, x.toneId).catch(error => { if (error.name !== "AbortError") notify("Scribble", error.message); });
       else await actions["stop-recording"]();
     });
     for (const event of ["hotkey-captured", "hotkey-capture-cancelled", "hotkey-capture-ended"]) native.on(event, (data) => emit(event, data));
@@ -2145,13 +2259,17 @@ async function shutdownRuntime() {
   recordTarget = null;
   if (session) session.cancelled = true;
   // First try the owner-aware stop. Pending native starts must not delay quit forever.
+  const screenCleanup = commandScreen?.cancel().catch(error => ({error}));
   const captureCleanup = finishSystemCapture(session).catch(error => ({error}));
+  await boundedShutdownWait(screenCleanup, 2000);
+  commandScreen?.bridgeClosing();
   await boundedShutdownWait(captureCleanup, 2000);
   if (session) session.bridgeClosing = true;
   const [nativeExit, aiExit] = await Promise.all([
     Promise.resolve().then(() => native?.close()).catch(error => ({error, exited:false})),
     Promise.resolve().then(() => require("./ai-runtime").closeLocalAI()).catch(error => ({error})),
   ]);
+  if (nativeExit?.exited) commandScreen?.bridgeExited();
   // close rejects pending requests and waits for EOF flush or confirmed forced exit.
   await boundedShutdownWait(captureCleanup, 100);
   if (session && nativeExit?.exited) {
@@ -2174,6 +2292,7 @@ app.on("before-quit", (event) => {
   nativeIndicator?.dispose();
   utilityResults.clear();
   commandReviews.clear();
+  clearTimeout(commandReviewTimer);
   server?.close();
   for (const timer of timers.values()) clearTimeout(timer);
   shutdownRuntime().then(() => {

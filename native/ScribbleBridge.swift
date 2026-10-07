@@ -275,6 +275,257 @@ final class SystemCaptureOwnership {
         catch { task = nil; taskCapture = nil; if handle === capture { throw error } }
     }
 }
+func commandScreenError(_ message:String) -> NSError { NSError(domain:"Scribble.CommandScreen",code:40,userInfo:[NSLocalizedDescriptionKey:message]) }
+struct CommandScreenLabels {
+    var instruction="Drag to select up to five regions. Stop recording when finished."
+    var regionCountPattern="{count} of {max} regions selected."
+    var maxReached="Five screen regions are already selected."
+    init(_ value:Any?=nil) throws {
+        guard let value else{return}
+        guard let labels=value as? [String:Any],labels.keys.allSatisfy({["instruction","regionCountPattern","maxReached"].contains($0)}) else {throw commandScreenError("Invalid screen selection labels")}
+        for (key,raw) in labels {guard let text=raw as? String,!text.isEmpty,text.count<=300,!text.unicodeScalars.contains(where:{$0.value<32||$0.value==127}) else {throw commandScreenError("Invalid screen selection labels")};switch key {case "instruction":instruction=text;case "regionCountPattern":regionCountPattern=text;default:maxReached=text}}
+    }
+    func countText(_ count:Int) -> String {regionCountPattern.replacingOccurrences(of:"{count}",with:String(min(5,max(0,count)))).replacingOccurrences(of:"{max}",with:"5")}
+}
+struct CommandScreenRegion {
+    let displayID:CGDirectDisplayID
+    let screenFrame:CGRect
+    let rect:CGRect
+}
+func commandRegionRect(_ start:CGPoint,_ end:CGPoint,screen:CGRect) -> CGRect? {
+    guard [start.x,start.y,end.x,end.y,screen.minX,screen.minY,screen.width,screen.height].allSatisfy({$0.isFinite}),screen.width>0,screen.height>0 else {return nil}
+    let raw=CGRect(x:min(start.x,end.x),y:min(start.y,end.y),width:abs(start.x-end.x),height:abs(start.y-end.y)).intersection(screen)
+    return !raw.isNull && raw.width>=8 && raw.height>=8 ? raw : nil
+}
+func commandSourceRect(_ region:CommandScreenRegion,logical:CGSize) -> CGRect? {
+    guard logical.width.isFinite,logical.height.isFinite,logical.width>0,logical.height>0,region.screenFrame.width>0,region.screenFrame.height>0 else {return nil}
+    let crop=region.rect.intersection(region.screenFrame)
+    guard !crop.isNull,crop.width>=8,crop.height>=8 else {return nil}
+    let x=logical.width/region.screenFrame.width,y=logical.height/region.screenFrame.height
+    return CGRect(x:(crop.minX-region.screenFrame.minX)*x,y:(region.screenFrame.maxY-crop.maxY)*y,width:crop.width*x,height:crop.height*y)
+}
+func commandImageSize(_ logical:CGSize,scale:CGFloat) -> CGSize {
+    let width=max(1,logical.width*max(1,scale)),height=max(1,logical.height*max(1,scale)),factor=min(1,1536/max(width,height))
+    return CGSize(width:max(1,floor(width*factor)),height:max(1,floor(height*factor)))
+}
+final class CommandScreenPlan {
+    let dragRegions:Bool
+    var regions:[CommandScreenRegion]=[]
+    init(dragRegions:Bool){self.dragRegions=dragRegions}
+    func add(_ region:CommandScreenRegion) -> Bool {guard dragRegions,regions.count<5 else {return false};regions.append(region);return true}
+    func source() throws -> String {if dragRegions && regions.isEmpty {throw commandScreenError("Select at least one screen region, or turn off region capture.")};return dragRegions ? "regions":"display"}
+}
+@available(macOS 14.0, *) final class CommandRegionPanel:NSPanel {
+    override var canBecomeKey:Bool {false}
+    override var canBecomeMain:Bool {false}
+}
+@available(macOS 14.0, *) final class CommandRegionView:NSView {
+    var begin:CGPoint?
+    var current:CGPoint?
+    var selected:[(rect:CGRect,index:Int)]=[]
+    var labels=try! CommandScreenLabels()
+    var count=0
+    var maxMessage=false
+    var select:((CGRect)->Void)?
+    override var isFlipped:Bool {false}
+    override func acceptsFirstMouse(for event:NSEvent?) -> Bool {true}
+    override func resetCursorRects(){addCursorRect(bounds,cursor:.crosshair)}
+    override func mouseDown(with event:NSEvent){begin=convert(event.locationInWindow,from:nil);current=begin;needsDisplay=true}
+    override func mouseDragged(with event:NSEvent){current=convert(event.locationInWindow,from:nil);needsDisplay=true}
+    override func mouseUp(with event:NSEvent){
+        defer {begin=nil;current=nil;needsDisplay=true}
+        guard let start=begin,let rect=commandRegionRect(start,convert(event.locationInWindow,from:nil),screen:bounds) else {return}
+        select?(rect)
+    }
+    override func draw(_ dirtyRect:NSRect){
+        NSColor.black.withAlphaComponent(0.08).setFill();bounds.fill()
+        let instruction=labels.instruction+"  "+(maxMessage ? labels.maxReached:labels.countText(count))
+        let attrs:[NSAttributedString.Key:Any]=[.font:NSFont.systemFont(ofSize:13,weight:.medium),.foregroundColor:NSColor.white,.backgroundColor:NSColor.black.withAlphaComponent(0.75)]
+        (instruction as NSString).draw(in:CGRect(x:30,y:bounds.height-85,width:max(1,bounds.width-60),height:45),withAttributes:attrs)
+        var rects=selected;if let start=begin,let end=current,let rect=commandRegionRect(start,end,screen:bounds){rects.append((rect,count+1))}
+        for (rect,index) in rects{
+            NSColor.systemGreen.withAlphaComponent(0.15).setFill();rect.fill();NSColor.systemGreen.setStroke();let border=NSBezierPath(rect:rect);border.lineWidth=2;border.stroke()
+            let label="\(index)" as NSString;label.draw(at:NSPoint(x:rect.minX+7,y:rect.maxY-23),withAttributes:[.font:NSFont.boldSystemFont(ofSize:14),.foregroundColor:NSColor.white,.backgroundColor:NSColor.black.withAlphaComponent(0.7)])
+        }
+    }
+}
+@available(macOS 14.0, *) @MainActor final class CommandScreenSession {
+    let token:String
+    let plan:CommandScreenPlan
+    let labels:CommandScreenLabels
+    var phase="starting"
+    var content:SCShareableContent?
+    var activeDisplay:SCDisplay?
+    var automatic:[String:Any]?
+    var panels:[CGDirectDisplayID:CommandRegionPanel]=[:]
+    var screenFrames:[CGDirectDisplayID:CGRect]=[:]
+    var pending:[UUID: @MainActor (Error)->Void]=[:]
+    var deadline:Date
+    init(token:String,dragRegions:Bool,labels:CommandScreenLabels=try! CommandScreenLabels()){self.token=token;plan=CommandScreenPlan(dragRegions:dragRegions);self.labels=labels;deadline=Date().addingTimeInterval(10)}
+}
+@available(macOS 14.0, *) @MainActor final class CommandScreenController {
+    var session:CommandScreenSession?
+    private var shuttingDown=false
+    func shutdown(){shuttingDown=true;_ = cancel()}
+    private let eventSink:([String:Any])->Void
+    init(eventSink:@escaping ([String:Any])->Void=emit){self.eventSink=eventSink}
+    private var displayObserver:NSObjectProtocol?
+    private var closedTokens:[String:Date]=[:]
+    private func rememberClosed(_ token:String){
+        let cutoff=Date().addingTimeInterval(-600);closedTokens=closedTokens.filter{$0.value>cutoff};closedTokens[token]=Date()
+        while closedTokens.count>128 {if let oldest=closedTokens.min(by:{$0.value<$1.value})?.key {closedTokens.removeValue(forKey:oldest)}}
+    }
+    private func isClosed(_ token:String)->Bool {guard let date=closedTokens[token] else{return false};if date.timeIntervalSinceNow < -600 {closedTokens.removeValue(forKey:token);return false};return true}
+
+    private func owns(_ candidate:CommandScreenSession) -> Bool {session === candidate}
+    private func assertOwner(_ candidate:CommandScreenSession) throws {guard owns(candidate) else {throw commandScreenError("Screen capture cancelled")}}
+    private func status(_ candidate:CommandScreenSession,_ value:String,error:String?=nil){guard owns(candidate) else{return};var event:[String:Any]=["event":"command-screen-status","token":candidate.token,"status":value];if let error {event["error"]=error};eventSink(event)}
+    private func token(_ request:[String:Any]) throws -> String {guard let value=request["token"] as? String,value.range(of:"^[A-Za-z0-9_-]{1,100}$",options:.regularExpression) != nil else {throw commandScreenError("Invalid command screen token")};return value}
+    private func metadata(_ candidate:CommandScreenSession) -> [String:Any] {["token":candidate.token,"started":true,"status":candidate.phase,"dragRegions":candidate.plan.dragRegions,"regionCount":candidate.plan.regions.count,"maxRegions":5]}
+    private func hidePanels(_ candidate:CommandScreenSession){for panel in candidate.panels.values {panel.orderOut(nil);panel.close()};candidate.panels.removeAll();if let displayObserver {NotificationCenter.default.removeObserver(displayObserver);self.displayObserver=nil}}
+    func cancel(token:String?=nil) -> Bool {
+        if let token {rememberClosed(token)}
+        guard let candidate=session,token==nil || token==candidate.token else {return false}
+        rememberClosed(candidate.token);status(candidate,"cancelled");session=nil;hidePanels(candidate);candidate.automatic=nil;candidate.content=nil;candidate.activeDisplay=nil;candidate.plan.regions.removeAll()
+        let pending=Array(candidate.pending.values);for cancel in pending {cancel(commandScreenError("Screen capture cancelled"))};return true
+    }
+    func cancel(_ request:[String:Any]) throws -> [String:Any] {let value=try token(request);return ["token":value,"cancelled":cancel(token:value)]}
+    fileprivate func operation<T>(_ candidate:CommandScreenSession,start:(_ complete:@escaping (Result<T,Error>)->Void)->Void) async throws -> T {
+        try assertOwner(candidate)
+        let remaining=candidate.deadline.timeIntervalSinceNow;guard remaining>0 else {throw commandScreenError("Screen capture timed out")}
+        return try await withCheckedThrowingContinuation { (continuation:CheckedContinuation<T,Error>) in
+            let key=UUID();var timer:Timer?
+            @MainActor func complete(_ result:Result<T,Error>){guard candidate.pending.removeValue(forKey:key) != nil else{return};timer?.invalidate();timer=nil;continuation.resume(with:result)}
+            candidate.pending[key]={error in complete(.failure(error))}
+            timer=Timer.scheduledTimer(withTimeInterval:remaining,repeats:false){_ in Task { @MainActor in complete(.failure(commandScreenError("Screen capture timed out"))) }}
+            start {result in DispatchQueue.main.async {guard self.owns(candidate) else {complete(.failure(commandScreenError("Screen capture cancelled")));return};complete(result)}}
+        }
+    }
+    private func shareable(_ candidate:CommandScreenSession) async throws -> SCShareableContent {
+        guard CGPreflightScreenCaptureAccess() else {throw commandScreenError("Screen Recording permission is required. Enable it in System Settings.")}
+        return try await operation(candidate){done in SCShareableContent.getExcludingDesktopWindows(false,onScreenWindowsOnly:true){content,error in if let error {done(.failure(error))}else if let content {done(.success(content))}else {done(.failure(commandScreenError("No screen capture content available")))}}}
+    }
+    private func snapshot(_ candidate:CommandScreenSession,display:SCDisplay,region:CommandScreenRegion?=nil) async throws -> [String:Any] {
+        try assertOwner(candidate);guard CGPreflightScreenCaptureAccess() else {throw commandScreenError("Screen Recording permission is required. Enable it in System Settings.")}
+        guard let content=candidate.content else {throw commandScreenError("Screen capture content is unavailable")}
+        let ownPids:Set<pid_t>=[ProcessInfo.processInfo.processIdentifier,getppid()]
+        let applications=content.applications.filter{ownPids.contains($0.processID)}
+        let filter=SCContentFilter(display:display,excludingApplications:applications,exceptingWindows:[])
+        let logical=CGSize(width:filter.contentRect.width,height:filter.contentRect.height)
+        let source:CGRect
+        if let region {guard NSScreen.screens.contains(where:{(($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value)==region.displayID && $0.frame==region.screenFrame}) else {throw commandScreenError("A selected display changed. Start the command again.")};guard let rect=commandSourceRect(region,logical:logical) else {throw commandScreenError("Invalid screen region")};source=rect}
+        else {source=CGRect(origin:.zero,size:logical)}
+        let size=commandImageSize(source.size,scale:CGFloat(filter.pointPixelScale))
+        let config=SCStreamConfiguration();config.sourceRect=source;config.width=Int(size.width);config.height=Int(size.height);config.showsCursor=false;config.capturesAudio=false;config.scalesToFit=true
+        let image:CGImage=try await operation(candidate){done in SCScreenshotManager.captureImage(contentFilter:filter,configuration:config){image,error in if let error {done(.failure(error))}else if let image {done(.success(image))}else {done(.failure(commandScreenError("Screen capture returned no image")))}}}
+        try assertOwner(candidate)
+        guard image.width<=1536,image.height<=1536,image.width>0,image.height>0 else {throw commandScreenError("Screen image dimensions exceed the limit")}
+        let bitmap=NSBitmapImageRep(cgImage:image);var encoded:Data?
+        for quality in [0.85,0.7,0.5] {if let data=bitmap.representation(using:.jpeg,properties:[.compressionFactor:quality]),data.count<=3*1024*1024 {encoded=data;break}}
+        guard let encoded else {throw commandScreenError("Screen image exceeds 3 MiB")}
+        return ["mimeType":"image/jpeg","data":encoded.base64EncodedString(),"width":image.width,"height":image.height]
+    }
+    private func showPanels(_ candidate:CommandScreenSession){
+        guard owns(candidate),let content=candidate.content else {return}
+        for screen in NSScreen.screens {
+            guard let id=(screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value,content.displays.contains(where:{$0.displayID==id}) else {continue}
+            candidate.screenFrames[id]=screen.frame
+            let panel=CommandRegionPanel(contentRect:screen.frame,styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
+            panel.isOpaque=false;panel.backgroundColor = .clear;panel.hasShadow=false;panel.level = .statusBar;panel.collectionBehavior=[.canJoinAllSpaces,.fullScreenAuxiliary,.stationary,.ignoresCycle];panel.hidesOnDeactivate=false;panel.isFloatingPanel=true;panel.becomesKeyOnlyIfNeeded=true;panel.isReleasedWhenClosed=false
+            let view=CommandRegionView(frame:CGRect(origin:.zero,size:screen.frame.size));view.labels=candidate.labels;panel.contentView=view
+            view.select={ [weak self,weak candidate,weak view] local in
+                guard let self,let candidate,let view,self.owns(candidate),candidate.phase=="ready",let frame=candidate.screenFrames[id] else {return}
+                let rect=local.offsetBy(dx:frame.minX,dy:frame.minY)
+                guard candidate.plan.add(CommandScreenRegion(displayID:id,screenFrame:frame,rect:rect)) else {view.maxMessage=true;view.needsDisplay=true;self.status(candidate,"selecting",error:candidate.labels.maxReached);return}
+                for (displayID,window) in candidate.panels {if let contentView=window.contentView as? CommandRegionView,let frame=candidate.screenFrames[displayID]{contentView.selected=candidate.plan.regions.enumerated().filter{$0.element.displayID==displayID}.map{($0.element.rect.offsetBy(dx:-frame.minX,dy:-frame.minY),$0.offset+1)};contentView.count=candidate.plan.regions.count;contentView.maxMessage=false;contentView.needsDisplay=true}}
+                self.eventSink(["event":"command-region-count","token":candidate.token,"count":candidate.plan.regions.count,"maxRegions":5])
+            }
+            candidate.panels[id]=panel;panel.orderFrontRegardless()
+        }
+        displayObserver=NotificationCenter.default.addObserver(forName:NSApplication.didChangeScreenParametersNotification,object:nil,queue:.main){[weak self,weak candidate] _ in Task { @MainActor in guard let self,let candidate,self.owns(candidate) else{return};self.status(candidate,"error",error:"Displays changed during screen selection. Start the command again.");_ = self.cancel(token:candidate.token) }}
+    }
+    func start(_ request:[String:Any]) async throws -> [String:Any] {
+        guard !shuttingDown else {throw commandScreenError("Screen capture is shutting down")}
+        let value=try token(request)
+        let labels=try CommandScreenLabels(request["labels"])
+        guard let boolean=request["dragRegions"] as? NSNumber,CFGetTypeID(boolean)==CFBooleanGetTypeID() else {throw commandScreenError("dragRegions must be a boolean")}
+        guard !isClosed(value) else {throw commandScreenError("Command screen session was already cancelled or completed")}
+        if let session {guard session.token==value,session.plan.dragRegions==boolean.boolValue else {throw commandScreenError("Another command screen session is active")};guard session.phase=="ready" else {throw commandScreenError("Command screen capture is already starting or finishing")};return metadata(session)}
+        guard CGPreflightScreenCaptureAccess() else {throw commandScreenError("Screen Recording permission is required. Enable it in System Settings.")}
+        let candidate=CommandScreenSession(token:value,dragRegions:boolean.boolValue,labels:labels);session=candidate
+        do {
+            let content=try await shareable(candidate)
+            try assertOwner(candidate);candidate.content=content
+            let point=NSEvent.mouseLocation
+            guard let screen=NSScreen.screens.first(where:{$0.frame.contains(point)}) ?? NSScreen.main,let id=(screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value,let display=content.displays.first(where:{$0.displayID==id}) else {throw commandScreenError("The active display is unavailable")}
+            candidate.activeDisplay=display
+            if !candidate.plan.dragRegions {candidate.automatic=try await snapshot(candidate,display:display)}
+            try assertOwner(candidate);candidate.phase="ready";if candidate.plan.dragRegions {showPanels(candidate)};status(candidate,"ready");return metadata(candidate)
+        }catch {if owns(candidate){status(candidate,"error",error:error.localizedDescription);_ = cancel(token:value)};throw error}
+    }
+    func finish(_ request:[String:Any]) async throws -> [String:Any] {
+        let value=try token(request);guard let candidate=session,candidate.token==value else {throw commandScreenError("Command screen session is no longer active")};guard candidate.phase=="ready" else {throw commandScreenError("Command screen capture is not ready")}
+        do {
+            let source=try candidate.plan.source();candidate.phase="capturing";candidate.deadline=Date().addingTimeInterval(20);status(candidate,"capturing")
+            var images:[[String:Any]]=[]
+            if source=="regions" {
+                // Refresh while panels exist so their owning application can be excluded, then hide before capture.
+                candidate.content=try await shareable(candidate);try assertOwner(candidate);hidePanels(candidate)
+                guard let content=candidate.content else {throw commandScreenError("Screen capture content is unavailable")}
+                for region in candidate.plan.regions {try assertOwner(candidate);guard let display=content.displays.first(where:{$0.displayID==region.displayID}) else {throw commandScreenError("A selected display is unavailable")};images.append(try await snapshot(candidate,display:display,region:region))}
+            } else {hidePanels(candidate);guard let automatic=candidate.automatic else {throw commandScreenError("Automatic screen image is unavailable")};images=[automatic]}
+            try assertOwner(candidate);let count=candidate.plan.regions.count;rememberClosed(value);session=nil;candidate.automatic=nil;candidate.content=nil;candidate.activeDisplay=nil;candidate.plan.regions.removeAll()
+            return ["token":value,"source":source,"images":images,"regionCount":count]
+        }catch {if owns(candidate){status(candidate,"error",error:error.localizedDescription);_ = cancel(token:value)};throw error}
+    }
+}
+func commandScreenSelfTest() -> [String:Any] {
+    let frame=CGRect(x:-1600,y:900,width:1600,height:900)
+    let rect=commandRegionRect(CGPoint(x:-100,y:1700),CGPoint(x:-1500,y:1000),screen:frame)!
+    let region=CommandScreenRegion(displayID:7,screenFrame:frame,rect:rect)
+    let source=commandSourceRect(region,logical:CGSize(width:1600,height:900))!
+    let clamp=commandRegionRect(CGPoint(x:-2000,y:800),CGPoint(x:100,y:2000),screen:frame)
+    let plan=CommandScreenPlan(dragRegions:true);var noFallback=false;do{_ = try plan.source()}catch{noFallback=error.localizedDescription=="Select at least one screen region, or turn off region capture."}
+    let added=(0..<5).allSatisfy{_ in plan.add(region)},sixth = !plan.add(region)
+    let automatic=CommandScreenPlan(dragRegions:false)
+    let labels=try! CommandScreenLabels(["instruction":"日本語 <text>","regionCountPattern":"{count}/{max} 選択 %s"])
+    var invalidLabels=0;for value:Any in [["unknown":"x"],["instruction":12],["instruction":"a\nb"],["instruction":String(repeating:"x",count:301)]] {do{_ = try CommandScreenLabels(value)}catch{invalidLabels+=1}}
+    let size=commandImageSize(CGSize(width:1400,height:700),scale:2)
+    return ["selfTest":"command-screen","negativeOrigin":rect==CGRect(x:-1500,y:1000,width:1400,height:700),"sourceTopLeftPoints":source==CGRect(x:100,y:100,width:1400,height:700),"clamped":clamp==frame,"tinyRejected":commandRegionRect(.zero,CGPoint(x:1,y:1),screen:CGRect(x:0,y:0,width:100,height:100))==nil,"nonfiniteRejected":commandRegionRect(CGPoint(x:CGFloat.nan,y:0),.zero,screen:frame)==nil,"retinaBounded":size==CGSize(width:1536,height:768),"dragZeroNeverFull":noFallback,"fiveRegionLimit":added&&sixth&&plan.regions.count==5,"regionsReplaceAutomatic":(try? plan.source())=="regions","automaticOnlyWhenDisabled":(try? automatic.source())=="display" && !automatic.add(region),"labelsPlain":labels.instruction=="日本語 <text>" && labels.countText(99)=="5/5 選択 %s","labelsValidation":invalidLabels==4,"noWindowCreated":true]
+}
+
+@available(macOS 14.0, *) @MainActor func commandScreenRaceSelfTest() async -> [String:Any] {
+    var events:[[String:Any]]=[]
+    let controller=CommandScreenController(eventSink:{events.append($0)})
+    let first=CommandScreenSession(token:"first",dragRegions:true);controller.session=first
+    var callback:((Result<String,Error>)->Void)?
+    let pending=Task {try await controller.operation(first){callback=$0}}
+    while callback==nil {await Task.yield()}
+    let staleCancel = !controller.cancel(token:"wrong") && controller.session === first
+    let cancelled=controller.cancel(token:"first")
+    let second=CommandScreenSession(token:"second",dragRegions:true);controller.session=second
+    callback?(.success("private late result"));callback?(.success("duplicate late result"))
+    var cancelledPending=false;do{_ = try await pending.value}catch{cancelledPending=error.localizedDescription.contains("cancelled")}
+    try? await Task.sleep(nanoseconds:20_000_000)
+    let lateSafe=controller.session === second && first.pending.isEmpty && first.automatic==nil
+    second.deadline=Date().addingTimeInterval(0.02)
+    var timedOut=false;do{let _:String=try await controller.operation(second){_ in}}catch{timedOut=error.localizedDescription.contains("timed out")}
+    let timeoutReleased=second.pending.isEmpty
+    _ = controller.cancel(token:"second")
+    let empty=CommandScreenSession(token:"empty",dragRegions:true);empty.phase="ready";controller.session=empty
+    var noFallback=false;do{_ = try await controller.finish(["token":"empty"])}catch{noFallback=error.localizedDescription=="Select at least one screen region, or turn off region capture."}
+    let emptyReleased=controller.session==nil && empty.panels.isEmpty && empty.automatic==nil
+    let beforeStartCancelled = !controller.cancel(token:"before_start")
+    var startBlocked=false;do{_ = try await controller.start(["token":"before_start","dragRegions":true])}catch{startBlocked=error.localizedDescription.contains("already cancelled")}
+    let pendingAgain=CommandScreenSession(token:"pending_again",dragRegions:false);controller.session=pendingAgain
+    var pendingNotReady=false;do{_ = try await controller.start(["token":"pending_again","dragRegions":false])}catch{pendingNotReady=error.localizedDescription.contains("already starting")}
+    _ = controller.cancel(token:"pending_again")
+    controller.shutdown()
+    var shutdownBlocksStart=false;do{_ = try await controller.start(["token":"after_eof","dragRegions":true])}catch{shutdownBlocksStart=error.localizedDescription.contains("shutting down")}
+    var invalid=0;for request:[String:Any] in [["token":"bad token"],["token":1],["token":String(repeating:"x",count:101)]] {do{_ = try controller.cancel(request)}catch{invalid+=1}}
+    return ["selfTest":"command-screen-races","staleCancelSafe":staleCancel,"cancelledPending":cancelled&&cancelledPending,"lateDeliverySafe":lateSafe,"timeoutBounded":timedOut&&timeoutReleased,"emptyRegionsReject":noFallback&&emptyReleased,"eventsMetadataOnly":events.allSatisfy{$0["images"]==nil&&$0["data"]==nil},"invalidTokensRejected":invalid==3,"cancelBeforeStartSafe":beforeStartCancelled&&startBlocked,"pendingStartNeverReady":pendingNotReady,"shutdownBlocksLateStart":shutdownBlocksStart,"noWindowCreated":true]
+}
+
 final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     let indicator = NativeIndicator()
     var expansionClipboardHistory = false
@@ -363,6 +614,12 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
     var expansionSelection = ""
     var injecting = false
     var monitor: Timer?
+    var commandScreenStorage:AnyObject?
+    var commandScreenShutdown=false
+    @available(macOS 14.0, *) @MainActor func commandScreenController() -> CommandScreenController {
+        if let controller=commandScreenStorage as? CommandScreenController{return controller};let controller=CommandScreenController();commandScreenStorage=controller;return controller
+    }
+    @MainActor func cancelCommandScreen(){commandScreenShutdown=true;if #available(macOS 14.0, *),let controller=commandScreenStorage as? CommandScreenController{controller.shutdown()}}
     var stream: SCStream?
     let captureOwnership = SystemCaptureOwnership()
     let retainedCapture = RetainedCaptureStop<SCStream>()
@@ -702,6 +959,9 @@ final class Bridge: NSObject, SCStreamOutput, SCStreamDelegate {
         do {
             var result: Any = NSNull()
             switch request["command"] as? String ?? "" {
+            case "commandScreenStart": guard !commandScreenShutdown else {throw commandScreenError("Screen capture is shutting down")};guard #available(macOS 14.0, *) else {throw commandScreenError("Command screen capture requires macOS 14 or later")};result = try await commandScreenController().start(request)
+            case "commandScreenFinish": guard !commandScreenShutdown else {throw commandScreenError("Screen capture is shutting down")};guard #available(macOS 14.0, *) else {throw commandScreenError("Command screen capture requires macOS 14 or later")};result = try await commandScreenController().finish(request)
+            case "commandScreenCancel": guard #available(macOS 14.0, *) else {throw commandScreenError("Command screen capture requires macOS 14 or later")};result = try commandScreenController().cancel(request)
             case "indicatorConfigure": result = try indicator.configure(request)
             case "indicatorShow": result = try indicator.configure(request,show:true)
             case "indicatorUpdate": result = try indicator.configure(request)
@@ -826,6 +1086,10 @@ if CommandLine.arguments.contains("--clipboard-history-self-test") {
     var invalid=false;do{_ = try requestedClipboardHistory(["allowClipboardHistory":1])}catch{invalid=true}
     emit(["selfTest":"clipboard-history","privateTagged":privateItem.types.contains(transient),"publicUntagged":!publicItem.types.contains(transient),"plainRichPreserved":privateItem.string(forType:.string)=="Private" && privateItem.string(forType:.html)=="<b>Private</b>","invalidRejected":invalid,"legacyDefault":(try? requestedClipboardHistory([:])) ?? false,"originalTypesRestored":clipboardSelfTest()]);exit(0)
 }
+if CommandLine.arguments.contains("--command-screen-race-self-test") {
+    if #available(macOS 14.0, *) {Task { @MainActor in emit(await commandScreenRaceSelfTest());exit(0)};RunLoop.main.run()}else{emit(["unsupported":true]);exit(0)}
+}
+if CommandLine.arguments.contains("--command-screen-self-test") {emit(commandScreenSelfTest());exit(0)}
 if CommandLine.arguments.contains("--notch-controls-self-test") { emit(notchControlSelfTest()); exit(0) }
 if CommandLine.arguments.contains("--notch-indicator-self-test") { emit(notchIndicatorSelfTest()); exit(0) }
 if CommandLine.arguments.contains("--finder-selection-self-test") {
@@ -951,5 +1215,5 @@ if CommandLine.arguments.contains("--mouse-hotkey-self-test") {
 let nativeApplication = NSApplication.shared
 nativeApplication.setActivationPolicy(.prohibited)
 bridge.startTap()
-DispatchQueue.global().async { while let line = readLine() { guard let data = line.data(using:.utf8), let object = try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { emit(["ok":false,"error":"Invalid JSON"]); continue }; DispatchQueue.main.async { Task { await bridge.command(object) } } }; DispatchQueue.main.async { Task { bridge.indicator.hide(); _ = try? await bridge.stopSystemCapture(); exit(0) } } }
+DispatchQueue.global().async { while let line = readLine() { guard let data = line.data(using:.utf8), let object = try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { emit(["ok":false,"error":"Invalid JSON"]); continue }; DispatchQueue.main.async { Task { await bridge.command(object) } } }; DispatchQueue.main.async { Task { bridge.cancelCommandScreen(); bridge.indicator.hide(); _ = try? await bridge.stopSystemCapture(); exit(0) } } }
 nativeApplication.run()

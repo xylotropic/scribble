@@ -721,3 +721,103 @@ test('voice activation ownership change refuses starting and releases reservatio
  const h=harness(t,{nativeRequest:async command=>command==='frontmost'?{pid:9,bundleId:'com.apple.finder'}:command==='captureCommandContext'?{available:true,pid:10,bundleId:'com.apple.TextEdit',text:'different owner',selectedFiles:[]}:{} });
  await assert.rejects(h.actions['start-recording']({mode:'command'}),/active application changed/);assert.equal(h.nativeCalls.filter(call=>call.command==='captureInsertionTarget').length,0);assert.ok(await h.actions['start-recording']({mode:'dictation'}));await h.actions['cancel-recording']();
 });
+
+test('Command master disables voice, typed requests and command hotkeys without disabling utilities',async(t)=>{
+ const h=harness(t);await h.actions.preferences({commandEnabled:false});
+ await assert.rejects(h.beginRecording('command'),/disabled/);await assert.rejects(h.actions.command({text:'rewrite'}),/disabled/);
+ const binding=h.nativeCalls.findLast(x=>x.command==='setHotkeys');assert.ok(binding.args.hotkeys.every(x=>x.mode!=='command'));
+});
+test('typed region mode requires manual attachments and refinement reuses original images privately',async(t)=>{
+ const seen=[]; const h=harness(t,{chat:async(_s,_m,_k,o)=>{seen.push(o.images);return 'answer';}});
+ await h.actions.preferences({commandScreenContext:true,commandDragRegions:true});
+ await assert.rejects(h.actions.command({text:'describe'}),/voice command/);assert.equal(seen.length,0);
+ const image={mimeType:'image/png',data:Buffer.from('manual fixture').toString('base64')};
+ const result=await h.actions.command({text:'describe',attachments:{images:[image]}});
+ await h.actions.command({text:'refine',reviewId:result.reviewId,historyId:result.historyId});
+ assert.deepEqual(seen,[[image],[image]]);assert.equal(h.nativeCalls.some(x=>x.command.startsWith('commandScreen')),false);
+ assert.equal(JSON.stringify(h.store.data.history).includes(image.data),false);assert.equal(JSON.stringify(result).includes(image.data),false);
+});
+test('typed automatic screen capture owns its job and disabling during pending start prevents AI',async(t)=>{
+ let resolveStart,started;const pending=new Promise(r=>started=r);let calls=0;
+ const h=harness(t,{chat:async()=>{calls++;return 'answer';},nativeRequest:async(command,args)=>{
+ if(command==='commandScreenStart'){started();return new Promise(r=>resolveStart=()=>r({token:args.token,dragRegions:false,started:true,status:'ready'}));}
+ if(command==='commandScreenCancel')return {token:args.token,cancelled:true};return {};
+ }});
+ await h.actions.preferences({commandScreenContext:true});
+ const work=h.actions.command({text:'describe'});await pending;
+ await assert.rejects(h.actions.command({text:'other'}),/current/);
+ await h.actions.preferences({commandEnabled:false});resolveStart();await assert.rejects(work,/canceled/i);assert.equal(calls,0);assert.equal(h.store.data.history.length,0);
+});
+test('voice screen failure refuses transcription and releases recording ownership',async(t)=>{
+ let transcriptions=0;const h=harness(t,{transcribe:async()=>{transcriptions++;return {text:'describe',segments:[],duration:1};},nativeRequest:async(command,args)=>{
+ if(command==='commandScreenStart')return {token:args.token,dragRegions:true,started:true,status:'ready'};
+ if(command==='commandScreenFinish')throw Error('Select at least one screen region, or turn off region capture.');
+ if(command==='commandScreenCancel')return {token:args.token,cancelled:true};return {};
+ }});
+ await h.actions.preferences({commandScreenContext:true,commandDragRegions:true});await h.beginRecording('command');
+ await assert.rejects(h.actions['save-recording']({bytes:Buffer.from('audio'),mode:'command'}),/Select at least one/);assert.equal(transcriptions,0);
+ assert.ok(await h.beginRecording('dictation'));
+});
+test('automatic voice images are captured before microphone UI, merge with manual attachments, and never enter history',async(t)=>{
+ const seen=[],order=[];const image={mimeType:'image/jpeg',data:Buffer.from('screen fixture').toString('base64'),width:20,height:10};
+ const manual={mimeType:'image/png',data:Buffer.from('file fixture').toString('base64')};
+ const h=harness(t,{transcribe:async()=>{order.push('transcribe');return {text:'describe scene',segments:[],duration:1};},chat:async(_s,_m,_k,o)=>{seen.push(o.images);return 'screen answer';},nativeRequest:async(command,args)=>{
+ order.push(command);
+ if(command==='commandScreenStart')return {token:args.token,dragRegions:false,started:true,status:'ready'};
+ if(command==='commandScreenFinish')return {token:args.token,source:'display',regionCount:0,images:[image]};return {};
+ }});
+ h.initializeUtilityWindow({isDestroyed:()=>false,webContents:{send(_channel,value){if(value.event==='recording-control')order.push('ui-'+value.data.action);}}});
+ await h.actions.preferences({commandScreenContext:true});await h.beginRecording('command');
+ await h.actions['save-recording']({bytes:Buffer.from('audio'),mode:'command',attachments:{images:[manual]}});
+ assert.ok(order.indexOf('commandScreenStart')<order.indexOf('ui-start'));assert.ok(order.indexOf('commandScreenFinish')<order.indexOf('transcribe'));
+ assert.deepEqual(seen,[[manual,{mimeType:image.mimeType,data:image.data}]]);assert.equal(JSON.stringify(h.store.data.history).includes(image.data),false);
+});
+test('combined captured and explicit image overflow refuses AI without dropping an attachment',async(t)=>{
+ let calls=0;const image={mimeType:'image/jpeg',data:Buffer.from('screen').toString('base64'),width:10,height:10};
+ const h=harness(t,{chat:async()=>{calls++;return 'answer';},nativeRequest:async(command,args)=>command==='commandScreenStart'?{token:args.token,dragRegions:false,started:true,status:'ready'}:command==='commandScreenFinish'?{token:args.token,source:'display',regionCount:0,images:[image]}:{}});
+ await h.actions.preferences({commandScreenContext:true});await assert.rejects(h.actions.command({text:'describe',attachments:{images:Array(5).fill(image)}}),/five/);assert.equal(calls,0);assert.equal(h.store.data.history.length,0);
+});
+test('shutdown cancels command screen before native close and discards late typed startup',async(t)=>{
+ let late,started;const ready=new Promise(r=>started=r);let ai=0;
+ const h=harness(t,{chat:async()=>{ai++;return 'answer';},nativeRequest:async(command,args)=>{
+ if(command==='commandScreenStart'){started();return new Promise(r=>late=()=>r({token:args.token,dragRegions:false,started:true,status:'ready'}));}
+ if(command==='commandScreenCancel')return {token:args.token,cancelled:true};return {};
+ }});
+ await h.actions.preferences({commandScreenContext:true});const work=h.actions.command({text:'describe'});work.catch(()=>{});await ready;
+ h.appEvents['before-quit']({preventDefault(){}});await waitUntil(()=>h.exits.length===1);late();await assert.rejects(work,/canceled|disabled/i);
+ const names=h.nativeCalls.map(x=>x.command);assert.ok(names.indexOf('commandScreenCancel')<names.indexOf('close'));assert.equal(ai,0);assert.equal(h.store.data.history.length,0);
+});
+test('retrying a command confirms retained screen cleanup before admitting a replacement capture',async(t)=>{
+ let cancelAttempts=0;const starts=[];const h=harness(t,{nativeRequest:async(command,args)=>{
+ if(command==='commandScreenStart'){starts.push(args.token);return {token:args.token,dragRegions:false,started:true,status:'ready'};}
+ if(command==='commandScreenCancel'){if(++cancelAttempts===1)throw Error('helper temporarily unavailable');return {token:args.token,cancelled:true};}return {};
+ }});
+ await h.actions.preferences({commandScreenContext:true});const first=await h.beginRecording('command');
+ await assert.rejects(h.actions['cancel-recording'](),/temporarily unavailable/);assert.equal(h.snapshot().captureCleanupPending,true);
+ const replacement=await h.beginRecording('command');assert.ok(replacement);assert.notEqual(replacement.recordingToken,first.recordingToken);assert.equal(cancelAttempts,2);assert.equal(starts.length,2);assert.equal(h.snapshot().captureCleanupPending,false);
+ const names=h.nativeCalls.map(x=>x.command);assert.ok(names.lastIndexOf('commandScreenCancel')<names.lastIndexOf('commandScreenStart'));
+ // An ordinary active owner is busy and must not be cancelled as a side effect of another start.
+ assert.equal(await h.beginRecording('command'),undefined);assert.equal(cancelAttempts,2);assert.equal(starts.length,2);
+ await h.actions['cancel-recording']();
+});
+test('changing region policy cancels an in-flight full-frame command instead of reinterpreting its capture',async(t)=>{
+ let ai=0;const h=harness(t,{chat:async()=>{ai++;return 'answer';},nativeRequest:async(command,args)=>{
+ if(command==='commandScreenStart')return {token:args.token,dragRegions:args.dragRegions,started:true,status:'ready'};
+ if(command==='commandScreenCancel')return {token:args.token,cancelled:true};return {};
+ }});
+ await h.actions.preferences({commandScreenContext:true});await h.beginRecording('command');await h.actions.preferences({commandDragRegions:true});
+ assert.equal(h.nativeCalls.filter(x=>x.command==='commandScreenCancel').length,1);assert.equal(ai,0);
+ const next=await h.beginRecording('command');assert.ok(next);assert.equal(h.nativeCalls.findLast(x=>x.command==='commandScreenStart').args.dragRegions,true);
+ await h.actions['cancel-recording']();
+});
+test('failed screen cleanup still applies the master setting and unregisters command shortcuts',async(t)=>{
+ const h=harness(t,{nativeRequest:async(command,args)=>{
+ if(command==='commandScreenStart')return {token:args.token,dragRegions:false,started:true,status:'ready'};
+ if(command==='commandScreenCancel')throw Error('cleanup unavailable');return {};
+ }});
+ await h.actions.preferences({commandScreenContext:true});await h.beginRecording('command');
+ await assert.rejects(h.actions.preferences({commandEnabled:false}),/cleanup unavailable/);
+ assert.equal(h.store.data.settings.commandEnabled,false);assert.equal(h.snapshot().captureCleanupPending,true);
+ assert.ok(h.nativeCalls.findLast(x=>x.command==='setHotkeys').args.hotkeys.every(x=>x.mode!=='command'));
+ await assert.rejects(h.actions.command({text:'describe'}),/disabled/);
+});

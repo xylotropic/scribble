@@ -1,0 +1,11 @@
+# Command screen context
+
+Screen context is off by default. Command Mode has a master switch, a screen-context switch gated by macOS Screen Recording access, and an optional recording-time region selector. Changing either capture policy cancels the current command. Disabling the master also removes command shortcuts even if native cleanup needs a retry.
+
+With automatic context enabled, voice commands capture the display under the pointer before recording. Region mode instead opens nonactivating selection panels while recording and sends only the selected regions, up to five. Empty selections fail explicitly; they never fall back to a full display. Typed commands in region mode require manually attached images. The capture excludes Scribble windows and the cursor. Display changes cancel selection rather than applying coordinates to a different layout.
+
+Images go to the configured AI provider along with the command. They are bounded JPEGs with a maximum dimension of 1536 pixels and a maximum decoded size of 3 MiB per image. Automatic and manually supplied images together may not exceed five. Refinements reuse the original private images. Images are excluded from history and public result/status events; review retention is limited to ten minutes, 32 entries and 64 MiB of base64 data.
+
+Native capture has one token-owned session, bounded deadlines and cancellation fences. Failed cancellation retains ownership. The next command retries cleanup and can start a replacement only after native confirmation. Late callbacks cannot release or modify a newer session. Shutdown rejects late starts while existing audio cleanup completes.
+
+Source tests cover policy gating, translated controls and overlay labels, typed and voice admission, cancellation races, retry, refinements, image limits, geometry, display coordinates and shutdown. ARM and Intel helper builds compile. These checks do not establish actual screen capture, overlay placement, multi-display interaction or live vision inference. Screen Recording testing has not been authorized; no real screenshot or overlay was used in this verification. Microphone and Accessibility testing have separate authorization, with the macOS password handoff still pending.

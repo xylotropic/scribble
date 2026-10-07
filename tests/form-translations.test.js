@@ -1,8 +1,8 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const forms=require('../src/shared/form-translations.js');
-test('every original form catalogue covers all 340 labels with matching parameters and plain text',()=>{
-  assert.equal(forms.labels.length,340);assert.equal(new Set(forms.labels).size,340);assert.deepEqual(forms.locales.slice().sort(),['en','bg','cs','de','es','fr','it','ja','ko','pl','pt','ru','sv','tr','uk','vi','zh','zh-TW'].sort());
+test('every original form catalogue covers all 352 labels with matching parameters and plain text',()=>{
+  assert.equal(forms.labels.length,352);assert.equal(new Set(forms.labels).size,352);assert.deepEqual(forms.locales.slice().sort(),['en','bg','cs','de','es','fr','it','ja','ko','pl','pt','ru','sv','tr','uk','vi','zh','zh-TW'].sort());
   const parameters=text=>[...text.matchAll(/\{[^}]+\}/g)].map(x=>x[0]).sort();
   for(const locale of forms.locales){assert.deepEqual(Object.keys(forms.catalogues[locale]),forms.labels);for(const label of forms.labels){const text=forms.translate(locale,label);assert.ok(text.trim(),`${locale}: ${label}`);assert.doesNotMatch(text,/<[^>]*>/);assert.deepEqual(parameters(text),parameters(label));if(label.endsWith('%'))assert.ok(text.endsWith('%'));if(locale==='en')assert.equal(text,label);}}
 });
@@ -28,7 +28,7 @@ test('settings descriptions and hints preserve technical facts and template vari
 });
 test('new prose is present rather than relying on fallback for every locale',()=>{
   const prose=forms.labels.filter(label=>label.length>100);
-  assert.equal(prose.length,21);
+  assert.equal(prose.length,23);
   for(const locale of forms.locales){for(const label of prose){assert.ok(Object.hasOwn(forms.catalogues[locale],label));if(locale!=='en')assert.notEqual(forms.catalogues[locale][label],label);}}
   assert.equal(forms.translate('es','Leave empty to use the selected text or clipboard.'),'Déjalo vacío para usar el texto seleccionado o el portapapeles.');
   assert.equal(forms.translate('ja','Keep a small ready indicator visible.'),'小さな待機インジケーターを表示しておきます。');
@@ -71,3 +71,7 @@ test('provider disclosures preserve technical names, parameter shape and local/c
 });
 
 test('every provider privacy disclosure explicitly includes PDF uploads',()=>{const key='Commands can include text, selected files and screen images you attach. Memory indexing sends reference text or supported PDF files to the configured provider. Scribble does not send audio to a text model or use telemetry.';for(const locale of forms.locales)assert.match(forms.translate(locale,key),/PDF/);});
+
+test("Command context controls have original translations in all 18 locales",()=>{const keys=["Command Mode enabled", "Screen context", "Drag to choose screen regions while recording", "Turn off to disable voice and typed commands.", "Include a screen image when a command starts. Selected images are sent to your configured AI provider.", "Choose at least one region while recording. With this option on, typed commands use only screen images you attach manually.", "Allow Screen Recording", "Refresh screen permission", "Screen Recording access is required for screen context."];for(const locale of forms.locales)for(const key of keys){assert.ok(Object.hasOwn(forms.catalogues[locale],key));if(locale!=="en")assert.notEqual(forms.translate(locale,key),key);}});
+
+test("native region instructions preserve bounded plain labels and literal count parameters in all locales",()=>{const keys=["Drag to select up to five regions. Stop recording when finished.", "{count} of {max} regions selected.", "Five screen regions are already selected."];for(const locale of forms.locales)for(const key of keys){const text=forms.translate(locale,key);assert.ok(Object.hasOwn(forms.catalogues[locale],key));assert.ok(text.length<=200);assert.doesNotMatch(text,/[<>]/);if(locale!=="en")assert.notEqual(text,key);if(key.includes("{count}")){assert.ok(text.includes("{count}"));assert.ok(text.includes("{max}"));}}});
