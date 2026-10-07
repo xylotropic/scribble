@@ -120,3 +120,8 @@ Public Vowen engine coverage exceeds a Whisper-only implementation. NVIDIA's [Pa
 ### Embedded Share extension
 
 - Original Swift Share extension is compiled with application-extension restrictions and embedded at Contents/PlugIns/ScribbleShare.appex by package/dist. The embedded extension and complete host pass strict signature verification. The nested extension retains app-sandbox and user-selected read-only entitlements. A read-only pluginkit inventory currently reports no registered match; actual Finder discovery/handoff is still unverified.
+
+### Share discovery and Finder gate
+
+- Relaunching the updated host automatically registered org.scribble.voice.share; pluginkit listed the embedded appex at the current package path. No manual registry mutation was used.
+- Finder selected the isolated public JFK WAV fixture and enabled Share. Its actual Share popover displayed `Unlock Mac to continue with Siri request` instead of destinations, corroborated by AX and screenshot. No Share handoff success is claimed; session unlock is needed to continue this desktop check.

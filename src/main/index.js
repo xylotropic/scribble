@@ -1476,6 +1476,8 @@ const actions = {
     emit("state", snapshot());
     return true;
   },
+  "crop-screen-context": ({ image, region }) =>
+    require("./screen-context").cropScreenContext(image, region),
   "screen-context": async () => {
     const sources = await desktopCapturer.getSources({
       types: ["screen"],

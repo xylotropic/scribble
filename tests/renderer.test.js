@@ -100,6 +100,13 @@ async function fixture(
         return true;
       }
       if (action === "screen-context") return clone(screens);
+      if (action === "crop-screen-context")
+        return {
+          mimeType: "image/png",
+          data: "Y3JvcA==",
+          width: 50,
+          height: 50,
+        };
       if (action === "choose-command-files")
         return clone(commandFiles || { text: "", images: [], sources: [] });
       if (action === "command") return { kind: "text", text: "fixture answer" };
@@ -674,5 +681,33 @@ test(
     await flush();
     assert.equal(requests, 1);
     assert.equal(h.recorders.length, 0);
+  },
+);
+
+test(
+  "Screen crop result replaces the full image in a command attachment",
+  options,
+  async (t) => {
+    const h = await fixture(t, {
+      screens: [{ name: "Fixture", image: "data:image/png;base64,YQ==" }],
+    });
+    await h.click('[data-page="command"]');
+    await h.click('[data-action="command-screen"]');
+    h.input('[name="cropLeft"]', "50");
+    h.input('[name="cropWidth"]', "50");
+    await h.submit();
+    const crop = h.calls.find((c) => c.action === "crop-screen-context");
+    assert.deepEqual(clone(crop.args.region), {
+      left: 50,
+      top: 0,
+      width: 50,
+      height: 100,
+    });
+    h.input("#command-text", "Describe the selected region");
+    await h.click('[data-action="run-command"]');
+    const command = h.calls.find((c) => c.action === "command");
+    assert.deepEqual(clone(command.args.attachments.images), [
+      { mimeType: "image/png", data: "Y3JvcA==" },
+    ]);
   },
 );

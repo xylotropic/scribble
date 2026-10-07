@@ -1644,7 +1644,7 @@ document.addEventListener("click", async (e) => {
         );
       showModal(
         "Choose screen context",
-        `<p class="muted">Only the selected preview is attached. Running the command sends it to your configured AI provider. Use a vision-capable model.</p><label class="field">Screen<select name="screenIndex">${screens.map((screen, index) => `<option value="${index}">${esc(screen.name)}</option>`).join("")}</select></label><div>${screens.map((screen) => `<figure><figcaption>${esc(screen.name)}</figcaption><img alt="Screen context preview" style="max-width:100%" src="${esc(screen.image)}"></figure>`).join("")}</div>`,
+        `<p class="muted">Only the selected preview is attached. Running the command sends it to your configured AI provider. Use a vision-capable model.</p><label class="field">Screen<select name="screenIndex">${screens.map((screen, index) => `<option value="${index}">${esc(screen.name)}</option>`).join("")}</select></label><p class="muted">Region within the preview, in percentages. Leave 0, 0, 100, 100 for the full screen.</p>${field("cropLeft", "Left %", 0, "number")}${field("cropTop", "Top %", 0, "number")}${field("cropWidth", "Width %", 100, "number")}${field("cropHeight", "Height %", 100, "number")}<div>${screens.map((screen) => `<figure><figcaption>${esc(screen.name)}</figcaption><img alt="Screen context preview" style="max-width:100%" src="${esc(screen.image)}"></figure>`).join("")}</div>`,
         async (values) => {
           const screen = screens[Number(values.screenIndex)];
           const match = screen?.image.match(
@@ -1654,11 +1654,27 @@ document.addEventListener("click", async (e) => {
             throw Error("Screen capture did not return a usable image");
           if (commandAttachments.images.length >= 5)
             throw Error("Remove an image before adding another screen");
+          const region = {
+            left: Number(values.cropLeft),
+            top: Number(values.cropTop),
+            width: Number(values.cropWidth),
+            height: Number(values.cropHeight),
+          };
+          const cropped =
+            region.left === 0 &&
+            region.top === 0 &&
+            region.width === 100 &&
+            region.height === 100
+              ? { mimeType: match[1], data: match[2] }
+              : await request("crop-screen-context", {
+                  image: screen.image,
+                  region,
+                });
           commandAttachments = {
             ...commandAttachments,
             images: [
               ...commandAttachments.images,
-              { mimeType: match[1], data: match[2] },
+              { mimeType: cropped.mimeType, data: cropped.data },
             ],
             sources: [
               ...commandAttachments.sources,
